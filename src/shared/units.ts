@@ -32,11 +32,11 @@ export const unitStats: Record<Faction, Record<EntityKind, UnitStats>> = {
     ...economyStats
   },
   orc: {
-    blade: { health: 101, damage: 16, armor: 2, range: 23, speed: 74, cooldown: 12, radius: 9 },
-    ranged: { health: 70, damage: 14, armor: 1, range: 118, speed: 76, cooldown: 18, radius: 9 },
-    polearm: { health: 124, damage: 21, armor: 3, range: 31, speed: 74, cooldown: 16, radius: 10 },
-    marksman: { health: 89, damage: 27, armor: 1, range: 136, speed: 67, cooldown: 23, radius: 10 },
-    heavy: { health: 262, damage: 36, armor: 6, range: 28, speed: 81, cooldown: 20, radius: 13 },
+    blade: { health: 95, damage: 15, armor: 2, range: 23, speed: 74, cooldown: 12, radius: 9 },
+    ranged: { health: 66, damage: 13, armor: 1, range: 118, speed: 76, cooldown: 18, radius: 9 },
+    polearm: { health: 118, damage: 19, armor: 3, range: 31, speed: 74, cooldown: 16, radius: 10 },
+    marksman: { health: 82, damage: 24, armor: 1, range: 136, speed: 67, cooldown: 23, radius: 10 },
+    heavy: { health: 240, damage: 34, armor: 6, range: 28, speed: 81, cooldown: 20, radius: 13 },
     headquarters: { health: 1500, damage: 0, armor: 5, range: 0, speed: 0, cooldown: 0, radius: 30 },
     ...economyStats
   }

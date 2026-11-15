@@ -11,7 +11,12 @@ export function canStand(map: BattleMap, point: Point, obstacles: readonly Obsta
       if (!isWalkable(tileAt(map, Math.floor((x + dx) / TILE), Math.floor((y + dy) / TILE)))) return false
     }
   }
-  return !obstacles.some(obstacle => distance(point, obstacle) < obstacle.radius + radius)
+  return !obstacles.some(obstacle => {
+    const dx = point.x - obstacle.x
+    const dy = point.y - obstacle.y
+    const limit = obstacle.radius + radius
+    return dx * dx + dy * dy < limit * limit
+  })
 }
 
 function clearSegment(map: BattleMap, from: Point, to: Point, obstacles: readonly Obstacle[], radius: number) {
@@ -52,25 +57,51 @@ export function findPath(map: BattleMap, start: Point, target: Point, obstacles:
   const cost = new Float32Array(count).fill(Infinity)
   const previous = new Int32Array(count).fill(-1)
   const visited = new Uint8Array(count)
-  const open = new Set([source])
+  // Binary min-heap avoids scanning every open tile on each A* iteration.
+  // Entries may become stale after a better route is found, so discard them on pop.
+  const open: Array<{ id: number, priority: number }> = []
+  const push = (id: number, priority: number) => {
+    let i = open.length
+    open.push({ id, priority })
+    while (i > 0) {
+      const parent = (i - 1) >> 1
+      if (open[parent].priority <= priority) break
+      open[i] = open[parent]
+      i = parent
+    }
+    open[i] = { id, priority }
+  }
+  const pop = () => {
+    const first = open[0]
+    const last = open.pop()!
+    if (open.length) {
+      let i = 0
+      while (true) {
+        const left = i * 2 + 1
+        if (left >= open.length) break
+        const right = left + 1
+        const child = right < open.length && open[right].priority < open[left].priority ? right : left
+        if (open[child].priority >= last.priority) break
+        open[i] = open[child]
+        i = child
+      }
+      open[i] = last
+    }
+    return first
+  }
+  const heuristic = (id: number) => distance(center(id), waypoint) / TILE
+  push(source, heuristic(source))
   const steps = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]
   cost[source] = 0
-  while (open.size) {
-    let current = -1
-    let best = Infinity
-    for (const id of open) {
-      const score = cost[id] + distance(center(id), waypoint) / TILE
-      if (score < best) {
-        best = score
-        current = id
-      }
-    }
+  while (open.length) {
+    const entry = pop()
+    const current = entry.id
+    if (visited[current] || entry.priority > cost[current] + heuristic(current) + 0.00001) continue
     if (current === goal) {
       const path: Point[] = distance(waypoint, destination) > 0.1 ? [destination] : []
       for (let id = current; id !== source; id = previous[id]) path.unshift(center(id))
       return path
     }
-    open.delete(current)
     visited[current] = 1
     const x = current % map.width
     const y = Math.floor(current / map.width)
@@ -84,7 +115,7 @@ export function findPath(map: BattleMap, start: Point, target: Point, obstacles:
       if (visited[next] || nextCost >= cost[next]) continue
       cost[next] = nextCost
       previous[next] = current
-      open.add(next)
+      push(next, nextCost + heuristic(next))
     }
   }
   return []
