@@ -15,7 +15,7 @@ type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObject
 type BattleActions = {
   order: (ids: number[], order: Order) => void
   selection: (entities: Entity[]) => void
-  placement: (active: boolean) => void
+  placement: (active: boolean, blocked?: boolean) => void
   effect: (kind: Effect['kind']) => void
 }
 
@@ -180,7 +180,7 @@ export class BattleScene extends Phaser.Scene {
       if (ids.length && validPlacement(ashford, this.placing, at, this.entities())) {
         this.actions.order(ids, { kind: 'build', building: this.placing, at })
         this.place(null)
-      }
+      } else this.actions.placement(true, true)
       return
     }
     if (touch && this.workerIds().length && this.mineAt(point)) {

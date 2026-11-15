@@ -120,7 +120,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect.poll(() => troops(orcHistory, 'human').length, { timeout: 12_000 }).toBe(7)
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
-    const tower = cellCenter(ashford.width - 4, 21)
+    const tower = cellCenter(ashford.width - 3, 19)
     await panTo(orc, tower, true)
     const towerSpot = await screenPoint(orc, tower, tower)
     await orc.getByRole('button', { name: 'Build', exact: true }).tap()

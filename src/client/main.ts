@@ -150,9 +150,10 @@ function showBattle() {
       audio.play('order')
     },
     selection: drawSelection,
-    placement: active => {
+    placement: (active, blocked) => {
       placing = active
       placementTip.hidden = !active
+      element('placement-message').textContent = blocked ? 'This spot is blocked. Choose open ground.' : 'Choose a clear tile to build on.'
     },
     effect: kind => audio.play(kind)
   })

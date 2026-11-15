@@ -140,7 +140,7 @@ export class Match {
       }
       return true
     }
-    const worker = workers[0]
+    const worker = workers.find(unit => !unit.job) ?? workers.find(unit => unit.job?.kind === 'mine') ?? workers[0]
     let site = order.kind === 'resume-build' ? this.units.get(order.target) : undefined
     if (order.kind === 'build') {
       const rule = buildingRules[order.building]
