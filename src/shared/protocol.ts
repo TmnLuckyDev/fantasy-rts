@@ -1,4 +1,6 @@
 export const factions = ['human', 'orc'] as const
+export const difficulties = ['easy', 'normal', 'hard'] as const
+export type Difficulty = typeof difficulties[number]
 export type Faction = typeof factions[number]
 export type Point = { x: number, y: number }
 export const combatKinds = ['blade', 'polearm', 'ranged', 'marksman', 'heavy'] as const

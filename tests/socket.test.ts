@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { once } from 'node:events'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
@@ -42,9 +45,9 @@ class TestPeer {
   }
 }
 
-async function startServer(t: TestContext) {
+async function startServer(t: TestContext, saveFile?: string) {
   const processServer = spawn(process.execPath, ['--experimental-strip-types', 'src/server/index.ts'], {
-    env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'inherit']
+    env: { ...process.env, PORT: '0', MATCH_SAVE_FILE: saveFile ?? '' }, stdio: ['ignore', 'pipe', 'inherit']
   })
   t.after(() => processServer.kill())
   const [line] = await once(processServer.stdout, 'data') as [Buffer]
@@ -55,12 +58,17 @@ async function startServer(t: TestContext) {
   assert.equal(health.status, 200)
   assert.deepEqual(await health.json(), { status: 'ok' })
 
-  return async () => {
+  const connect = async () => {
     const peer = new TestPeer(`ws://127.0.0.1:${port}/socket`)
     t.after(() => peer.socket.terminate())
     await once(peer.socket, 'open')
     return peer
   }
+  return Object.assign(connect, { stop: async () => {
+    const stopped = once(processServer, 'exit')
+    processServer.kill('SIGTERM')
+    await stopped
+  } })
 }
 
 test('two sockets share a room, reject forged commands and recover a seat after reconnect', { timeout: 12_000 }, async t => {
@@ -146,4 +154,37 @@ test('a solo room starts immediately, reserves the opponent for the CPU and surv
   replacement.send({ type: 'leave' })
   replacement.send({ type: 'resume', code: session.code, token: session.token })
   assert.equal((await replacement.wait('error')).resetSession, true)
+})
+
+
+test('on-disk restart restores both multiplayer seats and a paid training queue', { timeout: 12_000 }, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ash-iron-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const file = join(dir, 'matches.json')
+  const before = await startServer(t, file)
+  const host = await before()
+  const guest = await before()
+  host.send({ type: 'create', faction: 'human' })
+  const hostSeat = await host.wait('session')
+  guest.send({ type: 'join', code: hostSeat.code, faction: 'orc' })
+  const guestSeat = await guest.wait('session')
+  host.send({ type: 'ready', ready: true })
+  guest.send({ type: 'ready', ready: true })
+  await host.wait('snapshot')
+  host.send({ type: 'command', ids: [1], order: { kind: 'train', unit: 'worker' } })
+  await host.wait('snapshot', snapshot => snapshot.population.reserved === 1)
+  await before.stop()
+
+  const after = await startServer(t, file)
+  const returned = await after()
+  returned.send({ type: 'resume', code: hostSeat.code, token: hostSeat.token })
+  await returned.wait('room', ({ room }) => Boolean(room.paused))
+  const saved = await returned.wait('snapshot')
+  assert.equal(saved.resources.gold, 240)
+  assert.equal(saved.population.reserved, 1)
+  const other = await after()
+  other.send({ type: 'resume', code: guestSeat.code, token: guestSeat.token })
+  await returned.wait('room', ({ room }) => !room.paused)
+  await returned.wait('snapshot', ({ tick }) => tick > saved.tick)
+  await after.stop()
 })

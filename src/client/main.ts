@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, resourceKinds, upgradeKinds } from '../shared/protocol.ts'
-import type { Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import type { Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { unitStats } from '../shared/units.ts'
@@ -173,10 +173,16 @@ function showBattle() {
   scene = new BattleScene(faction, battlefield, minimap, {
     order: issueOrder,
     selection: drawSelection,
-    placement: (kind, blocked) => {
+    placement: (kind, blocked, segmentCount) => {
       placing = Boolean(kind)
       placementTip.hidden = !kind
       if (!kind) return
+      if (segmentCount !== undefined) {
+        const price = buildings.wall.cost.stone!
+        const count = Math.min(segmentCount, Math.floor(resources.stone / price))
+        setText('placement-message', count + ' wall segments · ' + (count * price) + ' stone')
+        return
+      }
       const action = kind === 'wall' ? 'Drag to queue a wall line, or tap a tile.' : 'Tap each tile to queue another.'
       element('placement-message').textContent = blocked ? 'Choose visible, open ground.' : entityNames[faction][kind] + ' · ' + action
     },
@@ -546,7 +552,7 @@ for (const item of factionButtons) {
   }
 }
 button('solo').onclick = () => {
-  if (!client.hasSeat) solo.start(faction, solo.saved)
+  if (!client.hasSeat) solo.start(faction, solo.saved, element<HTMLSelectElement>('solo-difficulty').value as Difficulty)
 }
 button('create').onclick = () => client.send({ type: 'create', faction })
 element<HTMLFormElement>('join-form').onsubmit = event => {

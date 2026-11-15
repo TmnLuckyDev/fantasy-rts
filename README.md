@@ -75,3 +75,11 @@ The browser test uses Chromium desktop against a landscape touch profile. The de
 The skirmish includes five combat unit types per faction, attack-move, A* navigation around obstacles, formations, projectile and damage effects, minimap, room codes, reconnects, and headquarters victory. Original voxel-inspired terrain, props, faction buildings and unit sprites are drawn with Canvas, and the lobby uses an original generated diorama illustration. Sound effects are synthesized with Web Audio.
 
 Upgrades and other maps are planned.
+
+## Batch production and restart recovery
+
+Set a training quantity or use **+5** and **+10**, then choose a unit. The whole order reserves farm capacity and pays up front. **Cancel last** and **Cancel quantity** remove orders from the end and refund all unspawned units removed. If the building is destroyed, its reserved capacity is released and its gold is lost. Select an unfinished foundation to cancel it and recover the unbuilt fraction of its cost.
+
+For multiplayer saves, set `MATCH_SAVE_FILE` to a writable file on durable storage, owned by the game server. Create its parent directory before starting. The server writes a versioned checkpoint every five seconds and flushes on graceful shutdown. An abrupt interruption can roll the game back to the latest checkpoint. Seats reconnect with their original tokens. The default Render deployment does not configure durable storage.
+
+Run `node scripts/benchmark.mjs` for the headless simulation load fixture and `node scripts/ai-league.mjs . 100 normal,normal` to compare computer opponents. The second argument accepts a checkout directory, so the same league can run against an earlier revision.

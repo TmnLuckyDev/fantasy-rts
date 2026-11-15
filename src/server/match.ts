@@ -6,10 +6,12 @@ import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING, STARTING_RESOURCES,
   buildings as buildingRules, canAfford, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, findPath } from './navigation.ts'
+import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
 
 export const TICK_HZ = 20
 const spacing = 30
+const maxRadius = Math.max(...Object.values(unitStats).flatMap(stats => Object.values(stats).map(unit => unit.radius)))
 const defenseRadius = 5 * TILE
 const defenseLeash = 8 * TILE
 const defenseDuration = 4 * TICK_HZ
@@ -58,6 +60,7 @@ export type MatchCheckpoint = {
 export class Match {
   readonly units = new Map<number, Unit>()
   readonly map: BattleMap
+  private readonly nearby = new SpatialIndex<Unit>()
   tick = 0
   result: Result | null = null
   private readonly resources: Record<Faction, Resources> = {
@@ -133,6 +136,7 @@ export class Match {
       job: null, cargo: null, queue: [], buildTicks: 0, buildDuration
     }
     this.units.set(id, unit)
+    this.nearby.update(unit)
     return unit
   }
 
@@ -349,8 +353,14 @@ export class Match {
     for (const angle of slots) {
       const point = { x: building.x + direction * Math.cos(angle) * bounds, y: building.y + Math.sin(angle) * bounds }
       if (!canStand(this.map, point, obstacles, radius)) continue
-      if ([...this.units.values()].some(unit => isUnitKind(unit.kind) &&
-          distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4)) continue
+      let occupied = false
+      for (const unit of this.nearby.near(point, radius + maxRadius + 4)) {
+        if (isUnitKind(unit.kind) && distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4) {
+          occupied = true
+          break
+        }
+      }
+      if (occupied) continue
       if ((next.count ?? 1) <= 1) building.queue.shift()
       else {
         next.count = next.count! - 1
@@ -402,6 +412,7 @@ export class Match {
   step() {
     if (this.result) return
     this.tick++
+    this.nearby.reset(this.units.values())
     const incoming: Missile[] = []
     for (const missile of this.missiles) {
       if (missile.arrives <= this.tick) this.hit(missile.attacker, missile.targetId)
@@ -442,10 +453,10 @@ export class Match {
       target ??= defenderTarget
       if (automaticRange > 0 && unit.order?.kind !== 'move' && !target) {
         let nearest = automaticRange
-        for (const other of this.units.values()) {
+        for (const other of this.nearby.near(unit, automaticRange + maxRadius)) {
           if (other.faction === unit.faction || (unit.kind === 'tower' && !isUnitKind(other.kind))) continue
           const separation = distance(unit, other) - unitStats[other.faction][other.kind].radius
-          if (separation < nearest && this.visibility.at(unit.faction, other) === 2) {
+          if ((separation < nearest || (separation === nearest && target && this.nearby.before(other, target))) && this.visibility.at(unit.faction, other) === 2) {
             nearest = separation
             target = other
           }
@@ -483,7 +494,7 @@ export class Match {
     const at = { x: victim.x, y: victim.y }
     const radius = defenseRadius + unitStats[victim.faction][victim.kind].radius
     if (distance(at, attacker) > defenseLeash) return
-    for (const unit of this.units.values()) {
+    for (const unit of this.nearby.near(at, radius)) {
       if (unit.faction !== victim.faction || !isUnitKind(unit.kind) || !unitStats[unit.faction][unit.kind].damage ||
           unit.order?.kind === 'move' || unit.order?.kind === 'attack' || distance(unit, at) > radius) continue
       const current = this.defendedAgainst(unit)
@@ -536,6 +547,7 @@ export class Match {
     })
     if (!target.hp) {
       this.units.delete(target.id)
+      this.nearby.remove(target)
       this.effects.push({ id: ++this.sequence, kind: 'fallen', at, faction: target.faction, entityKind: target.kind })
     }
   }
@@ -565,7 +577,7 @@ export class Match {
       const test = { x, y }
       if (!canStand(this.map, test, obstacles, stats.radius)) continue
       let collides = false
-      for (const other of this.units.values()) {
+      for (const other of this.nearby.near(test, stats.radius + maxRadius)) {
         if (other === unit || !isUnitKind(other.kind)) continue
         const minimum = (stats.radius + unitStats[other.faction][other.kind].radius) * 0.78
         const gap = distance(test, other)
@@ -578,6 +590,7 @@ export class Match {
       if (Math.abs(x - unit.x) > 0.8) unit.facing = x < unit.x ? -1 : 1
       unit.x = x
       unit.y = y
+      this.nearby.update(unit)
       unit.moving = true
       unit.blockedTicks = angle ? unit.blockedTicks + 1 : 0
       return

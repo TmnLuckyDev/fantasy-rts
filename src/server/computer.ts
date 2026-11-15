@@ -1,22 +1,25 @@
-import { buildings, canAfford } from '../shared/economy.ts'
+import { buildings, canAfford, upgrades } from '../shared/economy.ts'
 import { TILE, cellCenter, distance, isWalkable, resourceAt } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
 import { isUnitKind, opposite } from '../shared/protocol.ts'
-import type { BuildingKind, Entity, Faction, Point, ResourceKind, Snapshot, UnitKind } from '../shared/protocol.ts'
+import type { BuildingKind, Difficulty, Entity, Faction, Point, ResourceKind, Snapshot, UnitKind } from '../shared/protocol.ts'
 import { TICK_HZ } from './match.ts'
 import type { Match } from './match.ts'
 
 const resourceAssignments = ['gold', 'wood', 'stone', 'gold'] as const
-const workerTarget = 4
-const guardsToKeep = 3
-const firstAssault = 75 * TICK_HZ
-const assaultInterval = 28 * TICK_HZ
+const plans = {
+  easy: { cadence: 2, workers: 4, first: 105, interval: 38, guard: 3, wave: 5 },
+  normal: { cadence: 1, workers: 4, first: 75, interval: 28, guard: 3, wave: 7 },
+  hard: { cadence: 1, workers: 5, first: 58, interval: 24, guard: 4, wave: 10 }
+} as const
+type Strategy = 'rush' | 'balanced' | 'defensive' | 'counter'
 
 const sites: Partial<Record<BuildingKind, Point>> = {
   barracks: { x: 6, y: 2 },
   farm: { x: 4, y: 4 },
   range: { x: 6, y: -3 },
   tower: { x: 9, y: 0 },
+  smithy: { x: 6, y: 5 },
   elite: { x: 3, y: -2 }
 }
 
@@ -26,7 +29,7 @@ const recruit: Partial<Record<Entity['kind'], readonly UnitKind[]>> = {
   elite: ['heavy']
 }
 
-export type ComputerCheckpoint = { attacking: number[], nextAssault: number, recruits: number }
+export type ComputerCheckpoint = { attacking: number[], nextAssault: number, recruits: number, difficulty?: Difficulty, strategy?: Strategy }
 
 export class ComputerOpponent {
   readonly faction: Faction
@@ -35,10 +38,16 @@ export class ComputerOpponent {
   private readonly gatherSites: Partial<Record<ResourceKind, Point>> = {}
   private readonly constructionSites = new Map<BuildingKind, Point[]>()
   private readonly attacking = new Set<number>()
-  private nextAssault = firstAssault
+  private nextAssault: number
+  private readonly difficulty: Difficulty
+  private readonly strategy: Strategy
   private recruits = 0
 
-  constructor(faction: Faction, map: BattleMap) {
+  constructor(faction: Faction, map: BattleMap, difficulty: Difficulty = 'normal', strategy: Strategy = 'balanced') {
+    this.difficulty = difficulty
+    this.strategy = strategy
+    const modifier = strategy === 'rush' ? -15 : strategy === 'defensive' ? 20 : 0
+    this.nextAssault = (plans[difficulty].first + modifier) * TICK_HZ
     this.faction = faction
     this.home = map.bases[faction]
     this.enemyBase = map.bases[opposite(faction)]
@@ -60,7 +69,7 @@ export class ComputerOpponent {
   }
 
   checkpoint(): ComputerCheckpoint {
-    return { attacking: [...this.attacking], nextAssault: this.nextAssault, recruits: this.recruits }
+    return { attacking: [...this.attacking], nextAssault: this.nextAssault, recruits: this.recruits, difficulty: this.difficulty, strategy: this.strategy }
   }
 
   restore(checkpoint: ComputerCheckpoint) {
@@ -70,15 +79,16 @@ export class ComputerOpponent {
   }
 
   think(match: Match) {
-    if (match.result || match.tick % TICK_HZ !== 0) return
+    const plan = plans[this.difficulty]
+    if (match.result || match.tick % (plan.cadence * TICK_HZ) !== 0) return
     const view = match.view(this.faction)
     const own = view.entities.filter(entity => entity.faction === this.faction)
     const structures = own.filter(entity => !isUnitKind(entity.kind))
     const hall = structures.find(entity => entity.kind === 'headquarters')
     if (!hall) return
     const workers = own.filter(entity => entity.kind === 'worker')
-    const builder = workers.length >= workerTarget ? workers.at(-1) : undefined
-    if (workers.length < workerTarget && !hall.training) {
+    const builder = workers.length >= 4 ? workers.at(-1) : undefined
+    if (workers.length < plan.workers && !hall.training) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
     if (builder) this.build(match, view, builder, structures)
@@ -90,22 +100,32 @@ export class ComputerOpponent {
         match.command(this.faction, [worker.id], { kind: 'gather', at })
       }
     })
+    const smith = structures.find(unit => unit.kind === 'smithy' && unit.construction === undefined && !unit.research)
+    if (smith) {
+      for (const kind of ['weapons', 'armor'] as const) {
+        if (!view.upgrades?.includes(kind) && canAfford(view.resources, upgrades[kind].cost) &&
+            match.command(this.faction, [smith.id], { kind: 'upgrade', upgrade: kind })) break
+      }
+    }
     const army = own.filter(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
-    this.trainArmy(match, army, structures)
+    this.trainArmy(match, army, structures, view)
     this.maneuver(match, view, army)
   }
 
-  private trainArmy(match: Match, army: Entity[], structures: Entity[]) {
+  private trainArmy(match: Match, army: Entity[], structures: Entity[], view: Snapshot) {
     const available = structures.filter(building =>
-      recruit[building.kind] && !building.training && building.construction === undefined)
+      recruit[building.kind] && (building.training?.remaining ?? 0) < (this.difficulty === 'hard' ? 2 : 1) && building.construction === undefined)
     const rangedCount = army.filter(unit => unit.kind === 'ranged' || unit.kind === 'marksman').length
-    const ranged = rangedCount * 3 < army.length && available.find(building => building.kind === 'range')
+    const visibleHeavy = view.entities.some(unit => unit.faction !== this.faction && unit.kind === 'heavy')
+    const counter = this.difficulty === 'hard' || this.strategy === 'counter'
+    const ranged = rangedCount * (counter && visibleHeavy ? 4 : 3) < army.length && available.find(building => building.kind === 'range')
     const elite = army.length >= 8 && !army.some(unit => unit.kind === 'heavy') &&
       available.find(building => building.kind === 'elite')
     const building = ranged || elite || available.find(site => site.kind === 'barracks') || available[0]
     if (!building) return
     const choices = recruit[building.kind]!
-    const preferred = choices[this.recruits % choices.length]
+    const preferred = counter && visibleHeavy && building.kind === 'barracks' ?
+      'polearm' : choices[this.recruits % choices.length]
     if (match.command(this.faction, [building.id], { kind: 'train', unit: preferred }) ||
         (preferred !== choices[0] && match.command(this.faction, [building.id], { kind: 'train', unit: choices[0] }))) this.recruits++
   }
@@ -119,13 +139,15 @@ export class ComputerOpponent {
     }
     const has = (kind: BuildingKind) => structures.some(entity => entity.kind === kind)
     const population = view.population
-    const needsFarm = population.limit - population.used - population.reserved <= 1
+    const needsFarm = population.limit - population.used - population.reserved <= (this.difficulty === 'hard' ? 3 : 1)
     const desired: Array<[BuildingKind, boolean]> = [
       ['barracks', !has('barracks')],
       ['farm', needsFarm],
+      ['tower', this.strategy === 'defensive' && !has('tower')],
       ['range', !has('range')],
       ['tower', !has('tower')],
-      ['elite', match.tick >= 90 * TICK_HZ && !has('elite')]
+      ['elite', match.tick >= 90 * TICK_HZ && !has('elite')],
+      ['smithy', this.difficulty !== 'easy' && match.tick >= 100 * TICK_HZ && !has('smithy')]
     ]
     const kind = desired.find(([, needed]) => needed)?.[0]
     if (!kind || !canAfford(view.resources, buildings[kind].cost)) return
@@ -147,11 +169,14 @@ export class ComputerOpponent {
       if (idle.length) match.command(this.faction, idle.map(unit => unit.id), { kind: 'advance', to: intruder })
       return
     }
-    if (match.tick < this.nextAssault || reserve.length < guardsToKeep + 4) return
-    const wave = reserve.slice(0, Math.min(7, reserve.length - guardsToKeep))
-    if (match.command(this.faction, wave.map(unit => unit.id), { kind: 'advance', to: this.enemyBase })) {
+    const plan = plans[this.difficulty]
+    if (match.tick < this.nextAssault || reserve.length < plan.guard + 4) return
+    const wave = reserve.slice(0, Math.min(plan.wave, reserve.length - plan.guard))
+    const worker = (this.strategy === 'rush' || this.difficulty === 'hard') ?
+      view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'worker') : undefined
+    if (match.command(this.faction, wave.map(unit => unit.id), { kind: 'advance', to: worker ?? this.enemyBase })) {
       for (const unit of wave) this.attacking.add(unit.id)
-      this.nextAssault = match.tick + assaultInterval
+      this.nextAssault = match.tick + plan.interval * TICK_HZ
     }
   }
 }

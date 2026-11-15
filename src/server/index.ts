@@ -1,8 +1,10 @@
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, readFileSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { rename, writeFile } from 'node:fs/promises'
 import { resolve, sep, extname } from 'node:path'
 import { WebSocket, WebSocketServer } from 'ws'
 import { TICK_HZ } from './match.ts'
+import type { SavedRoom } from './rooms.ts'
 import { Rooms } from './rooms.ts'
 import { parseMessage } from './validate.ts'
 
@@ -59,6 +61,34 @@ const http = createServer((request, response) => {
 
 const sockets = new WebSocketServer({ noServer: true, maxPayload: 16_384, perMessageDeflate: false })
 const rooms = new Rooms()
+const savePath = process.env.MATCH_SAVE_FILE
+let pendingSave: Promise<void> | undefined
+let savedText = ''
+if (savePath) {
+  try {
+    savedText = readFileSync(savePath, 'utf8')
+    const state = JSON.parse(savedText) as { version: number, rooms: SavedRoom[] }
+    if (state.version !== 1 || !Array.isArray(state.rooms)) throw new Error('Unsupported match save format')
+    rooms.restore(state.rooms)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+}
+
+async function saveMatches() {
+  if (!savePath || pendingSave) return
+  const text = JSON.stringify({ version: 1, rooms: rooms.checkpoint() })
+  if (text === savedText) return
+  const temporary = savePath + '.tmp'
+  pendingSave = writeFile(temporary, text, { mode: 0o600 })
+    .then(() => rename(temporary, savePath))
+    .then(() => { savedText = text })
+    .catch(error => { console.error('Could not save matches', error) })
+    .finally(() => { pendingSave = undefined })
+  await pendingSave
+}
+
+const autosave = savePath ? setInterval(() => { void saveMatches() }, 5000) : undefined
 const lastPong = new Map<WebSocket, number>()
 http.on('upgrade', (request, socket, head) => {
   const origin = request.headers.origin
@@ -113,12 +143,19 @@ const heartbeat = setInterval(() => {
   }
 }, 10_000)
 
-function close() {
+let closing = false
+async function close() {
+  if (closing) return
+  closing = true
   clearInterval(heartbeat)
   clearInterval(tick)
-  for (const peer of sockets.clients) peer.terminate()
-  sockets.close()
+  clearInterval(autosave)
+  // Stop accepting commands before flushing the final snapshot.
   http.close()
+  for (const peer of sockets.clients) peer.terminate()
+  await pendingSave
+  await saveMatches()
+  sockets.close()
 }
 process.once('SIGINT', close)
 process.once('SIGTERM', close)

@@ -3,7 +3,9 @@ import { WebSocket } from 'ws'
 import { opposite } from '../shared/protocol.ts'
 import type { ClientMessage, Faction, RoomState, ServerMessage } from '../shared/protocol.ts'
 import { Match } from './match.ts'
+import type { MatchCheckpoint } from './match.ts'
 import { ComputerOpponent } from './computer.ts'
+import type { ComputerCheckpoint } from './computer.ts'
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const reconnectWindow = 45_000
@@ -26,6 +28,13 @@ type Room = {
   updatedAt: number
   finishedAt: number
 }
+export type SavedRoom = {
+  code: string
+  seats: Array<Pick<Seat, 'faction' | 'ready' | 'token'>>
+  match: MatchCheckpoint
+  computer?: ComputerCheckpoint
+  finishedAt: number
+}
 type Session = { room: Room, seat: Seat }
 
 const send = (peer: WebSocket | null, message: ServerMessage) => {
@@ -35,6 +44,30 @@ const send = (peer: WebSocket | null, message: ServerMessage) => {
 export class Rooms {
   private rooms = new Map<string, Room>()
   private sessions = new Map<WebSocket, Session>()
+
+  checkpoint(): SavedRoom[] {
+    return [...this.rooms.values()].flatMap(room => room.match ? [{
+      code: room.code,
+      seats: room.seats.map(({ faction, ready, token }) => ({ faction, ready, token })),
+      match: room.match.checkpoint(),
+      computer: room.computer?.checkpoint(),
+      finishedAt: room.finishedAt
+    }] : [])
+  }
+
+  restore(saved: SavedRoom[], now = Date.now()) {
+    const restored = new Map<string, Room>()
+    for (const room of saved) {
+      if (room.match.result && now - room.finishedAt > resultLifetime) continue
+      const match = Match.restore(room.match)
+      const computer = room.computer
+        ? new ComputerOpponent(opposite(room.seats[0].faction), match.map, room.computer.difficulty, room.computer.strategy) : null
+      if (computer && room.computer) computer.restore(room.computer)
+      const seats = room.seats.map(seat => ({ ...seat, peer: null, disconnectedAt: now }))
+      restored.set(room.code, { ...room, match, computer, seats, updatedAt: now })
+    }
+    this.rooms = restored
+  }
 
   handle(peer: WebSocket, message: ClientMessage, now = Date.now()) {
     const session = this.sessions.get(peer)

@@ -18,7 +18,7 @@ type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObject
 type BattleActions = {
   order: (ids: number[], order: Order) => void
   selection: (entities: Entity[], interactive: boolean) => void
-  placement: (kind: BuildingKind | null, blocked?: boolean) => void
+  placement: (kind: BuildingKind | null, blocked?: boolean, segmentCount?: number) => void
   effect: (kind: Effect['kind']) => void
 }
 
@@ -429,7 +429,17 @@ export class BattleScene extends Phaser.Scene {
     }
     this.graphics.clear()
     const blend = Math.min(1, delta / 70)
+    const camera = this.cameras.main
+    const center = this.cameraCenter()
+    const halfWidth = camera.width / camera.zoom / 2 + 96
+    const halfHeight = camera.height / camera.zoom / 2 + 96
     for (const { entity, sprite, lastHp } of this.visuals.values()) {
+      const visible = Math.abs(entity.x - center.x) < halfWidth && Math.abs(entity.y - center.y) < halfHeight
+      sprite.setVisible(visible)
+      if (!visible) {
+        sprite.setPosition(entity.x, entity.y)
+        continue
+      }
       const building = !isUnitKind(entity.kind)
       sprite.x += (entity.x - sprite.x) * blend
       sprite.y += (entity.y - sprite.y) * blend
@@ -492,11 +502,15 @@ export class BattleScene extends Phaser.Scene {
       const points = drag && this.placing === 'wall'
         ? wallLine(ashford, this.world(drag.from), this.world(drag.to))
         : [snapToCell(this.world(this.pointer))]
+      let valid = 0
       for (const at of points) {
-        const color = this.sightAt(at) === 2 && validPlacement(ashford, this.placing, at, this.entities()) ? 0x9fdf8d : 0xf27b65
+        const ok = this.sightAt(at) === 2 && validPlacement(ashford, this.placing, at, this.entities())
+        if (ok) valid++
+        const color = ok ? 0x9fdf8d : 0xf27b65
         this.ui.fillStyle(color, 0.27).fillRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
         this.ui.lineStyle(1, color, 0.9).strokeRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
       }
+      if (drag && this.placing === 'wall') this.actions.placement('wall', false, valid)
     }
     if (drag && !this.placing) {
       const a = this.world(drag.from)
