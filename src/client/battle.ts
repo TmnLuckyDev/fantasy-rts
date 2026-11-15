@@ -5,7 +5,9 @@ import { decodeFog } from '../shared/fog.ts'
 import { validPlacement } from '../shared/economy.ts'
 import type { BuildingKind, Effect, Entity, Faction, Order, Point, Snapshot } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
-import { canvas, entityTexture, factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
+import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
+import { entityTexture } from './sprites.ts'
+import { canvas } from './voxel.ts'
 import { BattlefieldInput } from './input.ts'
 import type { SelectionRect } from './input.ts'
 
@@ -64,7 +66,7 @@ export class BattleScene extends Phaser.Scene {
     }
     this.water = this.add.graphics().setDepth(-4)
     for (const tile of ['forest', 'rock', 'mine', 'quarry'] as const) {
-      for (let v = 0; v < (tile === 'forest' ? 3 : 1); v++) this.textures.addCanvas(tile + v, propTexture(tile, v))
+      for (let v = 0; v < (tile === 'forest' || tile === 'rock' ? 3 : 1); v++) this.textures.addCanvas(tile + v, propTexture(tile, v))
     }
     for (const faction of ['human', 'orc'] as const) {
       for (const kind of entityKinds) {
@@ -75,10 +77,10 @@ export class BattleScene extends Phaser.Scene {
     ashford.tiles.forEach((tile, i) => {
       if (tile !== 'forest' && tile !== 'rock' && tile !== 'mine' && tile !== 'quarry') return
       const point = cellCenter(i % ashford.width, Math.floor(i / ashford.width))
-      const rand = randomAt(i * 61 + 905)
-      const variant = tile === 'forest' ? Math.floor(rand() * 3) : 0
-      const sprite = this.add.image(point.x + (rand() - 0.5) * 8, point.y, tile + variant)
-      sprite.setScale(tile === 'rock' ? 1.23 : 1.18).setOrigin(0.5, 0.82).setDepth(point.y - 1)
+      const rand = randomAt(Math.imul(i + 1, 0x9e3779b9))
+      const variant = tile === 'forest' || tile === 'rock' ? Math.floor(rand() * 3) : 0
+      const sprite = this.add.image(point.x + (rand() - 0.5) * 8, point.y + (rand() - 0.5) * 4, tile + variant)
+      sprite.setScale(tile === 'forest' ? 1.06 : 0.96).setOrigin(0.5, 40 / 48).setDepth(point.y - 1)
     })
     this.graphics = this.add.graphics().setDepth(mapHeight + 2)
     this.fogTexture = this.textures.createCanvas('fog', ashford.width, ashford.height)!
@@ -143,8 +145,8 @@ export class BattleScene extends Phaser.Scene {
         visual.entity = entity
       } else {
         const sprite = this.add.image(entity.x, entity.y, entity.faction + entity.kind + '0')
-          .setOrigin(0.5, entity.kind === 'headquarters' ? 0.85 : 0.84)
-          .setScale(entity.kind === 'headquarters' ? 1.84 : 1.48)
+          .setOrigin(0.5, 0.83)
+          .setScale(isUnitKind(entity.kind) ? 1.21 : entity.kind === 'headquarters' ? 1.55 : 1.4)
         this.visuals.set(entity.id, { entity, sprite, lastHp: entity.hp })
       }
     }
@@ -152,7 +154,7 @@ export class BattleScene extends Phaser.Scene {
       let sprite: Phaser.GameObjects.Image | undefined
       if (effect.kind === 'fallen' && isUnitKind(effect.entityKind)) {
         sprite = this.add.image(effect.at.x, effect.at.y, effect.faction + effect.entityKind + '0')
-          .setOrigin(0.5, 0.84).setScale(1.48).setDepth(effect.at.y - 1)
+          .setOrigin(0.5, 0.83).setScale(1.21).setDepth(effect.at.y - 1)
       }
       this.effects.push({ effect, born: this.time.now, sprite })
       const camera = this.cameras.main
@@ -375,11 +377,13 @@ export class BattleScene extends Phaser.Scene {
     const vertical = Number(this.keys?.DOWN.isDown ?? false) - Number(this.keys?.UP.isDown ?? false)
     if (horizontal || vertical) this.pan(-horizontal * delta * 0.37, -vertical * delta * 0.37)
     this.water.clear()
-    this.water.fillStyle(0x8eb4ac, 0.32)
     for (let i = 0; i < 48; i++) {
       const y = (i * 53 + Math.floor(time * 0.024)) % mapHeight
       if (ashford.tiles[Math.floor(y / TILE) * ashford.width + riverColumn] !== 'water') continue
-      this.water.fillRect(riverColumn * TILE + (i * 13) % 54, y, 6 + i % 7, 1)
+      const x = riverColumn * TILE + 5 + (i * 13) % 45
+      const glint = 0.16 + 0.26 * ((Math.sin(time * 0.003 + i) + 1) / 2)
+      this.water.fillStyle(0xa4e0d8, glint).fillRect(x, y, 5 + i % 8, 2)
+      this.water.fillStyle(0x72cbd1, glint).fillRect(x + 4, y + 2, 8 + i % 5, 1)
     }
     this.graphics.clear()
     const blend = Math.min(1, delta / 70)
@@ -392,8 +396,15 @@ export class BattleScene extends Phaser.Scene {
         const frame = entity.moving ? Math.floor(time / 125) % 2 : 0
         sprite.setTexture(entity.faction + entity.kind + frame).setFlipX(entity.facing < 0)
       }
-      if (entity.construction !== undefined) sprite.setAlpha(0.38 + entity.construction * 0.52)
-      else sprite.setAlpha(1)
+      sprite.setAlpha(entity.construction === undefined ? 1 : 0.4 + entity.construction * 0.55)
+      const radius = unitStats[entity.faction][entity.kind].radius
+      if (entity.construction !== undefined) {
+        this.graphics.fillStyle(0x3d332d, 0.8).fillRect(sprite.x - radius, sprite.y + 1, radius * 2, 4)
+        for (const side of [-1, 1]) {
+          this.graphics.fillStyle(0xe4b675, 0.95).fillRect(sprite.x + side * (radius - 3) - 1, sprite.y - 12, 3, 15)
+        }
+        this.graphics.lineStyle(2, 0xd19a5e, 0.9).lineBetween(sprite.x - radius + 3, sprite.y - 12, sprite.x + radius - 3, sprite.y + 1)
+      }
       if (entity.carrying) {
         const cargoColor = { gold: 0xf6cd61, wood: 0xc48d56, stone: 0xc4ccd3 }
         this.graphics.fillStyle(0x493920, 1).fillRect(sprite.x - 11, sprite.y - 13, 9, 8)
@@ -402,16 +413,21 @@ export class BattleScene extends Phaser.Scene {
       const selected = this.selected.has(entity.id)
       const color = factionColor[entity.faction]
       if (selected) {
-        this.graphics.lineStyle(1.5, 0xecdf9c, 0.95)
-        this.graphics.strokeEllipse(sprite.x, sprite.y + 2, building ? unitStats[entity.faction][entity.kind].radius * 2.1 : 29, building ? 22 : 12)
+        const width = building ? radius * 2.1 : 27
+        this.graphics.lineStyle(3.5, 0x182c26, 0.8).strokeEllipse(sprite.x, sprite.y + 2, width, building ? 22 : 12)
+        this.graphics.lineStyle(1.5, 0xffe89e, 1).strokeEllipse(sprite.x, sprite.y + 2, width, building ? 22 : 12)
       }
-      const w = building ? unitStats[entity.faction][entity.kind].radius * 1.8 : 22
-      const x = sprite.x - w / 2
-      const y = sprite.y - (entity.kind === 'headquarters' ? 82 : entity.kind === 'tower' ? 65 : (building && entity.kind !== 'wall') ? 47 : 40)
-      this.graphics.fillStyle(0x1b1914, 0.9).fillRect(x - 1, y - 1, w + 2, 5)
-      this.graphics.fillStyle(0x30271e, 1).fillRect(x, y, w, 3)
-      this.graphics.fillStyle(color, 0.97).fillRect(x, y, w * entity.hp / entity.maxHp, 3)
-      if (entity.construction !== undefined) this.graphics.fillStyle(0xf4b853, 1).fillRect(x, y + 6, w * entity.construction, 2)
+      if (selected || entity.hp < entity.maxHp || entity.kind === 'headquarters' || entity.construction !== undefined) {
+        const w = building ? radius * 1.8 : 22
+        const x = sprite.x - w / 2
+        const y = sprite.y - (entity.kind === 'headquarters' ? 85 : entity.kind === 'tower' ? 65 : entity.kind === 'wall' ? 31 : building ? 46 : 37)
+        this.graphics.fillStyle(0x1a252c, 0.95).fillRoundedRect(x - 2, y - 2, w + 4, 7, 2)
+        this.graphics.fillStyle(0x3f3e43, 1).fillRect(x, y, w, 3)
+        const hp = w * entity.hp / entity.maxHp
+        this.graphics.fillStyle(color, 1).fillRect(x, y, hp, 3)
+        this.graphics.fillStyle(0xfff5df, 0.38).fillRect(x, y, hp, 1)
+        if (entity.construction !== undefined) this.graphics.fillStyle(0xf8c972, 1).fillRect(x, y + 6, w * entity.construction, 2)
+      }
       if (building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
       if (entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
@@ -420,8 +436,11 @@ export class BattleScene extends Phaser.Scene {
     this.markers = this.markers.filter(mark => {
       const t = (time - mark.born) / 410
       if (t > 1) return false
-      this.ui.lineStyle(2, mark.color, 1 - t)
-      this.ui.strokeEllipse(mark.point.x, mark.point.y, 12 + t * 22, 6 + t * 12)
+      const { x, y } = mark.point
+      const size = 8 + t * 13
+      this.ui.lineStyle(3, 0x182822, (1 - t) * 0.8).strokeEllipse(x, y, size * 2, size)
+      this.ui.lineStyle(1.5, mark.color, 1 - t).strokeEllipse(x, y, size * 2, size)
+      this.ui.fillStyle(mark.color, 1 - t).fillRect(x - 1, y - 2, 3, 3)
       return true
     })
     if (this.placing && this.pointer) {
@@ -467,7 +486,13 @@ export class BattleScene extends Phaser.Scene {
         const dy = effect.to.y - y
         const start = Math.max(0, t - 0.09)
         const arc = Math.sin(t * Math.PI) * 17
-        this.graphics.lineStyle(2, 0xe5cf9e, 0.95).lineBetween(x + dx * start, y + dy * start - 15 - arc, x + dx * t, y + dy * t - 15 - arc)
+        const tipX = x + dx * t
+        const tipY = y + dy * t - 15 - arc
+        const tailX = x + dx * start
+        const tailY = y + dy * start - 15 - Math.sin(start * Math.PI) * 17
+        this.graphics.lineStyle(3, 0x322d34, 0.78).lineBetween(tailX, tailY, tipX, tipY)
+        this.graphics.lineStyle(1.5, 0xfce0a2, 0.95).lineBetween(tailX, tailY, tipX, tipY)
+        this.graphics.fillStyle(0xfff4d5, 1).fillRect(tipX - 1, tipY - 1, 3, 3)
       } else if (effect.kind === 'hit') {
         if (age > 230) return false
         const t = age / 230
