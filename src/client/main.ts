@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, resourceKinds } from '../shared/protocol.ts'
-import type { Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, resourceKinds, upgradeKinds } from '../shared/protocol.ts'
+import type { Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
-import { buildings, canAfford, FARM_POPULATION, trainedAt, training, TRAINING_QUEUE_LIMIT } from '../shared/economy.ts'
+import { buildings, canAfford, FARM_POPULATION, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
 import { BattleScene } from './battle.ts'
@@ -24,7 +24,10 @@ const lobbyMessage = element('lobby-message')
 const result = element<HTMLDialogElement>('result')
 const banner = element('banner')
 const menu = element('economy-menu')
+const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
+const productionPanel = element('production-panel')
+const productionToggle = button('production-toggle')
 const placementTip = element('placement-tip')
 const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
 const audio = new BattleAudio()
@@ -36,8 +39,11 @@ let scene: BattleScene | null = null
 let game: Phaser.Game | null = null
 let orderMessageTimer: number | undefined
 let resources: Resources = { gold: 0, wood: 0, stone: 0 }
+let ownEntities: Entity[] = []
+let researched: UpgradeKind[] = []
 let population: Population = { used: 0, reserved: 0, limit: 0 }
-const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number }>()
+let trainCount = 1
+const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind, bulk?: boolean }>()
 let selection: Entity[] = []
 let placing = false
 let economyContext = ''
@@ -117,6 +123,9 @@ function receive(message: ServerMessage) {
     case 'snapshot':
       resources = message.resources
       population = message.population
+      ownEntities = message.entities.filter(entity => entity.faction === faction)
+      researched = message.upgrades ?? []
+      drawProduction()
       drawEconomy()
       const idle = message.entities.filter(entity => entity.faction === faction && entity.idle).length
       button('idle-worker').disabled = idle === 0
@@ -165,10 +174,19 @@ function showBattle() {
   scene = new BattleScene(faction, battlefield, minimap, {
     order: issueOrder,
     selection: drawSelection,
-    placement: (active, blocked) => {
-      placing = active
-      placementTip.hidden = !active
-      element('placement-message').textContent = blocked ? 'Choose visible, open ground.' : 'Choose a clear tile to build on.'
+    placement: (kind, blocked, segmentCount) => {
+      placing = Boolean(kind)
+      placementTip.hidden = !kind
+      syncWorkerActions()
+      if (!kind) return
+      if (segmentCount !== undefined) {
+        const price = buildings.wall.cost.stone!
+        const count = Math.min(segmentCount, Math.floor(resources.stone / price))
+        setText('placement-message', count + ' wall segments · ' + (count * price) + ' stone')
+        return
+      }
+      const action = kind === 'wall' ? 'Drag to queue a wall line, or tap a tile.' : 'Tap each tile to queue another.'
+      element('placement-message').textContent = blocked ? 'Choose visible, open ground.' : entityNames[faction][kind] + ' · ' + action
     },
     effect: kind => audio.play(kind)
   })
@@ -176,6 +194,10 @@ function showBattle() {
   setText('idle-count', '0')
   scene.advanceMode = false
   resources = { gold: 0, wood: 0, stone: 0 }
+  ownEntities = []
+  researched = []
+  toggleProduction(false)
+  drawProduction()
   population = { used: 0, reserved: 0, limit: 0 }
   drawEconomy()
   placementTip.hidden = true
@@ -222,13 +244,16 @@ function drawSelection(entities: Entity[], interactive = false) {
   const workers = entities.some(entity => entity.kind === 'worker')
   const trainer = entities.length === 1 && selected && selected.construction === undefined &&
     trainedAt(selected.kind).length ? selected : undefined
-  const nextContext = workers ? 'build' : trainer ? 'train:' + trainer.id : ''
+  const smithy = entities.length === 1 && selected?.kind === 'smithy' && selected.construction === undefined
+  const foundation = entities.length === 1 && selected?.construction !== undefined
+  const nextContext = workers ? 'build' : trainer ? 'train:' + trainer.id :
+    smithy ? 'research:' + selected.id : foundation ? 'cancel:' + selected.id : ''
   const changed = nextContext !== economyContext
   economyContext = nextContext
   economyAction.hidden = !nextContext
-  economyAction.textContent = workers ? 'Build' : 'Train'
-  if (!nextContext) closeEconomyMenu()
-  else if (changed || interactive) openEconomyMenu(changed)
+  economyAction.textContent = workers ? 'Build' : smithy ? 'Upgrade' : foundation ? 'Construction' : 'Train'
+  if (!nextContext || (workers && (changed || interactive))) closeEconomyMenu()
+  else if (!workers && (changed || interactive)) openEconomyMenu(changed)
   else if (!menu.hidden) updateEconomyOptions()
   const label = element('selection-name')
   const detail = element('selection-detail')
@@ -250,10 +275,10 @@ function drawSelection(entities: Entity[], interactive = false) {
   meter.value = hp / totalHp * 100
   if (entities.length === 1) {
     label.textContent = entityNames[selected.faction][selected.kind]
-    if (selected.construction !== undefined) detail.textContent = 'Building · ' + Math.floor(selected.construction * 100) + '%'
+    if (selected.construction !== undefined) detail.textContent = constructionSummary(selected)
+    else if (selected.research) detail.textContent = upgrades[selected.research.kind].name + ' · ' + percentage(selected.research.progress)
     else if (selected.training) {
-      const next = entityNames[faction][selected.training.kind]
-      detail.textContent = `${next} · ${Math.floor(selected.training.progress * 100)}% · ${selected.training.remaining} queued`
+      detail.textContent = trainingSummary(selected.training)
     } else if (selected.kind === 'worker') {
       detail.textContent = selected.carrying ? `Carrying ${selected.carrying} to the hall.` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
     } else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP`
@@ -288,30 +313,42 @@ function gatherHint() {
 function closeEconomyMenu() {
   menu.hidden = true
   economyAction.setAttribute('aria-expanded', 'false')
+  syncWorkerActions()
+}
+
+function syncWorkerActions() {
+  workerActions.hidden = economyContext !== 'build' || placing || !menu.hidden || !productionPanel.hidden
 }
 
 function updateEconomyOptions() {
-  const full = (selection[0]?.training?.remaining ?? 0) >= TRAINING_QUEUE_LIMIT
   const available = population.limit - population.used - population.reserved
   let needsFarm = false
   for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
     const rule = choiceRules.get(choice)
     if (!rule) continue
-    const needsSpace = rule.population > 0 && rule.population > available
+    const needsSpace = rule.population > 0 && rule.population * (rule.bulk ? trainCount : 1) > available
     needsFarm ||= needsSpace
-    choice.disabled = full || needsSpace || !canAfford(resources, rule.cost)
+    const unavailable = rule.upgrade && (researched.includes(rule.upgrade) ||
+      Boolean(selection[0]?.research) || ownEntities.some(entity => entity.research?.kind === rule.upgrade))
+    const cost = rule.bulk ? { gold: (rule.cost.gold ?? 0) * trainCount } : rule.cost
+    choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, cost)
+    if (rule.bulk) {
+      const label = choice.querySelector('small')
+      if (label) label.textContent = trainCount === 1 ? cost.gold + ' gold' : trainCount + ' × · ' + cost.gold + ' gold'
+    }
+    if (rule.upgrade) choice.title = researched.includes(rule.upgrade) ? 'Researched' : ''
   }
   const hint = menu.querySelector<HTMLElement>('.economy-hint')
   if (hint) hint.hidden = !needsFarm
 }
 
-function economyChoice(kind: EntityKind, cost: Cost, population: number, act: () => void) {
+function economyChoice(kind: EntityKind, cost: Cost, population: number, act: () => void, upgrade?: UpgradeKind) {
   const choice = document.createElement('button')
   choice.type = 'button'
-  choiceRules.set(choice, { cost, population })
+  choiceRules.set(choice, { cost, population, upgrade })
   const prices = resourceKinds.flatMap(kind => cost[kind] ? [`${cost[kind]} ${kind}`] : [])
   if (population > 1) prices.push(`${population} pop`)
-  const name = entityNames[faction][kind]
+  const name = upgrade ? upgrades[upgrade].name : entityNames[faction][kind]
   choice.setAttribute('aria-label', [name, ...prices].join(' · '))
   const icon = document.createElement('canvas')
   icon.width = icon.height = 36
@@ -336,51 +373,159 @@ function gatherChoice(resource: ResourceKind, label: string) {
   icon.setAttribute('aria-hidden', 'true')
   choice.append(icon, label)
   choice.onclick = () => {
-    if (scene?.gatherNearest(resource)) closeEconomyMenu()
-    else receive({ type: 'error', message: 'Explore a source of ' + resource + ' first.' })
+    if (!scene?.gatherNearest(resource)) receive({ type: 'error', message: 'Explore a source of ' + resource + ' first.' })
   }
   return choice
 }
 
+workerActions.append(gatherChoice('gold', 'Mine gold'), gatherChoice('wood', 'Chop wood'), gatherChoice('stone', 'Quarry stone'))
+
 function buildChoices() {
-  const gathering = document.createElement('div')
-  gathering.className = 'gather-choices'
-  gathering.append(gatherChoice('gold', 'Mine gold'), gatherChoice('wood', 'Chop wood'), gatherChoice('stone', 'Quarry stone'))
-  return [gathering, ...buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
-    closeEconomyMenu()
+  return buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
     scene?.place(kind)
-  }))]
+    closeEconomyMenu()
+  }))
+}
+
+function actionButton(label: string, run: () => void) {
+  const choice = document.createElement('button')
+  choice.type = 'button'
+  choice.textContent = label
+  choice.onclick = run
+  return choice
+}
+
+function productionChoices(building: Entity) {
+  trainCount = 1
+  const quantity = document.createElement('input')
+  quantity.type = 'number'
+  quantity.inputMode = 'numeric'
+  quantity.min = '1'
+  quantity.value = '1'
+  quantity.setAttribute('aria-label', 'Training quantity')
+  const change = () => {
+    const value = Number(quantity.value)
+    trainCount = Number.isSafeInteger(value) && value >= 1 ? value : 1
+    updateEconomyOptions()
+  }
+  quantity.oninput = change
+  const controls = document.createElement('div')
+  controls.className = 'gather-choices queue-controls'
+  const more = (step: number) => actionButton('+' + step, () => {
+    quantity.value = String(Math.min(Number.MAX_SAFE_INTEGER, trainCount + step))
+    change()
+  })
+  controls.append(quantity, more(5), more(10), actionButton('Cancel last', () =>
+    issueOrder([building.id], { kind: 'cancel-train', count: 1 })), actionButton('Cancel quantity', () =>
+    issueOrder([building.id], { kind: 'cancel-train', count: trainCount })))
+  const choices = trainedAt(building.kind).map(kind => {
+    const choice = economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
+      issueOrder([building.id], { kind: 'train', unit: kind, count: trainCount }))
+    choiceRules.get(choice)!.bulk = true
+    return choice
+  })
+  const hint = document.createElement('small')
+  hint.className = 'economy-hint'
+  hint.textContent = 'More farm capacity is needed for this quantity.'
+  return [...choices, controls, hint]
 }
 
 function openEconomyMenu(rebuild = false) {
   if (!economyContext || placing) return
   if (rebuild) {
     if (economyContext === 'build') menu.replaceChildren(...buildChoices())
-    else {
+    else if (economyContext.startsWith('cancel:')) {
+      const site = selection[0]
+      menu.replaceChildren(actionButton('Cancel construction', () => issueOrder([site.id], { kind: 'cancel-build' })))
+    } else if (economyContext.startsWith('research:')) {
+      const smith = selection[0]
+      menu.replaceChildren(...upgradeKinds.map(kind => economyChoice('smithy', upgrades[kind].cost, 0, () =>
+        issueOrder([smith.id], { kind: 'upgrade', upgrade: kind }), kind)))
+    } else {
       const building = selection[0]
       if (!building) return
-      const hint = document.createElement('small')
-      hint.className = 'economy-hint'
-      hint.textContent = 'Build a farm to raise your population limit.'
-      menu.replaceChildren(...trainedAt(building.kind).map(kind =>
-        economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
-          issueOrder([building.id], { kind: 'train', unit: kind }))), hint)
+      menu.replaceChildren(...productionChoices(building))
     }
   }
   updateEconomyOptions()
+  toggleProduction(false)
   menu.hidden = false
   economyAction.setAttribute('aria-expanded', 'true')
+  syncWorkerActions()
 }
 
 economyAction.onclick = () => {
   if (placing) scene?.place(null)
-  if (menu.hidden) openEconomyMenu()
+  if (menu.hidden) openEconomyMenu(economyContext === 'build')
   else closeEconomyMenu()
 }
 
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
 button('cancel-placement').onclick = () => scene?.place(null)
+
+function percentage(progress: number) { return Math.floor(progress * 100) + '%' }
+
+function constructionSummary(entity: Entity) {
+  if (entity.constructionStatus === 'queued') return 'Queued'
+  if (entity.constructionStatus === 'paused') return 'Paused · ' + percentage(entity.construction ?? 0)
+  return 'Building · ' + percentage(entity.construction ?? 0)
+}
+
+function trainingSummary(training: NonNullable<Entity['training']>) {
+  const names = entityNames[faction]
+  const runs = training.queue ?? []
+  const waiting = runs.map((run, index) => ({ ...run, count: run.count - Number(index === 0) }))
+    .filter(run => run.count > 0)
+  const labels = waiting.slice(0, 5).map(run => names[run.kind] + ' × ' + run.count)
+  if (waiting.length > 5) labels.push('+' + (waiting.length - 5) + ' batches')
+  const active = names[training.kind] + ' · ' + percentage(training.progress) +
+    (training.seconds === undefined ? '' : ' · ' + training.seconds + 's')
+  return labels.length ? active + ' → ' + labels.join(', ') : active
+}
+
+function toggleProduction(open: boolean) {
+  productionPanel.hidden = !open
+  productionToggle.setAttribute('aria-expanded', String(open))
+  syncWorkerActions()
+  if (open) {
+    closeEconomyMenu()
+    drawProduction()
+  }
+}
+
+function drawProduction() {
+  const rows: string[] = []
+  let count = 0
+  for (const entity of ownEntities) {
+    const name = entityNames[faction][entity.kind]
+    if (entity.construction !== undefined) {
+      count++
+      rows.push(name + ' · ' + constructionSummary(entity))
+    }
+    if (entity.training) {
+      count += entity.training.remaining
+      rows.push(name + ' · ' + trainingSummary(entity.training))
+    }
+    if (entity.research) {
+      count++
+      rows.push(name + ' · ' + upgrades[entity.research.kind].name + ' · ' + percentage(entity.research.progress))
+    }
+  }
+  setText('production-count', String(count))
+  if (productionPanel.hidden) return
+  if (!rows.length) rows.push('Nothing queued')
+  const signature = rows.join('')
+  if (productionPanel.dataset.rows === signature) return
+  productionPanel.dataset.rows = signature
+  productionPanel.replaceChildren(...rows.map(row => {
+    const item = document.createElement('div')
+    item.textContent = row
+    return item
+  }))
+}
+
+productionToggle.onclick = () => toggleProduction(productionPanel.hidden)
 
 function drawResult(outcome: NonNullable<RoomState['result']>) {
   element('result-title').textContent = !outcome.winner ? 'Draw' : outcome.winner === faction ? 'Victory' : 'Defeat'
@@ -414,7 +559,7 @@ for (const item of factionButtons) {
   }
 }
 button('solo').onclick = () => {
-  if (!client.hasSeat) solo.start(faction, solo.saved)
+  if (!client.hasSeat) solo.start(faction, solo.saved, element<HTMLSelectElement>('solo-difficulty').value as Difficulty)
 }
 button('create').onclick = () => client.send({ type: 'create', faction })
 element<HTMLFormElement>('join-form').onsubmit = event => {

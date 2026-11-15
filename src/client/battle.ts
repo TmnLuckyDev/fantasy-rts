@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { TILE, ashford, cellCenter, distance, resourceAt, riverColumn, snapToCell } from '../shared/map.ts'
+import { TILE, ashford, cellCenter, distance, resourceAt, riverColumn, snapToCell, wallLine } from '../shared/map.ts'
 import { MAX_SELECTION, entityKinds, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement } from '../shared/economy.ts'
@@ -18,7 +18,7 @@ type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObject
 type BattleActions = {
   order: (ids: number[], order: Order) => void
   selection: (entities: Entity[], interactive: boolean) => void
-  placement: (active: boolean, blocked?: boolean) => void
+  placement: (kind: BuildingKind | null, blocked?: boolean, segmentCount?: number) => void
   effect: (kind: Effect['kind']) => void
 }
 
@@ -114,12 +114,28 @@ export class BattleScene extends Phaser.Scene {
       this.pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top }
     }
     this.host.addEventListener('pointermove', track)
+    const resize = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      if (width > 0 && height > 0 && (width !== this.scale.width || height !== this.scale.height)) {
+        this.scale.setParentSize(width, height)
+      }
+    })
+    const onResize = (_gameSize: Phaser.Structs.Size, baseSize: Phaser.Structs.Size,
+      _displaySize: Phaser.Structs.Size, oldWidth: number, oldHeight: number) => {
+      camera.setSize(baseSize.width, baseSize.height)
+      camera.scrollX += (oldWidth - camera.width) / 2
+      camera.scrollY += (oldHeight - camera.height) / 2
+      this.clampCamera()
+    }
+    this.scale.on(Phaser.Scale.Events.RESIZE, onResize)
+    resize.observe(this.host)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.controls.destroy()
       this.host.removeEventListener('pointermove', track)
+      this.scale.off(Phaser.Scale.Events.RESIZE, onResize)
+      resize.disconnect()
     })
     this.keys = this.input.keyboard?.addKeys('UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.clampCamera())
     if (this.newest) this.snapshot(this.newest)
   }
 
@@ -228,7 +244,7 @@ export class BattleScene extends Phaser.Scene {
 
   private selectKind(workers: boolean) {
     this.placing = null
-    this.actions.placement(false)
+    this.actions.placement(null)
     this.selected = new Set([...this.visuals.values()].filter(({ entity }) =>
       this.ownUnit(entity) && (entity.kind === 'worker') === workers).slice(0, MAX_SELECTION).map(({ entity }) => entity.id))
     this.selectionChanged(true)
@@ -236,7 +252,7 @@ export class BattleScene extends Phaser.Scene {
 
   place(kind: BuildingKind | null) {
     this.placing = kind
-    this.actions.placement(Boolean(kind))
+    this.actions.placement(kind)
   }
 
   private workerIds() { return [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
@@ -254,8 +270,8 @@ export class BattleScene extends Phaser.Scene {
       const at = snapToCell(point)
       if (ids.length && this.sightAt(at) === 2 && validPlacement(ashford, this.placing, at, this.entities())) {
         this.actions.order(ids, { kind: 'build', building: this.placing, at })
-        this.place(null)
-      } else this.actions.placement(true, true)
+        this.actions.placement(this.placing)
+      } else this.actions.placement(this.placing, true)
       return
     }
     if (touch && this.workerIds().length && this.gatherPoint(point)) {
@@ -300,6 +316,13 @@ export class BattleScene extends Phaser.Scene {
   private selectBox(rect: SelectionRect, append: boolean) {
     const a = this.world(rect.from)
     const b = this.world(rect.to)
+    if (this.placing) {
+      if (this.placing === 'wall' && wallLine(ashford, a, b).length) {
+        this.actions.order(this.workerIds(), { kind: 'wall-line', from: a, to: b })
+        this.actions.placement('wall')
+      }
+      return
+    }
     if (!append) this.selected.clear()
     for (const { entity, sprite } of this.visuals.values()) {
       if (this.selected.size < MAX_SELECTION && this.ownUnit(entity) && sprite.x >= Math.min(a.x, b.x) && sprite.x <= Math.max(a.x, b.x) &&
@@ -422,7 +445,17 @@ export class BattleScene extends Phaser.Scene {
     }
     this.graphics.clear()
     const blend = Math.min(1, delta / 70)
+    const camera = this.cameras.main
+    const center = this.cameraCenter()
+    const halfWidth = camera.width / camera.zoom / 2 + 96
+    const halfHeight = camera.height / camera.zoom / 2 + 96
     for (const { entity, sprite, lastHp } of this.visuals.values()) {
+      const visible = Math.abs(entity.x - center.x) < halfWidth && Math.abs(entity.y - center.y) < halfHeight
+      sprite.setVisible(visible)
+      if (!visible) {
+        sprite.setPosition(entity.x, entity.y)
+        continue
+      }
       const building = !isUnitKind(entity.kind)
       sprite.x += (entity.x - sprite.x) * blend
       sprite.y += (entity.y - sprite.y) * blend
@@ -431,9 +464,10 @@ export class BattleScene extends Phaser.Scene {
         const frame = entity.moving ? Math.floor(time / 125) % 2 : 0
         sprite.setTexture(entity.faction + entity.kind + frame).setFlipX(entity.facing < 0)
       }
-      sprite.setAlpha(entity.construction === undefined ? 1 : 0.4 + entity.construction * 0.55)
+      sprite.setAlpha(entity.construction === undefined ? 1 :
+        entity.constructionStatus === 'queued' ? 0.25 : 0.4 + entity.construction * 0.55)
       const radius = unitStats[entity.faction][entity.kind].radius
-      if (entity.construction !== undefined) {
+      if (entity.construction !== undefined && (!entity.constructionStatus || entity.constructionStatus === 'building')) {
         this.graphics.fillStyle(0x3d332d, 0.8).fillRect(sprite.x - radius, sprite.y + 1, radius * 2, 4)
         for (const side of [-1, 1]) {
           this.graphics.fillStyle(0xe4b675, 0.95).fillRect(sprite.x + side * (radius - 3) - 1, sprite.y - 12, 3, 15)
@@ -478,15 +512,23 @@ export class BattleScene extends Phaser.Scene {
       this.ui.fillStyle(mark.color, 1 - t).fillRect(x - 1, y - 2, 3, 3)
       return true
     })
-    if (this.placing && this.pointer) {
-      const at = snapToCell(this.world(this.pointer))
-      const radius = unitStats[this.faction][this.placing].radius
-      const color = this.sightAt(at) === 2 && validPlacement(ashford, this.placing, at, this.entities()) ? 0x9fdf8d : 0xf27b65
-      this.ui.fillStyle(color, 0.27).fillRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
-      this.ui.lineStyle(1, color, 0.9).strokeRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
-    }
     const drag = this.controls?.selection
-    if (drag) {
+    if (this.placing && this.pointer) {
+      const radius = unitStats[this.faction][this.placing].radius
+      const points = drag && this.placing === 'wall'
+        ? wallLine(ashford, this.world(drag.from), this.world(drag.to))
+        : [snapToCell(this.world(this.pointer))]
+      let valid = 0
+      for (const at of points) {
+        const ok = this.sightAt(at) === 2 && validPlacement(ashford, this.placing, at, this.entities())
+        if (ok) valid++
+        const color = ok ? 0x9fdf8d : 0xf27b65
+        this.ui.fillStyle(color, 0.27).fillRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
+        this.ui.lineStyle(1, color, 0.9).strokeRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
+      }
+      if (drag && this.placing === 'wall') this.actions.placement('wall', false, valid)
+    }
+    if (drag && !this.placing) {
       const a = this.world(drag.from)
       const b = this.world(drag.to)
       const x = Math.min(a.x, b.x)

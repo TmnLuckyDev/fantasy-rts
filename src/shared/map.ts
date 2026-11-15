@@ -38,11 +38,17 @@ for (let y = 0; y < height; y++) {
 for (let x = 4; x < riverColumn; x++) {
   const north = x < 14 ? 11 : 11 - Math.floor((x - 14) / 7)
   const south = x < 12 ? 12 + Math.floor((x - 4) / 2) : Math.min(height - 10, 16 + Math.floor((x - 12) / 2))
-  for (const y of [north, north + 1, south, south + 1]) {
+  for (const y of [north - 1, north, north + 1, north + 2, south - 1, south, south + 1, south + 2]) {
     if (tiles[y * width + x] === 'grass') put(x, y, 'road')
   }
 }
-for (const y of [8, 9, height - 10, height - 9]) put(riverColumn, y, 'bridge')
+// Four continuous lanes across each bridge, including the approaches on both banks.
+for (const north of [7, height - 11]) {
+  for (let y = north; y < north + 4; y++) {
+    for (let x = riverColumn - 5; x < riverColumn; x++) put(x, y, 'road')
+    put(riverColumn, y, 'bridge')
+  }
+}
 put(5, 18, 'mine')
 put(25, 5, 'mine')
 put(34, 33, 'mine')
@@ -73,4 +79,32 @@ export function resourceAt(map: BattleMap, point: Point): ResourceKind | undefin
   if (tile === 'mine') return 'gold'
   if (tile === 'forest') return 'wood'
   if (tile === 'quarry') return 'stone'
+}
+
+export function wallLine(map: BattleMap, from: Point, to: Point): Point[] {
+  if (![from, to].every(point => point.x >= 0 && point.x < map.width * TILE &&
+    point.y >= 0 && point.y < map.height * TILE)) return []
+  let x = Math.floor(from.x / TILE)
+  let y = Math.floor(from.y / TILE)
+  const endX = Math.floor(to.x / TILE)
+  const endY = Math.floor(to.y / TILE)
+  const dx = Math.abs(endX - x)
+  const dy = Math.abs(endY - y)
+  const sx = Math.sign(endX - x)
+  const sy = Math.sign(endY - y)
+  const cells = [cellCenter(x, y)]
+  let ix = 0
+  let iy = 0
+  while (ix < dx || iy < dy) {
+    // Step in one axis at a time so a diagonal swipe still makes a continuous wall.
+    if (ix < dx && (iy >= dy || (ix + 0.5) * dy <= (iy + 0.5) * dx)) {
+      x += sx
+      ix++
+    } else {
+      y += sy
+      iy++
+    }
+    cells.push(cellCenter(x, y))
+  }
+  return cells
 }

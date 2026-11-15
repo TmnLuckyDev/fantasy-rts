@@ -1,7 +1,7 @@
 import { TILE, distance, snapToCell, tileAt } from './map.ts'
 import type { BattleMap } from './map.ts'
 import { isUnitKind, resourceKinds } from './protocol.ts'
-import type { BuildingKind, Entity, EntityKind, Point, ResourceKind, Resources, UnitKind } from './protocol.ts'
+import type { BuildingKind, Entity, EntityKind, Point, ResourceKind, Resources, UnitKind, UpgradeKind } from './protocol.ts'
 import { unitStats } from './units.ts'
 
 export const STARTING_RESOURCES: Readonly<Resources> = { gold: 300, wood: 180, stone: 120 }
@@ -11,11 +11,8 @@ export const GATHERING: Record<ResourceKind, { amount: number, ticks: number }> 
   stone: { amount: 25, ticks: 28 }
 }
 
-export const MAX_BUILDINGS = 48
 export const BASE_POPULATION = 10
-export const FARM_POPULATION = 5
-export const MAX_POPULATION = 30
-export const TRAINING_QUEUE_LIMIT = 5
+export const FARM_POPULATION = 10
 
 export type Cost = Readonly<Partial<Resources>>
 
@@ -25,7 +22,13 @@ export const buildings: Record<BuildingKind, { cost: Cost, ticks: number }> = {
   elite: { cost: { wood: 135, stone: 100 }, ticks: 180 },
   farm: { cost: { wood: 70, stone: 20 }, ticks: 100 },
   wall: { cost: { stone: 28 }, ticks: 55 },
-  tower: { cost: { wood: 55, stone: 85 }, ticks: 110 }
+  tower: { cost: { wood: 55, stone: 85 }, ticks: 110 },
+  smithy: { cost: { wood: 105, stone: 65 }, ticks: 150 }
+}
+
+export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: number, bonus: number }> = {
+  weapons: { name: 'Weapons +2 damage', cost: { gold: 170, wood: 45 }, ticks: 240, bonus: 2 },
+  armor: { name: 'Armor +1 defense', cost: { gold: 130, stone: 60 }, ticks: 220, bonus: 1 }
 }
 
 export const training: Record<UnitKind, { gold: number, ticks: number, population: number }> = {

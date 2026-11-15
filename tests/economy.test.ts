@@ -121,10 +121,10 @@ test('barracks infantry and archery-range units use separate queues with one sha
   assert.ok(match.command('human', [16], { kind: 'build', building: 'farm', at: cellCenter(12, 16) }))
   assert.equal(match.snapshot().population.human.limit, 10)
   advance(match, 260)
-  assert.deepEqual(match.snapshot().population.human, { used: 10, reserved: 0, limit: 15 })
+  assert.deepEqual(match.snapshot().population.human, { used: 10, reserved: 0, limit: 20 })
   assert.ok(match.command('human', [range.id], { kind: 'train', unit: 'marksman' }))
   advance(match, 170)
-  assert.deepEqual(match.snapshot().population.human, { used: 11, reserved: 0, limit: 15 })
+  assert.deepEqual(match.snapshot().population.human, { used: 11, reserved: 0, limit: 20 })
   assert.equal([...match.units.values()].at(-1)?.kind, 'marksman')
 })
 
@@ -147,7 +147,7 @@ for (const faction of ['human', 'orc'] as const) {
     assert.equal(farm.buildDuration, 0)
     assert.ok(match.command(faction, [elite.id], { kind: 'train', unit: 'heavy' }))
     assert.equal(match.snapshot().resources[faction].gold, 80)
-    assert.deepEqual(match.snapshot().population[faction], { used: 9, reserved: 2, limit: 15 })
+    assert.deepEqual(match.snapshot().population[faction], { used: 9, reserved: 2, limit: 20 })
     match.units.delete(farm.id)
     advance(match, 210)
     assert.deepEqual(match.snapshot().population[faction], { used: 9, reserved: 2, limit: 10 })
@@ -161,3 +161,47 @@ for (const faction of ['human', 'orc'] as const) {
     assert.ok(heavy.hp > 200)
   })
 }
+
+test('one worker builds paid wall segments in order and farms have no aggregate capacity ceiling', () => {
+  const saved = new Match().checkpoint()
+  saved.resources.human = { gold: 300, wood: 500, stone: 500 }
+  const match = Match.restore(saved)
+  const worker = 15
+  const from = cellCenter(10, 15)
+  const to = cellCenter(13, 15)
+  assert.ok(match.command('human', [worker], { kind: 'wall-line', from, to }))
+  const start = match.view('human').entities.filter(entity => entity.kind === 'wall')
+  assert.deepEqual(start.map(entity => entity.constructionStatus), ['building', 'queued', 'queued', 'queued'])
+  assert.equal(match.view('human').resources.stone, 500 - 4 * buildings.wall.cost.stone!)
+  assert.equal(match.command('human', [worker], { kind: 'wall-line', from, to }), false)
+  advance(match, 700)
+  assert.ok(start.every(entity => match.units.get(entity.id)?.buildDuration === 0))
+  for (const [x, y] of [[10, 12], [12, 12], [14, 12]]) {
+    assert.ok(match.command('human', [worker], { kind: 'build', building: 'farm', at: cellCenter(x, y) }))
+  }
+  advance(match, 760)
+  assert.equal(match.view('human').population.limit, 40)
+})
+
+test('a completed blacksmith researches one upgrade at a time and improves current troops', () => {
+  const match = new Match()
+  assert.equal(match.command('human', [1], { kind: 'upgrade', upgrade: 'weapons' }), false)
+  assert.ok(match.command('human', [15], { kind: 'build', building: 'smithy', at: cellCenter(10, 15) }))
+  const smithy = [...match.units.values()].find(unit => unit.kind === 'smithy')!
+  assert.equal(match.command('human', [smithy.id], { kind: 'upgrade', upgrade: 'weapons' }), false)
+  advance(match, 360)
+  assert.ok(match.command('human', [smithy.id], { kind: 'upgrade', upgrade: 'weapons' }))
+  assert.equal(match.command('human', [smithy.id], { kind: 'upgrade', upgrade: 'armor' }), false)
+  assert.equal(match.view('human').resources.gold, 130)
+  const copy = Match.restore(structuredClone(match.checkpoint()))
+  advance(copy, 240)
+  assert.deepEqual(copy.view('human').upgrades, ['weapons'])
+  assert.equal(copy.command('human', [smithy.id], { kind: 'upgrade', upgrade: 'weapons' }), false)
+  const footman = copy.units.get(2)!
+  const grunt = copy.units.get(9)!
+  Object.assign(footman, { x: 850, y: 312 })
+  Object.assign(grunt, { x: 877, y: 312 })
+  copy.step()
+  copy.step()
+  assert.equal(grunt.hp, grunt.maxHp - 15)
+})

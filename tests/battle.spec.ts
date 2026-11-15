@@ -32,6 +32,8 @@ async function panTo(page: Page, point: Point, touch: boolean) {
 }
 
 async function screenPoint(page: Page, point: Point, focused: Point) {
+  await page.evaluate(() => new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   const bounds = (await page.locator('#battlefield').boundingBox())!
   const zoom = bounds.width < 950 ? 0.88 : 1.06
   const clamp = (target: number, size: number, view: number) =>
@@ -173,9 +175,14 @@ test('desktop and landscape touch players can finish an authoritative match', as
 
     const barracks = cellCenter(11, 15)
     const barracksSpot = await screenPoint(human, barracks, ashford.bases.human)
+    await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
+    await expect(human.locator('#placement-tip')).toBeVisible()
+    await human.getByRole('button', { name: 'Done', exact: true }).click()
+    await human.getByRole('button', { name: /^Queues/ }).click()
+    await expect(human.getByRole('region', { name: 'Production queues' })).toContainText('Barracks · Building')
     await expect.poll(() => newest(humanHistory)?.entities.some(entity =>
       entity.kind === 'barracks' && entity.construction === undefined), { timeout: 23_000 }).toBe(true)
     await human.mouse.click(barracksSpot.x, barracksSpot.y - 20)
@@ -187,23 +194,27 @@ test('desktop and landscape touch players can finish an authoritative match', as
 
     await human.getByRole('button', { name: 'Workers', exact: true }).click()
     const farm = await screenPoint(human, cellCenter(14, 15), ashford.bases.human)
+    await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Farm · 70 wood · 20 stone', exact: true }).click()
     await human.mouse.click(farm.x, farm.y)
-    await expect(human.locator('#population')).toHaveText('10/15', { timeout: 20_000 })
+    await human.getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(human.locator('#population')).toHaveText('10/20', { timeout: 20_000 })
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
-    const quarry = cellCenter(ashford.width - 5, ashford.height - 16)
-    await panTo(orc, quarry, true)
-    const quarryTap = await screenPoint(orc, quarry, quarry)
-    await orc.touchscreen.tap(quarryTap.x, quarryTap.y)
+    await orc.getByRole('button', { name: 'Quarry stone', exact: true }).tap()
     await expect.poll(() => newest(orcHistory)?.resources.stone ?? 0, { timeout: 18_000 }).toBeGreaterThan(120)
-    const tower = cellCenter(ashford.width - 3, ashford.height - 11)
-    await panTo(orc, tower, true)
-    const towerSpot = await screenPoint(orc, tower, tower)
+    const tower = cellCenter(ashford.width - 11, ashford.height - 14)
+    await orc.getByRole('button', { name: 'Base', exact: true }).tap()
+    await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
+    await orc.getByRole('button', { name: 'Build', exact: true }).tap()
     await orc.getByRole('button', { name: 'Watch Tower · 55 wood · 85 stone', exact: true }).tap()
+    const towerSpot = await screenPoint(orc, tower, base)
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
-      entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 18_000 }).toBe(true)
+      entity.kind === 'tower' && entity.faction === 'orc')).toBe(true)
+    await orc.getByRole('button', { name: 'Done', exact: true }).tap()
+    await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
+      entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 25_000 }).toBe(true)
 
     const before = unit(humanHistory, 2)!
     const start = await screenPoint(human, { x: 229, y: 310 }, ashford.bases.human)
@@ -267,7 +278,18 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(idle()).toHaveText(/3/)
     await idle().tap()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
-    await expect(page.getByRole('button', { name: 'Boar Farm · 70 wood · 20 stone', exact: true })).toBeVisible()
+    const gather = page.getByRole('group', { name: 'Gather resources' })
+    for (const name of ['Mine gold', 'Chop wood', 'Quarry stone']) {
+      await expect(gather.getByRole('button', { name, exact: true })).toBeVisible()
+    }
+    const build = page.getByRole('button', { name: 'Build', exact: true })
+    const farm = page.getByRole('button', { name: 'Boar Farm · 70 wood · 20 stone', exact: true })
+    await expect(farm).toBeHidden()
+    await build.tap()
+    await expect(farm).toBeVisible()
+    await build.tap()
+    await expect(farm).toBeHidden()
+    await expect(gather).toBeVisible()
     // After loading the game assets the browser can play solo without any connection.
     await context.setOffline(true)
     await page.getByRole('button', { name: 'Mine gold', exact: true }).tap()
@@ -283,6 +305,41 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await page.goto(baseURL!)
     await page.getByRole('button', { name: 'Resume solo match', exact: true }).tap()
     await expect(idle()).toHaveText(/2/)
+    await idle().tap()
+    await expect(page.locator('#selection-name')).toHaveText('Peon')
+    await page.getByRole('button', { name: 'Build', exact: true }).tap()
+    await page.getByRole('button', { name: 'Stone Rampart · 28 stone', exact: true }).tap()
+    await page.getByRole('button', { name: 'Base', exact: true }).tap()
+    const start = await screenPoint(page, cellCenter(ashford.width - 12, ashford.height - 15), hall)
+    const end = await screenPoint(page, cellCenter(ashford.width - 14, ashford.height - 15), hall)
+    if (mobileBrowser === chromium) {
+      const session = await context.newCDPSession(page)
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] })
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [end] })
+      await expect(page.locator('#placement-message')).toContainText('3 wall segments')
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await session.detach()
+    } else {
+      const field = page.locator('#battlefield')
+      await field.dispatchEvent('pointerdown', { button: 0, pointerId: 7, pointerType: 'touch', clientX: start.x, clientY: start.y })
+      await field.dispatchEvent('pointermove', { button: 0, pointerId: 7, pointerType: 'touch', clientX: end.x, clientY: end.y })
+      await expect(page.locator('#placement-message')).toContainText('3 wall segments')
+      await field.dispatchEvent('pointerup', { button: 0, pointerId: 7, pointerType: 'touch', clientX: end.x, clientY: end.y })
+    }
+    await expect(page.locator('#stone')).toHaveText('36')
+    await expect(page.locator('#production-count')).toHaveText('3')
+    await page.getByRole('button', { name: 'Done', exact: true }).tap()
+    await page.getByRole('button', { name: /^Queues/ }).tap()
+    await expect(page.getByRole('region', { name: 'Production queues' })).toContainText('Stone Rampart · Queued')
+    await page.getByRole('button', { name: /^Queues/ }).tap()
+    await idle().tap()
+    await page.setViewportSize(phone.viewport)
+    await expect(idle()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Minimap' })).toBeVisible()
+    await expect(page.getByText('Rotate your phone', { exact: false })).toHaveCount(0)
+    await expect(page.locator('#selection-name')).toHaveText('Peon')
+    await page.setViewportSize({ width: phone.viewport.height, height: phone.viewport.width })
+    await expect(page.locator('#selection-name')).toHaveText('Peon')
     page.once('dialog', dialog => dialog.accept())
     await page.getByRole('button', { name: 'Leave', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Play vs Computer', exact: true })).toBeEnabled()

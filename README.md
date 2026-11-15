@@ -12,9 +12,9 @@ Open the game in your browser and choose a faction.
 During a match:
 
 1. Select a worker or use **Idle worker** to cycle through workers without orders. Use **Mine gold**, **Chop wood** or **Quarry stone** to go to the closest explored source, or target a source directly. Workers carry each load back to their hall and repeat the trip.
-2. Select a worker, choose a building from its action panel and place it on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
+2. Select a worker, select **Build**, choose a building and place it on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
 3. Select a completed production building to see the available units and train them directly. Training costs gold and reserves population. Walls block ground movement. Completed towers fire at nearby enemies.
-4. Scout across either bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
+4. Scout across either four-tile-wide bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
 
 | Human structure | Orc structure | Training |
 | --- | --- | --- |
@@ -23,9 +23,11 @@ During a match:
 | Archery Range | Hunting Grounds | Archer and Crossbowman / Spearman and Axe Thrower |
 | Stables | Ogre Den | Knight / Ogre |
 
+**Queues** lists construction, training and research progress. Blacksmiths and War Forges can research +2 troop damage and +1 troop armor for their faction.
+
 Nearby troops counterattack when an allied unit or building is hit. They break off if the attacker retreats beyond the defended area. An explicit move or attack order takes priority.
 
-The headquarters supports 10 population. A completed Farm or Boar Farm adds five, up to 30. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
+The headquarters supports 10 population. A completed Farm or Boar Farm adds ten. Total population capacity grows with every farm. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
 
 | Action | Desktop | Touch |
 | --- | --- | --- |
@@ -73,3 +75,11 @@ The browser test uses Chromium desktop against a landscape touch profile. The de
 The skirmish includes five combat unit types per faction, attack-move, A* navigation around obstacles, formations, projectile and damage effects, minimap, room codes, reconnects, and headquarters victory. Original voxel-inspired terrain, props, faction buildings and unit sprites are drawn with Canvas, and the lobby uses an original generated diorama illustration. Sound effects are synthesized with Web Audio.
 
 Upgrades and other maps are planned.
+
+## Batch production and restart recovery
+
+Set a training quantity or use **+5** and **+10**, then choose a unit. The whole order reserves farm capacity and pays up front. **Cancel last** and **Cancel quantity** remove orders from the end and refund all unspawned units removed. If the building is destroyed, its reserved capacity is released and its gold is lost. Select an unfinished foundation to cancel it and recover the unbuilt fraction of its cost.
+
+For multiplayer saves, set `MATCH_SAVE_FILE` to a writable file on durable storage, owned by the game server. Create its parent directory before starting. The server writes a versioned checkpoint every five seconds and flushes on graceful shutdown. An abrupt interruption can roll the game back to the latest checkpoint. Seats reconnect with their original tokens. The default Render deployment does not configure durable storage.
+
+Run `node scripts/benchmark.mjs` for the headless simulation load fixture and `node scripts/ai-league.mjs . 100 normal,normal` to compare computer opponents. The first positional argument accepts a checkout directory, so the same league can run against an earlier revision.

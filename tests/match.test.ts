@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { TILE, ashford, cellCenter, distance, isWalkable, tileAt } from '../src/shared/map.ts'
+import { TILE, ashford, cellCenter, distance, isWalkable, riverColumn, tileAt } from '../src/shared/map.ts'
 import { decodeFog } from '../src/shared/fog.ts'
 import { Match } from '../src/server/match.ts'
 import { canStand, findPath } from '../src/server/navigation.ts'
@@ -20,6 +20,19 @@ test('A* finds a bridge and never steps onto a blocked tile', () => {
   assert.ok(path.some(point => tileAt(ashford, Math.floor(point.x / TILE), Math.floor(point.y / TILE)) === 'bridge'))
   assert.ok(path.every(point => isWalkable(tileAt(ashford, Math.floor(point.x / TILE), Math.floor(point.y / TILE)))))
   assert.deepEqual(path.at(-1), cellCenter(46, 15))
+})
+
+test('both bridges provide four unobstructed lanes on both banks', () => {
+  for (const startRow of [7, ashford.height - 11]) {
+    for (let y = startRow; y < startRow + 4; y++) {
+      for (const x of [riverColumn, riverColumn + 1]) assert.equal(tileAt(ashford, x, y), 'bridge')
+      const start = cellCenter(riverColumn - 5, y)
+      const goal = cellCenter(riverColumn + 6, y)
+      const path = findPath(ashford, start, goal, [], 15)
+      assert.deepEqual(path.at(-1), goal)
+      assert.ok(path.every(point => point.y === start.y))
+    }
+  }
 })
 
 test('orders require owned troops, valid destinations and enemy targets', () => {

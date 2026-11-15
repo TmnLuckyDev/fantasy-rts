@@ -3,11 +3,11 @@ import type { ComputerCheckpoint } from '../server/computer.ts'
 import { Match, TICK_HZ } from '../server/match.ts'
 import type { MatchCheckpoint } from '../server/match.ts'
 import { opposite } from '../shared/protocol.ts'
-import type { Faction, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, Order, ServerMessage } from '../shared/protocol.ts'
 
 export type SoloSave = { faction: Faction, match: MatchCheckpoint, computer: ComputerCheckpoint }
 export type SoloInput =
-  | { type: 'start', faction: Faction, save: SoloSave | null, paused: boolean }
+  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, paused: boolean }
   | { type: 'pause', paused: boolean }
   | { type: 'command', ids: number[], order: Order }
 export type SoloOutput = ServerMessage | { type: 'save', save: SoloSave }
@@ -37,7 +37,7 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
     try {
       const match = message.save ? Match.restore(message.save.match) : new Match()
       const faction = message.save?.faction ?? message.faction
-      const computer = new ComputerOpponent(opposite(faction), match.map)
+      const computer = new ComputerOpponent(opposite(faction), match.map, message.save?.computer.difficulty ?? message.difficulty, message.save?.computer.strategy)
       if (message.save) computer.restore(message.save.computer)
       game = { faction, match, computer }
       paused = message.paused
