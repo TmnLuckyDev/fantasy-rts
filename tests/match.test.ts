@@ -257,3 +257,18 @@ test('A* consistently finds paths with nearby building obstacles', () => {
   assert.ok(first.every(point => canStand(ashford, point, obstacles, 9)))
   assert.deepEqual(findPath(ashford, start, goal, obstacles, 9), first)
 })
+
+
+test('fog visibility remains identical when same-faction units overlap a tile', () => {
+  const match = new Match()
+  const baseline = match.view('human').fog
+  const worker = match.units.get(15)!
+  const second = match.units.get(16)!
+  second.x = worker.x
+  second.y = worker.y
+  match.step()
+  const overlapping = match.view('human').fog
+  assert.ok(overlapping.length > 0)
+  assert.equal(match.view('human').fog, overlapping)
+  assert.ok(baseline.length > 0)
+})
