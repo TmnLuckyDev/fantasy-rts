@@ -1,6 +1,7 @@
 import { chromium, devices, expect, test, webkit } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { TILE, ashford, cellCenter, distance } from '../src/shared/map.ts'
+import { decodeFog } from '../src/shared/fog.ts'
 import { isUnitKind } from '../src/shared/protocol.ts'
 import type { Faction, Point, ServerMessage, Snapshot } from '../src/shared/protocol.ts'
 
@@ -43,11 +44,24 @@ async function screenPoint(page: Page, point: Point, focused: Point) {
   }
 }
 
+async function cameraBox(page: Page) {
+  return page.locator('#minimap').evaluate((canvas: HTMLCanvasElement) => {
+    const { width, height } = canvas
+    const pixels = canvas.getContext('2d')!.getImageData(0, 0, width, height).data
+    const xs: number[] = []
+    for (let i = 0; i < pixels.length; i += 4) {
+      const [r, g, b] = pixels.subarray(i, i + 3)
+      if (r > 173 && g > 148 && r - g > 18 && g - b > 28) xs.push((i / 4) % width)
+    }
+    return { x: Math.min(...xs), width: Math.max(...xs) - Math.min(...xs) }
+  })
+}
+
 const mobileBrowser = process.env.MOBILE_BROWSER === 'webkit' ? webkit : chromium
 const mobileProfile = process.env.MOBILE_BROWSER === 'webkit' ? 'iPhone 14' : 'Pixel 7'
 
 test('desktop and landscape touch players can finish an authoritative match', async ({ browser, baseURL }, info) => {
-  test.setTimeout(165_000)
+  test.setTimeout(210_000)
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 750 } })
   const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
   const phone = devices[mobileProfile]
@@ -84,13 +98,60 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect.poll(() => troops(orcHistory, 'orc').length).toBe(6)
     const shared = [...humanHistory.keys()].find(tick => orcHistory.has(tick))
     expect(shared).toBeDefined()
-    expect(humanHistory.get(shared!)).toEqual(orcHistory.get(shared!))
+    const humanStart = humanHistory.get(shared!)!
+    const orcStart = orcHistory.get(shared!)!
+    expect(humanStart.entities.every(entity => entity.faction === 'human')).toBe(true)
+    expect(orcStart.entities.every(entity => entity.faction === 'orc')).toBe(true)
+    expect(humanStart.fog).not.toBe(orcStart.fog)
+    const base = ashford.bases.orc
+    const baseCell = Math.floor(base.y / TILE) * ashford.width + Math.floor(base.x / TILE)
+    expect(decodeFog(humanStart.fog, ashford.tiles.length)[baseCell]).toBe(0)
+    const hiddenBase = await human.locator('#minimap').evaluate((map: HTMLCanvasElement, fraction) => {
+      const pixel = map.getContext('2d')!.getImageData(Math.floor(map.width * fraction.x), Math.floor(map.height * fraction.y), 1, 1)
+      return Array.from(pixel.data)
+    }, { x: base.x / worldWidth, y: base.y / worldHeight })
+    expect(hiddenBase).toEqual([13, 19, 16, 255])
 
     const firstOrc = unit(orcHistory, 9)!
     const orcTap = await screenPoint(orc, { x: firstOrc.x, y: firstOrc.y - 13 }, ashford.bases.orc)
     await orc.touchscreen.tap(orcTap.x, orcTap.y)
     await expect(orc.locator('#selection-name')).toHaveText('Grunt')
-    await orc.getByRole('button', { name: 'All troops' }).tap()
+    if (mobileBrowser === chromium) {
+      const session = await touch.newCDPSession(orc)
+      const touchEvent = (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: Point[]) =>
+        session.send('Input.dispatchTouchEvent', { type, touchPoints: touchPoints.map(({ x, y }, id) => ({ x, y, id })) })
+      const bounds = (await orc.locator('#battlefield').boundingBox())!
+      const a = { x: bounds.x + bounds.width * 0.37, y: bounds.y + bounds.height * 0.44 }
+      const b = { x: a.x + 100, y: a.y }
+      const before = await cameraBox(orc)
+      await touchEvent('touchStart', [a, b])
+      await touchEvent('touchMove', [{ ...a, x: a.x + 100 }, { ...b, x: b.x + 100 }])
+      await touchEvent('touchEnd', [])
+      await expect.poll(() => cameraBox(orc).then(box => box.x)).toBeLessThan(before.x - 4)
+      expect(Math.abs((await cameraBox(orc)).width - before.width)).toBeLessThanOrEqual(2)
+      await expect(orc.locator('#selection-name')).toHaveText('Grunt')
+      expect(unit(orcHistory, 9)).toEqual(firstOrc)
+
+      await touchEvent('touchStart', [a, b])
+      await touchEvent('touchMove', [{ ...a, x: a.x - 36 }, { ...b, x: b.x + 36 }])
+      await touchEvent('touchEnd', [])
+      await expect.poll(() => cameraBox(orc).then(box => box.width)).toBeLessThan(before.width - 3)
+      await expect(orc.locator('#selection-name')).toHaveText('Grunt')
+
+      // Recenter without resetting zoom, then reset the zoom with the inverse pinch.
+      await touchEvent('touchStart', [{ ...a, x: a.x - 36 }, { ...b, x: b.x + 36 }])
+      await touchEvent('touchMove', [a, b])
+      await touchEvent('touchEnd', [])
+      await orc.getByRole('button', { name: 'Base', exact: true }).tap()
+      const boxStart = await screenPoint(orc, { x: base.x - 122, y: base.y - 57 }, base)
+      const boxEnd = await screenPoint(orc, { x: base.x - 27, y: base.y + 48 }, base)
+      await touchEvent('touchStart', [boxStart])
+      await touchEvent('touchMove', [boxEnd])
+      await touchEvent('touchEnd', [])
+      await session.detach()
+    } else {
+      await orc.getByRole('button', { name: 'All troops' }).tap()
+    }
     await expect(orc.locator('#selection-name')).toHaveText('6 troops selected')
     if (process.env.CAPTURE_BROWSER === '1') await orc.screenshot({ path: info.outputPath('landscape-touch.png') })
 
@@ -98,17 +159,17 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await panTo(orc, retreat, true)
     const retreatTap = await screenPoint(orc, retreat, retreat)
     await orc.touchscreen.tap(retreatTap.x, retreatTap.y)
-    await expect.poll(() => unit(humanHistory, 9)?.y ?? Infinity).toBeLessThan(firstOrc.y - 35)
+    await expect.poll(() => unit(orcHistory, 9)?.y ?? Infinity).toBeLessThan(firstOrc.y - 35)
 
     await human.getByRole('button', { name: 'Workers', exact: true }).click()
     await expect(human.locator('#selection-name')).toHaveText('3 workers selected')
     const mine = await screenPoint(human, cellCenter(5, 18), ashford.bases.human)
     await human.mouse.click(mine.x, mine.y, { button: 'right' })
-    await expect.poll(() => newest(humanHistory)?.resources.human.gold ?? 0, { timeout: 18_000 }).toBeGreaterThan(300)
+    await expect.poll(() => newest(humanHistory)?.resources.gold ?? 0, { timeout: 18_000 }).toBeGreaterThan(300)
 
     const tree = await screenPoint(human, cellCenter(6, 7), ashford.bases.human)
     await human.mouse.click(tree.x, tree.y, { button: 'right' })
-    await expect.poll(() => newest(humanHistory)?.resources.human.wood ?? 0, { timeout: 18_000 }).toBeGreaterThan(180)
+    await expect.poll(() => newest(humanHistory)?.resources.wood ?? 0, { timeout: 18_000 }).toBeGreaterThan(180)
 
     const barracks = cellCenter(11, 15)
     const barracksSpot = await screenPoint(human, barracks, ashford.bases.human)
@@ -116,13 +177,13 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
-    await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
+    await expect.poll(() => newest(humanHistory)?.entities.some(entity =>
       entity.kind === 'barracks' && entity.construction === undefined), { timeout: 23_000 }).toBe(true)
     await human.mouse.click(barracksSpot.x, barracksSpot.y - 20)
     await expect(human.locator('#selection-name')).toHaveText('Barracks')
     await human.getByRole('button', { name: 'Train', exact: true }).click()
     await human.getByRole('button', { name: 'Footman · 75 gold', exact: true }).click()
-    await expect.poll(() => troops(orcHistory, 'human').length, { timeout: 12_000 }).toBe(7)
+    await expect.poll(() => troops(humanHistory, 'human').length, { timeout: 12_000 }).toBe(7)
     await expect(human.locator('#population')).toHaveText('10/10')
     await expect(human.getByRole('button', { name: 'Footman · 75 gold', exact: true })).toBeDisabled()
 
@@ -138,14 +199,14 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await panTo(orc, quarry, true)
     const quarryTap = await screenPoint(orc, quarry, quarry)
     await orc.touchscreen.tap(quarryTap.x, quarryTap.y)
-    await expect.poll(() => newest(orcHistory)?.resources.orc.stone ?? 0, { timeout: 18_000 }).toBeGreaterThan(120)
-    const tower = cellCenter(ashford.width - 3, 19)
+    await expect.poll(() => newest(orcHistory)?.resources.stone ?? 0, { timeout: 18_000 }).toBeGreaterThan(120)
+    const tower = cellCenter(ashford.width - 3, ashford.height - 11)
     await panTo(orc, tower, true)
     const towerSpot = await screenPoint(orc, tower, tower)
     await orc.getByRole('button', { name: 'Build', exact: true }).tap()
     await orc.getByRole('button', { name: 'Watch Tower · 55 wood · 85 stone', exact: true }).tap()
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
-    await expect.poll(() => newest(humanHistory)?.entities.some(entity =>
+    await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
       entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 18_000 }).toBe(true)
 
     const before = unit(humanHistory, 2)!
@@ -158,16 +219,23 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect(human.locator('#selection-name')).toContainText('troops selected')
     await human.getByRole('button', { name: 'All troops', exact: true }).click()
     if (process.env.CAPTURE_BROWSER === '1') await human.screenshot({ path: info.outputPath('battlefield.png') })
-    const base = ashford.bases.orc
+    await human.getByRole('button', { name: 'Attack move', exact: true }).click()
     await panTo(human, base, false)
-    const target = await screenPoint(human, { x: base.x, y: base.y - 29 }, base)
-    await human.mouse.click(target.x, target.y, { button: 'right' })
-    await expect.poll(() => distance(before, unit(orcHistory, 2) ?? before)).toBeGreaterThan(45)
+    const destination = await screenPoint(human, base, base)
+    await human.mouse.click(destination.x, destination.y, { button: 'right' })
+    await expect.poll(() => distance(before, unit(humanHistory, 2) ?? before)).toBeGreaterThan(45)
+    expect(unit(orcHistory, 2)).toBeUndefined()
+    expect(unit(humanHistory, 8)).toBeUndefined()
 
     await orc.reload()
     await expect(orc.locator('#battlefield canvas')).toBeVisible()
     await expect(orc.locator('#banner')).toContainText('Orcish Horde')
-    await expect.poll(() => unit(humanHistory, 8)?.hp ?? 0, { timeout: 60_000 }).toBeLessThan(1500)
+    expect(unit(orcHistory, 1)).toBeUndefined()
+    await expect.poll(() => unit(humanHistory, 8)?.id, { timeout: 55_000 }).toBe(8)
+    expect(decodeFog(newest(humanHistory)!.fog, ashford.tiles.length)[baseCell]).toBe(2)
+    const target = await screenPoint(human, { x: base.x, y: base.y - 29 }, base)
+    await human.mouse.click(target.x, target.y, { button: 'right' })
+    await expect.poll(() => unit(orcHistory, 8)?.hp ?? Infinity, { timeout: 20_000 }).toBeLessThan(1500)
     await expect(human.getByRole('heading', { name: 'Victory' })).toBeVisible({ timeout: 60_000 })
     await expect(orc.getByRole('heading', { name: 'Defeat' })).toBeVisible()
     expect(unit(humanHistory, 8)).toBeUndefined()

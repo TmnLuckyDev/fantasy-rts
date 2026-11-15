@@ -82,7 +82,7 @@ export type ClientMessage =
   | { type: 'ready', ready: boolean }
   | { type: 'command', ids: number[], order: Order }
 
-export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Record<Faction, Resources>, population: Record<Faction, Population> }
+export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }

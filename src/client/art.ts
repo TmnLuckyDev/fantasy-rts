@@ -24,13 +24,16 @@ export function canvas(width: number, height: number) {
   return result
 }
 
-export function terrainTexture() {
-  const { width, height, tiles } = ashford
+export function terrainTexture(startX: number, startY: number, width: number, height: number) {
   const surface = canvas(width * TILE, height * TILE)
   const ctx = surface.getContext('2d')!
-  tiles.forEach((tile, i) => {
-    const x = i % width * TILE
-    const y = Math.floor(i / width) * TILE
+  for (let local = 0; local < width * height; local++) {
+    const col = local % width
+    const row = Math.floor(local / width)
+    const i = (startY + row) * ashford.width + startX + col
+    const tile = ashford.tiles[i]
+    const x = col * TILE
+    const y = row * TILE
     const rand = randomAt(i * 17 + 113)
     ctx.fillStyle = terrainColor[tile]
     ctx.fillRect(x, y, TILE, TILE)
@@ -53,7 +56,7 @@ export function terrainTexture() {
       ctx.fillStyle = '#334824'
       ctx.fillRect(x + 7, y + 13, 1, 3)
     }
-  })
+  }
   return surface
 }
 

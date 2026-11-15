@@ -119,7 +119,7 @@ export class Rooms {
     this.sessions.set(peer, { room, seat })
     send(peer, { type: 'session', code: room.code, token: seat.token, faction: seat.faction })
     this.broadcastRoom(room)
-    if (room.match) send(peer, room.match.snapshot())
+    if (room.match) send(peer, room.match.view(seat.faction))
   }
 
   disconnect(peer: WebSocket, explicit = false, now = Date.now()) {
@@ -170,7 +170,9 @@ export class Rooms {
   private broadcastSnapshot(room: Room) {
     if (!room.match) return
     const snapshot = room.match.snapshot(true)
-    for (const seat of room.seats) send(seat.peer, snapshot)
+    for (const seat of room.seats) {
+      if (seat.peer) send(seat.peer, room.match.view(seat.faction, snapshot))
+    }
   }
 
   private broadcastRoom(room: Room) {

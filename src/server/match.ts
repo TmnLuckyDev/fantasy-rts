@@ -6,6 +6,7 @@ import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING, MAX_BUILDINGS, MAX_POPULATION, STARTING_RESOURCES,
   TRAINING_QUEUE_LIMIT, buildings as buildingRules, canAfford, spend, trainedAt, training, validPlacement } from '../shared/economy.ts'
 import { canStand, findPath } from './navigation.ts'
+import { Visibility } from './visibility.ts'
 
 export const TICK_HZ = 20
 const spacing = 30
@@ -21,12 +22,17 @@ type Unit = Entity & {
   nextPath: number
   path: Point[]
   pursued: Point | null
+  lastTarget: Point | null
   blockedTicks: number
   job: WorkerJob | null
   cargo: ResourceKind | null
   queue: Array<{ kind: UnitKind, left: number }>
   buildTicks: number
   buildDuration: number
+}
+
+type WorldSnapshot = Omit<Snapshot, 'resources' | 'population' | 'fog'> & {
+  resources: Record<Faction, Resources>, population: Record<Faction, Population>
 }
 
 type Missile = { attacker: Unit, targetId: number, arrives: number }
@@ -42,9 +48,11 @@ export class Match {
   private sequence = 0
   private effects: Effect[] = []
   private missiles: Missile[] = []
+  private readonly visibility: Visibility
 
   constructor(map: BattleMap = ashford) {
     this.map = map
+    this.visibility = new Visibility(map)
     for (const faction of factions) {
       const base = map.bases[faction]
       const direction = faction === 'human' ? 1 : -1
@@ -64,6 +72,7 @@ export class Match {
         this.spawn(faction, 'worker', { x: base.x + x * direction, y: base.y + y * direction })
       }
     }
+    this.visibility.update(this.units.values())
   }
 
   private spawn(faction: Faction, kind: EntityKind, position: Point, buildDuration = 0) {
@@ -72,7 +81,7 @@ export class Match {
     const unit: Unit = {
       ...position, faction, kind, id, hp: buildDuration ? Math.ceil(health * 0.2) : health,
       maxHp: health, moving: false, facing: faction === 'human' ? 1 : -1, order: null, assigned: null,
-      path: [], nextPath: 0, nextStrike: 0, pursued: null, blockedTicks: 0,
+      path: [], nextPath: 0, nextStrike: 0, pursued: null, lastTarget: null, blockedTicks: 0,
       job: null, cargo: null, queue: [], buildTicks: 0, buildDuration
     }
     this.units.set(id, unit)
@@ -94,7 +103,7 @@ export class Match {
     if (units.some(unit => !isUnitKind(unit.kind))) return false
     if (order.kind === 'attack') {
       const target = this.units.get(order.target)
-      if (!target || target.faction === faction) return false
+      if (!target || target.faction === faction || this.visibility.at(faction, target) !== 2) return false
     }
     if ((order.kind === 'move' || order.kind === 'advance') &&
         (!Number.isFinite(order.to.x) || !Number.isFinite(order.to.y) ||
@@ -108,6 +117,10 @@ export class Match {
     troops.forEach((unit, i) => {
       this.resetOrders(unit)
       unit.order = order.kind === 'halt' ? null : order
+      if (order.kind === 'attack') {
+        const target = this.units.get(order.target)!
+        unit.lastTarget = { x: target.x, y: target.y }
+      }
       if (order.kind === 'move' || order.kind === 'advance') {
         const front = faction === 'human' ? 1 : -1
         const rows = Math.ceil(troops.length / rowSize)
@@ -127,6 +140,7 @@ export class Match {
     unit.job = null
     unit.path = []
     unit.pursued = null
+    unit.lastTarget = null
     unit.nextPath = this.tick
     unit.blockedTicks = 0
     unit.assigned = null
@@ -136,7 +150,7 @@ export class Match {
     if (!workers.length) return false
     if (order.kind === 'gather') {
       const resource = resourceAt(this.map, order.at)
-      if (!resource) return false
+      if (!resource || !this.visibility.at(faction, order.at)) return false
       const at = snapToCell(order.at)
       for (const worker of workers) {
         this.resetOrders(worker)
@@ -148,7 +162,8 @@ export class Match {
     let site = order.kind === 'resume-build' ? this.units.get(order.target) : undefined
     if (order.kind === 'build') {
       const rule = buildingRules[order.building]
-      if (!canAfford(this.resources[faction], rule.cost) || !validPlacement(this.map, order.building, order.at, this.units.values())) return false
+      if (this.visibility.at(faction, order.at) !== 2 ||
+          !canAfford(this.resources[faction], rule.cost) || !validPlacement(this.map, order.building, order.at, this.units.values())) return false
       const count = [...this.units.values()].filter(unit => unit.faction === faction && !isUnitKind(unit.kind)).length
       if (count >= MAX_BUILDINGS) return false
       spend(this.resources[faction], rule.cost)
@@ -273,10 +288,16 @@ export class Match {
       let target: Unit | undefined
       if (unit.order?.kind === 'attack') {
         target = this.units.get(unit.order.target)
-        if (!target) {
-          unit.order = null
-          unit.path = []
-          unit.pursued = null
+        if (target && this.visibility.at(unit.faction, target) === 2) {
+          unit.lastTarget = { x: target.x, y: target.y }
+        } else {
+          target = undefined
+          const last = unit.lastTarget
+          this.resetOrders(unit)
+          if (last) {
+            unit.order = { kind: 'advance', to: last }
+            unit.assigned = last
+          }
         }
       }
       if (automaticRange > 0 && unit.order?.kind !== 'move' && !target) {
@@ -284,7 +305,7 @@ export class Match {
         for (const other of this.units.values()) {
           if (other.faction === unit.faction || (unit.kind === 'tower' && !isUnitKind(other.kind))) continue
           const separation = distance(unit, other) - unitStats[other.faction][other.kind].radius
-          if (separation < nearest) {
+          if (separation < nearest && this.visibility.at(unit.faction, other) === 2) {
             nearest = separation
             target = other
           }
@@ -303,6 +324,7 @@ export class Match {
       }
       if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
     }
+    this.visibility.update(this.units.values())
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
   }
@@ -348,13 +370,6 @@ export class Match {
     if (!target.hp) {
       this.units.delete(target.id)
       this.effects.push({ id: ++this.sequence, kind: 'fallen', at, faction: target.faction, entityKind: target.kind })
-      for (const unit of this.units.values()) {
-        if (unit.order?.kind === 'attack' && unit.order.target === targetId) {
-          unit.order = null
-          unit.path = []
-          unit.pursued = null
-        }
-      }
     }
   }
 
@@ -403,7 +418,17 @@ export class Match {
     unit.blockedTicks++
   }
 
-  snapshot(consumeEffects = false): Snapshot {
+  view(faction: Faction, world = this.snapshot()): Snapshot {
+    const visible = (point: Point) => this.visibility.at(faction, point) === 2
+    return {
+      type: 'snapshot', tick: world.tick, fog: this.visibility.mask(faction),
+      resources: world.resources[faction], population: world.population[faction],
+      entities: world.entities.filter(entity => entity.faction === faction || visible(entity)),
+      effects: world.effects.filter(effect => visible(effect.at) && (!effect.to || visible(effect.to)))
+    }
+  }
+
+  snapshot(consumeEffects = false): WorldSnapshot {
     const effects = this.effects
     if (consumeEffects) this.effects = []
     return {
