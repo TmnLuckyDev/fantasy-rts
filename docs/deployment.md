@@ -18,7 +18,8 @@ When deploying manually, choose a Node web service from this repository on the b
 Use an iPhone on Safari in landscape and a desktop browser. Repeat with Android Chrome.
 
 - Create the room on desktop, use the code on the phone, and ready both seats.
-- Tap an individual troop and issue a move on the phone. Confirm the desktop sees the same movement. Repeat with desktop mouse selection and right-click.
-- Test box selection, pinch zoom, two-finger pan and the minimap on the phone.
-- Reload the phone page during the match. Verify it returns to the same seat and both clients see the current positions.
+- Tap an individual troop and issue a move on the phone. Confirm movement on the phone. Repeat with desktop mouse selection and right-click. Compare movement across clients once the troops are in sight of both factions.
+- Drag with one finger to box-select, drag with two fingers to pan and pinch to zoom. Tap the minimap to center the camera.
+- Reload the phone page during the match. Verify it returns to the same seat with the same explored terrain.
+- Verify the opposite base starts hidden on the map and minimap. Scout it, then retreat and check that terrain remains dimmed and enemy units disappear.
 - Attack enemy troops, then destroy the opposing headquarters. Verify that the two screens show complementary results.

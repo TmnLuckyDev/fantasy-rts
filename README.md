@@ -1,6 +1,6 @@
 # Ash & Iron
 
-A 1v1 browser RTS with the blue Human Kingdoms and the red Orcish Horde. Both players start with six combat units, three workers, 300 gold, 180 wood, 120 stone and a headquarters on Ashford Crossing, a hand-designed map mirrored by rotation. Destroy the opposing headquarters to win.
+A 1v1 browser RTS with the blue Human Kingdoms and the red Orcish Horde. Both players start with six combat units, three workers, 300 gold, 180 wood, 120 stone and a headquarters on Ashford Crossing, an 88 × 40 map mirrored by rotation. Destroy the opposing headquarters to win.
 
 ## Play
 
@@ -8,11 +8,11 @@ A game needs one running Node service. Both players open its URL, then:
 
 1. Choose a faction and select **Create room**.
 2. Send the opponent the invite link or five-character code. The opponent selects **Join** and receives the available faction.
-3. Both select **Ready**. The match starts with the same map and state for both sides.
+3. Both select **Ready**. The match starts with both sides on the same battlefield.
 4. Select **Workers**, then right-click or tap a mine for gold, trees for wood, or a marked quarry for stone. Workers carry each load back to their hall and repeat the trip.
-5. Select a worker, choose **Build** and place a structure on open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
+5. Select a worker, choose **Build** and place a structure on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
 6. Select a completed production building, then **Train**. Training costs gold and reserves population. Walls block ground movement. Completed towers fire at nearby enemies.
-7. Move your army across either bridge and destroy the enemy headquarters to win.
+7. Scout across either bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
 
 | Human structure | Orc structure | Training |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ The headquarters supports 10 population. A completed Farm or Boar Farm adds five
 
 | Action | Desktop | Touch |
 | --- | --- | --- |
-| Select | Click a troop or drag a box. Shift adds to selection. | Tap a troop, or enable **Box select** and drag across the troops. |
+| Select | Click a troop or drag a box. Shift adds to selection. | Tap a troop or drag a box with one finger. |
 | Move or attack | Right-click the ground or an enemy. | With troops selected, tap the ground or an enemy. |
 | Attack-move | Press **A** or select **Attack move**, then choose a destination. | Select **Attack move**, then tap a destination. |
 | Pan and zoom | Arrow keys, minimap and mouse wheel. | Two-finger pan, pinch and minimap. Landscape gives the widest view. |
@@ -68,4 +68,4 @@ The browser test uses Chromium desktop against a landscape touch profile. The de
 
 The skirmish includes five combat unit types per faction, attack-move, A* navigation around obstacles, formations, projectile and damage effects, minimap, room codes, reconnects, and headquarters victory. Art uses original canvas-drawn terrain, props, buildings and sprites, plus original generated title art. Sound effects are synthesized with Web Audio.
 
-Upgrades, fog of war, computer AI and other maps are planned.
+Upgrades, computer AI and other maps are planned.
