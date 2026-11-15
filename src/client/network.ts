@@ -26,6 +26,8 @@ export class ConnectionClient {
     this.connect()
   }
 
+  get hasSeat() { return Boolean(this.seat) }
+
   get connected() { return this.socket?.readyState === WebSocket.OPEN }
 
   send(message: ClientMessage) {

@@ -44,6 +44,7 @@ export type Entity = Point & {
   construction?: number
   training?: { kind: UnitKind, progress: number, remaining: number }
   carrying?: ResourceKind
+  idle?: boolean
 }
 
 export type Effect = {
@@ -63,6 +64,7 @@ export type RoomState = {
   phase: 'lobby' | 'playing' | 'finished'
   players: Player[]
   result: Result | null
+  paused?: boolean
 }
 
 export type Order =

@@ -3,7 +3,7 @@ import { TILE, ashford, cellCenter, distance, resourceAt, riverColumn, snapToCel
 import { MAX_SELECTION, entityKinds, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement } from '../shared/economy.ts'
-import type { BuildingKind, Effect, Entity, Faction, Order, Point, Snapshot } from '../shared/protocol.ts'
+import type { BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
 import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
 import { entityTexture } from './sprites.ts'
@@ -17,7 +17,7 @@ type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number
 type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObjects.Image }
 type BattleActions = {
   order: (ids: number[], order: Order) => void
-  selection: (entities: Entity[]) => void
+  selection: (entities: Entity[], interactive: boolean) => void
   placement: (active: boolean, blocked?: boolean) => void
   effect: (kind: Effect['kind']) => void
 }
@@ -25,6 +25,7 @@ type BattleActions = {
 export class BattleScene extends Phaser.Scene {
   private visuals = new Map<number, Visual>()
   private selected = new Set<number>()
+  private lastIdleWorker = 0
   private effects: AnimatedEffect[] = []
   private newest: Snapshot | null = null
   private graphics!: Phaser.GameObjects.Graphics
@@ -191,12 +192,46 @@ export class BattleScene extends Phaser.Scene {
 
   selectWorkers() { this.selectKind(true) }
 
+  selectIdleWorker() {
+    const idle = [...this.visuals.values()].map(({ entity }) => entity)
+      .filter(entity => entity.faction === this.faction && entity.kind === 'worker' && entity.idle)
+      .sort((a, b) => a.id - b.id)
+    const next = idle.find(entity => entity.id > this.lastIdleWorker) ?? idle[0]
+    if (!next) return
+    this.lastIdleWorker = next.id
+    this.place(null)
+    this.selected = new Set([next.id])
+    this.focus(next)
+    this.selectionChanged(true)
+  }
+
+  gatherNearest(resource: ResourceKind) {
+    const ids = this.workerIds()
+    const worker = this.visuals.get(ids[0])?.entity
+    if (!worker) return false
+    let nearest: Point | undefined
+    let range = Infinity
+    for (let index = 0; index < ashford.tiles.length; index++) {
+      if (!this.fog[index]) continue
+      const point = cellCenter(index % ashford.width, Math.floor(index / ashford.width))
+      if (resourceAt(ashford, point) !== resource) continue
+      const gap = distance(worker, point)
+      if (gap < range) {
+        nearest = point
+        range = gap
+      }
+    }
+    if (!nearest) return false
+    this.actions.order(ids, { kind: 'gather', at: nearest })
+    return true
+  }
+
   private selectKind(workers: boolean) {
     this.placing = null
     this.actions.placement(false)
     this.selected = new Set([...this.visuals.values()].filter(({ entity }) =>
       this.ownUnit(entity) && (entity.kind === 'worker') === workers).slice(0, MAX_SELECTION).map(({ entity }) => entity.id))
-    this.selectionChanged()
+    this.selectionChanged(true)
   }
 
   place(kind: BuildingKind | null) {
@@ -240,11 +275,11 @@ export class BattleScene extends Phaser.Scene {
       if (!append) this.selected.clear()
       if (append && this.selected.has(picked.id)) this.selected.delete(picked.id)
       else if (this.selected.size < MAX_SELECTION) this.selected.add(picked.id)
-      this.selectionChanged()
+      this.selectionChanged(true)
     } else if (touch && this.mobileUnits().length) this.orderAt(screen)
     else if (!append) {
       this.selected.clear()
-      this.selectionChanged()
+      this.selectionChanged(true)
     }
   }
 
@@ -270,16 +305,16 @@ export class BattleScene extends Phaser.Scene {
       if (this.selected.size < MAX_SELECTION && this.ownUnit(entity) && sprite.x >= Math.min(a.x, b.x) && sprite.x <= Math.max(a.x, b.x) &&
           sprite.y >= Math.min(a.y, b.y) && sprite.y - 15 <= Math.max(a.y, b.y)) this.selected.add(entity.id)
     }
-    this.selectionChanged()
+    this.selectionChanged(true)
   }
 
-  private selectionChanged() {
+  private selectionChanged(interactive = false) {
     const entities = [...this.selected].flatMap(id => {
       const entry = this.visuals.get(id)
       return entry ? [entry.entity] : []
     })
     if (this.placing && !entities.some(entity => entity.kind === 'worker')) this.place(null)
-    this.actions.selection(entities)
+    this.actions.selection(entities, interactive)
   }
 
   private mobileUnits() {
