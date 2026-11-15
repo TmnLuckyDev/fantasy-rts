@@ -66,6 +66,6 @@ The browser test uses Chromium desktop against a landscape touch profile. The de
 
 ## Current scope
 
-The skirmish includes five combat unit types per faction, attack-move, A* navigation around obstacles, formations, projectile and damage effects, minimap, room codes, reconnects, and headquarters victory. Art uses original canvas-drawn terrain, props, buildings and sprites, plus original generated title art. Sound effects are synthesized with Web Audio.
+The skirmish includes five combat unit types per faction, attack-move, A* navigation around obstacles, formations, projectile and damage effects, minimap, room codes, reconnects, and headquarters victory. Original voxel-inspired terrain, props, faction buildings and unit sprites are drawn with Canvas, and the lobby uses an original generated diorama illustration. Sound effects are synthesized with Web Audio.
 
 Upgrades, computer AI and other maps are planned.

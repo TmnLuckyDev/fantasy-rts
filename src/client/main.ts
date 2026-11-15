@@ -1,12 +1,13 @@
 import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
-import type { Entity, Faction, Population, Resources, RoomState, ServerMessage } from '../shared/protocol.ts'
+import type { Entity, EntityKind, Faction, Population, Resources, RoomState, ServerMessage } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, trainedAt, training, TRAINING_QUEUE_LIMIT } from '../shared/economy.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
 import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
+import { entityTexture } from './sprites.ts'
 import './style.css'
 
 const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
@@ -14,6 +15,7 @@ const button = (id: string) => element<HTMLButtonElement>(id)
 const lobby = element('lobby')
 const match = element('match')
 const battlefield = element('battlefield')
+const portrait = element<HTMLCanvasElement>('selection-portrait')
 const minimap = element<HTMLCanvasElement>('minimap')
 const joinCode = element<HTMLInputElement>('join-code')
 const connection = element('connection')
@@ -144,6 +146,7 @@ function drawLobby() {
 function showBattle() {
   lobby.hidden = true
   match.hidden = false
+  match.dataset.faction = faction
   button('advance').setAttribute('aria-pressed', 'false')
   scene = new BattleScene(faction, battlefield, minimap, {
     order: (ids, order) => {
@@ -180,6 +183,20 @@ function showBattle() {
   })
 }
 
+function paintPortrait(target: HTMLCanvasElement, side: Faction, kind: EntityKind) {
+  const key = side + kind
+  if (target.dataset.sprite === key) return
+  target.dataset.sprite = key
+  const sprite = entityTexture(side, kind)
+  const ctx = target.getContext('2d')!
+  const scale = Math.min(target.width / sprite.width, target.height / sprite.height)
+  const width = Math.floor(sprite.width * scale)
+  const height = Math.floor(sprite.height * scale)
+  ctx.clearRect(0, 0, target.width, target.height)
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(sprite, Math.floor((target.width - width) / 2), Math.floor((target.height - height) / 2), width, height)
+}
+
 function drawSelection(entities: Entity[]) {
   selection = entities
   const selected = entities[0]
@@ -199,11 +216,13 @@ function drawSelection(entities: Entity[]) {
   button('advance').disabled = !movable
   button('halt').disabled = !movable
   meter.hidden = !selected
+  portrait.hidden = !selected
   if (!selected) {
     label.textContent = 'No units selected'
     detail.textContent = touch ? 'Drag to select · Two fingers to pan.' : 'Click or drag to select.'
     return
   }
+  paintPortrait(portrait, selected.faction, selected.kind)
   const hp = entities.reduce((total, entity) => total + entity.hp, 0)
   const totalHp = entities.reduce((total, entity) => total + entity.maxHp, 0)
   const stats = unitStats[selected.faction][selected.kind]
@@ -264,13 +283,25 @@ function updateEconomyOptions() {
   if (hint) hint.hidden = !needsFarm
 }
 
-function economyChoice(name: string, cost: Cost, population: number, act: () => void) {
+function economyChoice(kind: EntityKind, cost: Cost, population: number, act: () => void) {
   const choice = document.createElement('button')
   choice.type = 'button'
   choiceRules.set(choice, { cost, population })
   const prices = resourceKinds.flatMap(kind => cost[kind] ? [`${cost[kind]} ${kind}`] : [])
   if (population > 1) prices.push(`${population} pop`)
-  choice.textContent = [name, ...prices].join(' · ')
+  const name = entityNames[faction][kind]
+  choice.setAttribute('aria-label', [name, ...prices].join(' · '))
+  const icon = document.createElement('canvas')
+  icon.width = icon.height = 36
+  icon.setAttribute('aria-hidden', 'true')
+  paintPortrait(icon, faction, kind)
+  const caption = document.createElement('span')
+  const title = document.createElement('strong')
+  title.textContent = name
+  const price = document.createElement('small')
+  price.textContent = prices.join(' · ')
+  caption.append(title, price)
+  choice.append(icon, caption)
   choice.onclick = act
   return choice
 }
@@ -281,9 +312,8 @@ economyAction.onclick = () => {
     scene?.place(null)
     return
   }
-  const names = entityNames[faction]
   if (economyContext === 'build') {
-    menu.replaceChildren(...buildingKinds.map(kind => economyChoice(names[kind], buildings[kind].cost, 0, () => {
+    menu.replaceChildren(...buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
       closeEconomyMenu()
       scene?.place(kind)
     })))
@@ -294,7 +324,7 @@ economyAction.onclick = () => {
     hint.className = 'economy-hint'
     hint.textContent = 'Build a farm to raise your population limit.'
     menu.replaceChildren(...trainedAt(building.kind).map(kind =>
-      economyChoice(names[kind], { gold: training[kind].gold }, training[kind].population, () => {
+      economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () => {
         client.send({ type: 'command', ids: [building.id], order: { kind: 'train', unit: kind } })
         audio.play('order')
       })), hint)
