@@ -238,3 +238,22 @@ test('defenders break pursuit when attackers leave the area', () => {
   assert.equal(guard.defense, null)
   assert.deepEqual({ x: guard.x, y: guard.y }, stopped)
 })
+
+
+test('Orc combat units have no more health or raw damage than equivalent Human units', () => {
+  for (const kind of ['blade', 'ranged', 'polearm', 'marksman', 'heavy'] as const) {
+    assert.ok(unitStats.orc[kind].health <= unitStats.human[kind].health, `${kind} Orc health`)
+    assert.ok(unitStats.orc[kind].damage <= unitStats.human[kind].damage, `${kind} Orc damage`)
+  }
+})
+
+test('A* consistently finds paths with nearby building obstacles', () => {
+  const start = cellCenter(16, 15)
+  const goal = cellCenter(46, 15)
+  const obstacles = [{ ...cellCenter(22, 15), radius: 18 }, { ...cellCenter(23, 16), radius: 18 }]
+  const first = findPath(ashford, start, goal, obstacles, 9)
+  assert.ok(first.length > 0)
+  assert.deepEqual(first.at(-1), goal)
+  assert.ok(first.every(point => canStand(ashford, point, obstacles, 9)))
+  assert.deepEqual(findPath(ashford, start, goal, obstacles, 9), first)
+})
