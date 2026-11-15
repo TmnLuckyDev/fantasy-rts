@@ -37,12 +37,19 @@ export class Visibility {
       const cells = this.cells[faction]
       for (let i = 0; i < cells.length; i++) if (cells[i] === 2) cells[i] = 1
     }
+    // Units of the same faction with the same sight radius in one tile
+    // reveal exactly the same cells. Stamp that circle only once per update.
+    const stamped = new Set<number>()
     for (const unit of units) {
       if (unit.buildDuration) continue
       const cells = this.cells[unit.faction]
       const cx = Math.floor(unit.x / TILE)
       const cy = Math.floor(unit.y / TILE)
-      for (const offset of circles.get(sight[unit.kind])!) {
+      const radius = sight[unit.kind]
+      const key = (((unit.faction === 'orc' ? 1 : 0) * 16 + radius) * height + cy) * width + cx
+      if (stamped.has(key)) continue
+      stamped.add(key)
+      for (const offset of circles.get(radius)!) {
         const x = cx + offset.x
         const y = cy + offset.y
         if (x >= 0 && x < width && y >= 0 && y < height) cells[y * width + x] = 2
