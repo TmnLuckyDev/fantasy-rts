@@ -350,25 +350,26 @@ export class Match {
     const bounds = unitStats[building.faction][building.kind].radius + radius + 16
     const slots = [0, 0.65, -0.65, 1.3, -1.3, 2.0, -2.0, Math.PI]
     const direction = building.faction === 'human' ? 1 : -1
-    for (const angle of slots) {
+    let spawnPoint: Point | undefined
+    spawnSlots: for (const angle of slots) {
       const point = { x: building.x + direction * Math.cos(angle) * bounds, y: building.y + Math.sin(angle) * bounds }
       if (!canStand(this.map, point, obstacles, radius)) continue
-      let occupied = false
+      spawnPoint ??= point
       for (const unit of this.nearby.near(point, radius + maxRadius + 4)) {
         if (isUnitKind(unit.kind) && distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4) {
-          occupied = true
-          break
+          continue spawnSlots
         }
       }
-      if (occupied) continue
-      if ((next.count ?? 1) <= 1) building.queue.shift()
-      else {
-        next.count = next.count! - 1
-        next.left = training[next.kind].ticks
-      }
-      this.spawn(building.faction, next.kind, point)
-      return
+      spawnPoint = point
+      break
     }
+    if (!spawnPoint) return
+    if ((next.count ?? 1) <= 1) building.queue.shift()
+    else {
+      next.count = next.count! - 1
+      next.left = training[next.kind].ticks
+    }
+    this.spawn(building.faction, next.kind, spawnPoint)
   }
 
   private work(worker: Unit, obstacles: Obstacle[]) {
@@ -419,12 +420,17 @@ export class Match {
       else incoming.push(missile)
     }
     this.missiles = incoming
-    const obstacles = [...this.units.values()].filter(unit => !isUnitKind(unit.kind))
-      .map(unit => ({ x: unit.x, y: unit.y, radius: unitStats[unit.faction][unit.kind].radius }))
+    const hostileBuildings: Record<Faction, Obstacle[]> = { human: [], orc: [] }
+    for (const building of this.units.values()) {
+      if (isUnitKind(building.kind)) continue
+      const opponent = building.faction === 'human' ? 'orc' : 'human'
+      hostileBuildings[opponent].push({ x: building.x, y: building.y, radius: unitStats[building.faction][building.kind].radius })
+    }
     for (const unit of this.units.values()) {
       unit.moving = false
       if (unit.buildDuration) continue
       const stats = unitStats[unit.faction][unit.kind]
+      const obstacles = hostileBuildings[unit.faction]
       if (!isUnitKind(unit.kind)) {
         this.train(unit, obstacles)
         this.research(unit)
@@ -576,17 +582,6 @@ export class Match {
       const y = unit.y + (vx * Math.sin(angle) + vy * Math.cos(angle)) * step
       const test = { x, y }
       if (!canStand(this.map, test, obstacles, stats.radius)) continue
-      let collides = false
-      for (const other of this.nearby.near(test, stats.radius + maxRadius)) {
-        if (other === unit || !isUnitKind(other.kind)) continue
-        const minimum = (stats.radius + unitStats[other.faction][other.kind].radius) * 0.78
-        const gap = distance(test, other)
-        if (gap < minimum && gap <= distance(unit, other)) {
-          collides = true
-          break
-        }
-      }
-      if (collides) continue
       if (Math.abs(x - unit.x) > 0.8) unit.facing = x < unit.x ? -1 : 1
       unit.x = x
       unit.y = y
