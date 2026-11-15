@@ -641,10 +641,10 @@ export class Match {
     unit.blockedTicks++
   }
 
-  view(faction: Faction, world = this.snapshot()): Snapshot {
+  view(faction: Faction, world = this.snapshot(), fog = this.visibility.mask(faction)): Snapshot {
     const visible = (point: Point) => this.visibility.at(faction, point) === 2
     return {
-      type: 'snapshot', tick: world.tick, fog: this.visibility.mask(faction),
+      type: 'snapshot', tick: world.tick, fog,
       resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction],
       entities: world.entities.flatMap(entity => {
         if (entity.faction === faction) return [entity]
