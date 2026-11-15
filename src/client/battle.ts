@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
-import { TILE, ashford, cellCenter, distance } from '../shared/map.ts'
-import type { Effect, Entity, Faction, Order, Point, Snapshot } from '../shared/protocol.ts'
+import { TILE, ashford, cellCenter, distance, isMine, riverColumn, snapToCell } from '../shared/map.ts'
+import { MAX_SELECTION, entityKinds, isUnitKind } from '../shared/protocol.ts'
+import { validPlacement } from '../shared/economy.ts'
+import type { BuildingKind, Effect, Entity, Faction, Order, Point, Snapshot } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
 import { canvas, entityTexture, factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
 import { BattlefieldInput } from './input.ts'
@@ -13,6 +15,7 @@ type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObject
 type BattleActions = {
   order: (ids: number[], order: Order) => void
   selection: (entities: Entity[]) => void
+  placement: (active: boolean) => void
   effect: (kind: Effect['kind']) => void
 }
 
@@ -33,6 +36,8 @@ export class BattleScene extends Phaser.Scene {
   private hasSnapshot = false
   private lastMiniDraw = 0
   advanceMode = false
+  private placing: BuildingKind | null = null
+  private pointer: Point | null = null
 
   constructor(
     readonly faction: Faction,
@@ -51,9 +56,9 @@ export class BattleScene extends Phaser.Scene {
       for (let v = 0; v < (tile === 'forest' ? 3 : 1); v++) this.textures.addCanvas(tile + v, propTexture(tile, v))
     }
     for (const faction of ['human', 'orc'] as const) {
-      for (const kind of ['headquarters', 'blade', 'ranged', 'heavy'] as const) {
+      for (const kind of entityKinds) {
         this.textures.addCanvas(faction + kind + '0', entityTexture(faction, kind))
-        if (kind !== 'headquarters') this.textures.addCanvas(faction + kind + '1', entityTexture(faction, kind, 1))
+        if (isUnitKind(kind)) this.textures.addCanvas(faction + kind + '1', entityTexture(faction, kind, 1))
       }
     }
     ashford.tiles.forEach((tile, i) => {
@@ -86,7 +91,15 @@ export class BattleScene extends Phaser.Scene {
       pan: (dx, dy) => this.pan(dx, dy),
       zoom: (point, ratio) => this.zoom(point, ratio)
     })
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy())
+    const track = (event: PointerEvent) => {
+      const rect = this.host.getBoundingClientRect()
+      this.pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    }
+    this.host.addEventListener('pointermove', track)
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.controls.destroy()
+      this.host.removeEventListener('pointermove', track)
+    })
     this.keys = this.input.keyboard?.addKeys('UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>
     this.scale.on(Phaser.Scale.Events.RESIZE, () => this.clampCamera())
     if (this.newest) this.snapshot(this.newest)
@@ -117,7 +130,7 @@ export class BattleScene extends Phaser.Scene {
     }
     for (const effect of snapshot.effects) {
       let sprite: Phaser.GameObjects.Image | undefined
-      if (effect.kind === 'fallen' && effect.entityKind !== 'headquarters') {
+      if (effect.kind === 'fallen' && isUnitKind(effect.entityKind)) {
         sprite = this.add.image(effect.at.x, effect.at.y, effect.faction + effect.entityKind + '0')
           .setOrigin(0.5, 0.84).setScale(1.48).setDepth(effect.at.y - 1)
       }
@@ -133,27 +146,60 @@ export class BattleScene extends Phaser.Scene {
   setBoxMode(enabled: boolean) { if (this.controls) this.controls.boxMode = enabled }
 
   selectAll() {
-    this.selected = new Set([...this.visuals.values()].filter(({ entity }) => this.ownUnit(entity)).map(({ entity }) => entity.id))
+    this.selectKind(false)
+  }
+
+  selectWorkers() { this.selectKind(true) }
+
+  private selectKind(workers: boolean) {
+    this.placing = null
+    this.actions.placement(false)
+    this.selected = new Set([...this.visuals.values()].filter(({ entity }) =>
+      this.ownUnit(entity) && (entity.kind === 'worker') === workers).slice(0, MAX_SELECTION).map(({ entity }) => entity.id))
     this.selectionChanged()
   }
+
+  place(kind: BuildingKind | null) {
+    this.placing = kind
+    this.actions.placement(Boolean(kind))
+  }
+
+  private workerIds() { return [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
 
   halt() { this.issue({ kind: 'halt' }) }
   home() { if (this.initialized) this.focus(ashford.bases[this.faction]) }
   minimapFocus(x: number, y: number) { if (this.initialized) this.focus({ x: x * mapWidth, y: y * mapHeight }) }
 
-  private ownUnit(entity: Entity) { return entity.faction === this.faction && entity.kind !== 'headquarters' }
+  private ownUnit(entity: Entity) { return entity.faction === this.faction && isUnitKind(entity.kind) }
 
   private click(screen: Point, append: boolean, touch: boolean) {
+    const point = this.world(screen)
+    if (this.placing) {
+      const ids = this.workerIds()
+      const at = snapToCell(point)
+      if (ids.length && validPlacement(ashford, this.placing, at, this.entities())) {
+        this.actions.order(ids, { kind: 'build', building: this.placing, at })
+        this.place(null)
+      }
+      return
+    }
+    if (touch && this.workerIds().length && this.mineAt(point)) {
+      this.orderAt(screen)
+      return
+    }
     if (this.advanceMode && this.mobileUnits().length) {
       this.orderAt(screen)
       return
     }
-    const point = this.world(screen)
     const picked = this.pick(point, touch)
+    if (touch && picked?.faction === this.faction && picked.construction !== undefined && this.workerIds().length) {
+      this.actions.order(this.workerIds(), { kind: 'resume-build', target: picked.id })
+      return
+    }
     if (picked?.faction === this.faction) {
       if (!append) this.selected.clear()
       if (append && this.selected.has(picked.id)) this.selected.delete(picked.id)
-      else this.selected.add(picked.id)
+      else if (this.selected.size < MAX_SELECTION) this.selected.add(picked.id)
       this.selectionChanged()
     } else if (touch && this.mobileUnits().length) this.orderAt(screen)
     else if (!append) {
@@ -167,10 +213,12 @@ export class BattleScene extends Phaser.Scene {
       .filter(({ entity, sprite }) => {
         const dx = Math.abs(point.x - sprite.x)
         const dy = sprite.y - point.y
-        return entity.kind === 'headquarters' ? dx < 43 && dy > -13 && dy < 76 :
-          dx < (touch ? 21 : 14) && dy > -12 && dy < 35
+        if (isUnitKind(entity.kind)) return dx < (touch ? 21 : 14) && dy > -12 && dy < 35
+        const radius = unitStats[entity.faction][entity.kind].radius
+        const height = entity.kind === 'headquarters' ? 76 : entity.kind === 'tower' ? 61 : 35
+        return dx < radius + 10 && dy > -14 && dy < height
       })
-      .sort((a, b) => Number(a.entity.kind === 'headquarters') - Number(b.entity.kind === 'headquarters') ||
+      .sort((a, b) => Number(!isUnitKind(a.entity.kind)) - Number(!isUnitKind(b.entity.kind)) ||
         distance(point, { x: a.sprite.x, y: a.sprite.y - 14 }) - distance(point, { x: b.sprite.x, y: b.sprite.y - 14 }))[0]?.entity
   }
 
@@ -179,7 +227,7 @@ export class BattleScene extends Phaser.Scene {
     const b = this.world(rect.to)
     if (!append) this.selected.clear()
     for (const { entity, sprite } of this.visuals.values()) {
-      if (this.ownUnit(entity) && sprite.x >= Math.min(a.x, b.x) && sprite.x <= Math.max(a.x, b.x) &&
+      if (this.selected.size < MAX_SELECTION && this.ownUnit(entity) && sprite.x >= Math.min(a.x, b.x) && sprite.x <= Math.max(a.x, b.x) &&
           sprite.y >= Math.min(a.y, b.y) && sprite.y - 15 <= Math.max(a.y, b.y)) this.selected.add(entity.id)
     }
     this.selectionChanged()
@@ -190,15 +238,42 @@ export class BattleScene extends Phaser.Scene {
       const entry = this.visuals.get(id)
       return entry ? [entry.entity] : []
     })
+    if (this.placing && !entities.some(entity => entity.kind === 'worker')) this.place(null)
     this.actions.selection(entities)
   }
 
-  private mobileUnits() { return [...this.selected].filter(id => this.visuals.get(id)?.entity.kind !== 'headquarters') }
+  private mobileUnits() {
+    return [...this.selected].filter(id => isUnitKind(this.visuals.get(id)?.entity.kind))
+  }
+
+  private *entities() {
+    for (const current of this.visuals.values()) yield current.entity
+  }
+
+  private mineAt(point: Point) {
+    if (isMine(ashford, point)) return snapToCell(point)
+    const raised = { x: point.x, y: point.y + 12 }
+    return isMine(ashford, raised) ? snapToCell(raised) : null
+  }
 
   private orderAt(screen: Point) {
+    if (this.placing) {
+      this.place(null)
+      return
+    }
     const point = this.world(screen)
     if (point.x < 0 || point.y < 0 || point.x >= mapWidth || point.y >= mapHeight) return
     const picked = this.pick(point, true)
+    const workers = this.workerIds()
+    const mine = workers.length ? this.mineAt(point) : null
+    if (mine) {
+      this.actions.order(workers, { kind: 'gather', mine })
+      return
+    }
+    if (workers.length && picked?.faction === this.faction && picked.construction !== undefined) {
+      this.actions.order(workers, { kind: 'resume-build', target: picked.id })
+      return
+    }
     if (picked && picked.faction !== this.faction) this.issue({ kind: 'attack', target: picked.id }, { x: picked.x, y: picked.y })
     else this.issue({ kind: this.advanceMode ? 'advance' : 'move', to: point }, point)
   }
@@ -265,13 +340,13 @@ export class BattleScene extends Phaser.Scene {
     this.water.fillStyle(0x8eb4ac, 0.32)
     for (let i = 0; i < 48; i++) {
       const y = (i * 53 + Math.floor(time * 0.024)) % mapHeight
-      if (ashford.tiles[Math.floor(y / TILE) * ashford.width + 23] !== 'water') continue
-      this.water.fillRect(23 * TILE + (i * 13) % 54, y, 6 + i % 7, 1)
+      if (ashford.tiles[Math.floor(y / TILE) * ashford.width + riverColumn] !== 'water') continue
+      this.water.fillRect(riverColumn * TILE + (i * 13) % 54, y, 6 + i % 7, 1)
     }
     this.graphics.clear()
     const blend = Math.min(1, delta / 70)
     for (const { entity, sprite, lastHp } of this.visuals.values()) {
-      const building = entity.kind === 'headquarters'
+      const building = !isUnitKind(entity.kind)
       sprite.x += (entity.x - sprite.x) * blend
       sprite.y += (entity.y - sprite.y) * blend
       sprite.setDepth(sprite.y)
@@ -279,19 +354,26 @@ export class BattleScene extends Phaser.Scene {
         const frame = entity.moving ? Math.floor(time / 125) % 2 : 0
         sprite.setTexture(entity.faction + entity.kind + frame).setFlipX(entity.facing < 0)
       }
+      if (entity.construction !== undefined) sprite.setAlpha(0.38 + entity.construction * 0.52)
+      else sprite.setAlpha(1)
+      if (entity.carryingGold) {
+        this.graphics.fillStyle(0x493920, 1).fillRect(sprite.x - 11, sprite.y - 13, 9, 8)
+        this.graphics.fillStyle(0xf6cd61, 1).fillRect(sprite.x - 9, sprite.y - 12, 5, 5)
+      }
       const selected = this.selected.has(entity.id)
       const color = factionColor[entity.faction]
       if (selected) {
         this.graphics.lineStyle(1.5, 0xecdf9c, 0.95)
-        this.graphics.strokeEllipse(sprite.x, sprite.y + 2, building ? 85 : 29, building ? 25 : 12)
+        this.graphics.strokeEllipse(sprite.x, sprite.y + 2, building ? unitStats[entity.faction][entity.kind].radius * 2.1 : 29, building ? 22 : 12)
       }
-      const w = building ? 64 : 22
+      const w = building ? unitStats[entity.faction][entity.kind].radius * 1.8 : 22
       const x = sprite.x - w / 2
-      const y = sprite.y - (building ? 82 : 40)
+      const y = sprite.y - (entity.kind === 'headquarters' ? 82 : entity.kind === 'tower' ? 65 : entity.kind === 'barracks' ? 47 : 40)
       this.graphics.fillStyle(0x1b1914, 0.9).fillRect(x - 1, y - 1, w + 2, 5)
       this.graphics.fillStyle(0x30271e, 1).fillRect(x, y, w, 3)
       this.graphics.fillStyle(color, 0.97).fillRect(x, y, w * entity.hp / entity.maxHp, 3)
-      if (building && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
+      if (entity.construction !== undefined) this.graphics.fillStyle(0xf4b853, 1).fillRect(x, y + 6, w * entity.construction, 2)
+      if (building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
       if (entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
     this.paintEffects(time)
@@ -303,6 +385,13 @@ export class BattleScene extends Phaser.Scene {
       return true
     })
     this.ui.clear()
+    if (this.placing && this.pointer) {
+      const at = snapToCell(this.world(this.pointer))
+      const radius = unitStats[this.faction][this.placing].radius
+      const color = validPlacement(ashford, this.placing, at, this.entities()) ? 0x9fdf8d : 0xf27b65
+      this.ui.fillStyle(color, 0.27).fillRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
+      this.ui.lineStyle(1, color, 0.9).strokeRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
+    }
     const drag = this.controls?.selection
     if (drag) {
       const a = this.world(drag.from)
@@ -369,7 +458,7 @@ export class BattleScene extends Phaser.Scene {
     ctx.drawImage(this.miniTerrain, 0, 0)
     for (const { entity } of this.visuals.values()) {
       ctx.fillStyle = entity.faction === 'human' ? '#a3d6ff' : '#ff9575'
-      const r = entity.kind === 'headquarters' ? 3 : 1.3
+      const r = entity.kind === 'headquarters' ? 3 : isUnitKind(entity.kind) ? 1.3 : 1.8
       ctx.fillRect(entity.x / mapWidth * w - r, entity.y / mapHeight * h - r, r * 2, r * 2)
     }
     const camera = this.cameras.main

@@ -174,8 +174,58 @@ function fortress(faction: Faction) {
   return surface
 }
 
+function structureTexture(faction: Faction, kind: 'wall' | 'tower' | 'barracks') {
+  const surface = canvas(kind === 'wall' ? 23 : 41, kind === 'tower' ? 49 : 34)
+  const { rect, poly, shadow } = brush(surface)
+  const human = faction === 'human'
+  const mid = human ? '#888f91' : '#835c38'
+  const dark = human ? '#4c525d' : '#4a3028'
+  const light = human ? '#c2c4b4' : '#bd9160'
+  const accent = human ? '#467fbb' : '#a84633'
+  if (kind === 'wall') {
+    shadow(11, 27, 11, 3)
+    rect(dark, 0, 14, 23, 13)
+    rect(mid, 0, 12, 23, 13)
+    for (const x of [0, 6, 12, 18]) {
+      poly(light, x, 14, x, 9, x + 2, human ? 9 : 5, x + 5, 9, x + 5, 14)
+      rect(dark, x + 4, 15, 1, human ? 3 : 9)
+    }
+    rect(dark, 0, 21, 23, 1)
+    rect(light, 1, 19, 9, 1)
+    return surface
+  }
+  if (kind === 'tower') {
+    shadow(20, 43, 16, 4)
+    rect(dark, 8, 19, 26, 24)
+    rect(mid, 10, 17, 18, 23)
+    rect(light, 11, 18, 3, 21)
+    rect(dark, 5, 13, 30, 10)
+    rect(mid, 6, 12, 28, 8)
+    for (const x of [6, 17, 28]) {
+      poly(light, x, 14, x, 9, x + 3, human ? 9 : 5, x + 7, 9, x + 7, 14)
+    }
+    rect('#28251e', 18, 24, 7, 7)
+    rect('#f0b76e', 19, 24, 3, 2)
+    rect(dark, 25, 1, 1, 13)
+    poly(accent, 26, 1, 40, 2, 36, 6, 26, 7)
+    return surface
+  }
+  shadow(20, 30, 19, 4)
+  rect(dark, 3, 15, 35, 16)
+  rect(mid, 4, 15, 26, 14)
+  poly(accent, 1, 15, 14, 4, 35, 7, 39, 17, 27, 20)
+  poly(human ? '#6c97bd' : '#cc7853', 2, 14, 14, 5, 29, 16, 14, 17)
+  rect(light, 5, 18, 4, 10)
+  rect(light, 27, 19, 3, 11)
+  rect('#281d1b', 14, 21, 9, 9)
+  rect(light, 14, 20, 9, 2)
+  rect('#deae60', 31, 21, 3, 4)
+  return surface
+}
+
 export function entityTexture(faction: Faction, kind: EntityKind, frame = 0) {
   if (kind === 'headquarters') return fortress(faction)
+  if (kind === 'wall' || kind === 'tower' || kind === 'barracks') return structureTexture(faction, kind)
   const surface = canvas(28, 29)
   const { rect, poly, shadow } = brush(surface)
   const human = faction === 'human'
@@ -183,6 +233,20 @@ export function entityTexture(faction: Faction, kind: EntityKind, frame = 0) {
   const dark = human ? '#515969' : '#4c5036'
   const cloth = human ? '#4e8bca' : '#b64d3d'
   const skin = human ? '#d8a47a' : '#9aa75f'
+  if (kind === 'worker') {
+    const step = frame ? 2 : 0
+    shadow(14, 25, 9, 3)
+    rect('#31261e', 9, 19, 4, 6 - step)
+    rect('#31261e', 16, 18, 4, 5 + step)
+    rect(human ? '#927951' : '#6e5434', 8, 10, 13, 10)
+    rect(cloth, 9, 14, 12, 4)
+    rect(skin, 10, 4, 9, 8)
+    rect(human ? '#806044' : '#39402d', 10, 3, 8, 3)
+    rect('#f2d79e', 17, 9, 2, 1)
+    rect('#8c6240', 22, 8, 2, 15)
+    poly('#c2bb9f', 17, 7, 22, 4, 27, 7, 27, 9, 23, 7, 19, 9)
+    return surface
+  }
   const step = frame === 1 ? 2 : 0
   shadow(14, 25, kind === 'heavy' ? 12 : 8, 3)
   if (kind === 'heavy') {

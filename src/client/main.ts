@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
-import { entityNames, factionNames, isFaction, opposite } from '../shared/protocol.ts'
-import type { Entity, Faction, RoomState, ServerMessage } from '../shared/protocol.ts'
+import { buildingKinds, combatKinds, entityNames, factionNames, isFaction, isUnitKind, opposite } from '../shared/protocol.ts'
+import type { Entity, Faction, RoomState, ServerMessage, UnitKind } from '../shared/protocol.ts'
+import { buildings, training, TRAINING_QUEUE_LIMIT } from '../shared/economy.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
 import { BattleScene } from './battle.ts'
@@ -18,6 +19,9 @@ const connection = element('connection')
 const lobbyMessage = element('lobby-message')
 const result = element<HTMLDialogElement>('result')
 const banner = element('banner')
+const menu = element('economy-menu')
+const economyAction = button('economy-action')
+const placementTip = element('placement-tip')
 const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
 const audio = new BattleAudio()
 const touch = matchMedia('(pointer: coarse)').matches
@@ -28,6 +32,10 @@ let scene: BattleScene | null = null
 let game: Phaser.Game | null = null
 let box = false
 let orderMessageTimer: number | undefined
+let gold = 0
+let selection: Entity[] = []
+let placing = false
+let economyContext = ''
 
 const invite = new URLSearchParams(location.search).get('room')
 if (invite && /^[A-Z2-9]{5}$/i.test(invite)) joinCode.value = invite.toUpperCase()
@@ -92,6 +100,8 @@ function receive(message: ServerMessage) {
       }
       break
     case 'snapshot':
+      gold = message.gold[faction]
+      element('gold').textContent = String(gold)
       scene?.snapshot(message)
       break
     case 'error':
@@ -140,9 +150,18 @@ function showBattle() {
       audio.play('order')
     },
     selection: drawSelection,
+    placement: active => {
+      placing = active
+      placementTip.hidden = !active
+    },
     effect: kind => audio.play(kind)
   })
   scene.advanceMode = false
+  gold = 0
+  element('gold').textContent = '0'
+  placementTip.hidden = true
+  placing = false
+  closeEconomyMenu()
   drawSelection([])
   game = new Phaser.Game({
     type: Phaser.AUTO,
@@ -159,11 +178,21 @@ function showBattle() {
 }
 
 function drawSelection(entities: Entity[]) {
+  selection = entities
   const selected = entities[0]
+  const workers = entities.some(entity => entity.kind === 'worker')
+  const trainer = entities.length === 1 && selected?.construction === undefined &&
+    (selected?.kind === 'headquarters' || selected?.kind === 'barracks') ? selected : undefined
+  const nextContext = workers ? 'build' : trainer ? 'train:' + trainer.id : ''
+  if (nextContext !== economyContext) closeEconomyMenu()
+  economyContext = nextContext
+  economyAction.hidden = !nextContext
+  economyAction.textContent = workers ? 'Build' : 'Train'
+  if (!menu.hidden) updateEconomyOptions()
   const label = element('selection-name')
   const detail = element('selection-detail')
   const meter = element<HTMLMeterElement>('selection-health')
-  const movable = entities.some(entity => entity.kind !== 'headquarters')
+  const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').disabled = !movable
   button('halt').disabled = !movable
   meter.hidden = !selected
@@ -178,13 +207,71 @@ function drawSelection(entities: Entity[]) {
   meter.value = hp / totalHp * 100
   if (entities.length === 1) {
     label.textContent = entityNames[selected.faction][selected.kind]
-    detail.textContent = selected.kind === 'headquarters' ? `${hp}/${totalHp} HP · Headquarters` :
-      `${hp}/${totalHp} HP · ${stats.damage} damage · ${stats.armor} armor`
+    if (selected.construction !== undefined) detail.textContent = 'Building · ' + Math.floor(selected.construction * 100) + '%'
+    else if (selected.training) {
+      const next = entityNames[faction][selected.training.kind]
+      detail.textContent = `${next} · ${Math.floor(selected.training.progress * 100)}% · ${selected.training.remaining} queued`
+    } else if (selected.kind === 'worker') {
+      detail.textContent = selected.carryingGold ? 'Carrying gold to the hall.' : touch ? 'Tap a gold mine to gather.' : 'Right-click a gold mine to gather.'
+    } else detail.textContent = stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`
   } else {
-    label.textContent = `${entities.length} troops selected`
-    detail.textContent = touch ? 'Tap ground to move or an enemy to attack.' : 'Right-click ground to move or an enemy to attack.'
+    const onlyWorkers = entities.every(entity => entity.kind === 'worker')
+    label.textContent = `${entities.length} ${onlyWorkers ? 'workers' : 'troops'} selected`
+    detail.textContent = onlyWorkers
+      ? (touch ? 'Tap a gold mine to gather.' : 'Right-click a gold mine to gather.')
+      : (touch ? 'Tap ground to move or an enemy to attack.' : 'Right-click ground to move or an enemy to attack.')
   }
 }
+
+function closeEconomyMenu() {
+  menu.hidden = true
+  economyAction.setAttribute('aria-expanded', 'false')
+}
+
+function updateEconomyOptions() {
+  const full = economyContext.startsWith('train:') && (selection[0]?.training?.remaining ?? 0) >= TRAINING_QUEUE_LIMIT
+  for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
+    choice.disabled = full || Number(choice.dataset.gold) > gold
+  }
+}
+
+function economyChoice(name: string, cost: number, act: () => void) {
+  const choice = document.createElement('button')
+  choice.type = 'button'
+  choice.dataset.gold = String(cost)
+  choice.textContent = `${name} · ${cost} gold`
+  choice.onclick = act
+  return choice
+}
+
+economyAction.onclick = () => {
+  if (!menu.hidden || placing) {
+    closeEconomyMenu()
+    scene?.place(null)
+    return
+  }
+  const names = entityNames[faction]
+  if (economyContext === 'build') {
+    menu.replaceChildren(...buildingKinds.map(kind => economyChoice(names[kind], buildings[kind].gold, () => {
+      closeEconomyMenu()
+      scene?.place(kind)
+    })))
+  } else {
+    const building = selection[0]
+    if (!building) return
+    const kinds: readonly UnitKind[] = building.kind === 'headquarters' ? ['worker'] : combatKinds
+    menu.replaceChildren(...kinds.map(kind => economyChoice(names[kind], training[kind].gold, () => {
+      client.send({ type: 'command', ids: [building.id], order: { kind: 'train', unit: kind } })
+      audio.play('order')
+    })))
+  }
+  updateEconomyOptions()
+  menu.hidden = false
+  economyAction.setAttribute('aria-expanded', 'true')
+}
+
+button('workers').onclick = () => scene?.selectWorkers()
+button('cancel-placement').onclick = () => scene?.place(null)
 
 function drawResult(outcome: NonNullable<RoomState['result']>) {
   element('result-title').textContent = !outcome.winner ? 'Draw' : outcome.winner === faction ? 'Victory' : 'Defeat'

@@ -122,3 +122,16 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   .head-actions button, .orders button { padding-inline: 0.45rem; }
   .wordmark { font-size: 0.95rem; }
 }
+
+.treasury { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 0.55rem; color: #f5ce79; font-weight: 700; font-variant-numeric: tabular-nums; }
+.treasury span { width: 13px; height: 13px; border-radius: 50%; background: #c68c36; border: 2px solid #f6d679; box-shadow: 0 0 0 1px #6e441e; }
+.hud { position: relative; }
+.economy-menu, .placement-tip { position: absolute; right: 0.6rem; bottom: calc(100% + 0.35rem); background: #1e1d15; border: 1px solid #866435; box-shadow: 0 4px 16px #000a; padding: 0.4rem; max-width: min(90vw, 520px); }
+.economy-menu { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.placement-tip { font-size: 0.8rem; }
+.placement-tip button { margin-left: 0.4rem; }
+@media (max-width: 960px) and (orientation: landscape) {
+  .orders { flex-wrap: wrap; justify-content: flex-end; }
+  .orders button { padding-inline: 0.45rem; }
+  .treasury { padding-inline: 0.28rem; }
+}
