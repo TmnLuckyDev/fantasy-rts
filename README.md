@@ -12,9 +12,9 @@ Open the game in your browser and choose a faction.
 During a match:
 
 1. Select a worker or use **Idle worker** to cycle through workers without orders. Use **Mine gold**, **Chop wood** or **Quarry stone** to go to the closest explored source, or target a source directly. Workers carry each load back to their hall and repeat the trip.
-2. Select a worker, choose a building from its action panel and place it on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
+2. Select a worker, select **Build**, choose a building and place it on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
 3. Select a completed production building to see the available units and train them directly. Training costs gold and reserves population. Walls block ground movement. Completed towers fire at nearby enemies.
-4. Scout across either bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
+4. Scout across either four-tile-wide bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
 
 | Human structure | Orc structure | Training |
 | --- | --- | --- |
