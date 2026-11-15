@@ -13,7 +13,6 @@ export const GATHERING: Record<ResourceKind, { amount: number, ticks: number }> 
 
 export const BASE_POPULATION = 10
 export const FARM_POPULATION = 10
-export const TRAINING_QUEUE_LIMIT = 5
 
 export type Cost = Readonly<Partial<Resources>>
 

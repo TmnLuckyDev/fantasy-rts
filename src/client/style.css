@@ -103,9 +103,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #result { color: var(--pale); background: #22221b; border: 1px solid var(--gold); box-shadow: 0 0 0 4px #211c14, 0 10px 60px #000; padding: 1.5rem 2.25rem; text-align: center; }
 #result h2 { font-size: 2.1rem; margin: 0.55rem 0; }
 #result::backdrop { background: #0c0e09a8; }
-.rotate { display: none; }
 @media (pointer: coarse) and (orientation: portrait) {
-  .rotate { display: block; position: absolute; z-index: 1; top: 56px; left: 50%; width: max-content; max-width: 85%; transform: translateX(-50%); background: #161711df; border: 1px solid var(--edge); color: var(--pale); padding: 4px 8px; font-size: 0.7rem; pointer-events: none; }
   .hud { flex-wrap: wrap; }
   .orders { flex: 1 0 100%; justify-content: center; }
 }
@@ -191,3 +189,5 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 @media (max-height: 530px) and (orientation: landscape) {
   .production-panel { max-width: 80vw; }
 }
+
+.queue-controls input { width: 5rem; min-height: 44px; padding: 0.4rem; font-size: 16px; }

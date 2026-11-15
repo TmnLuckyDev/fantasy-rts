@@ -63,6 +63,10 @@ function parseOrder(order: Record<string, unknown>): Order | null {
     if (upgrade) return { kind: 'upgrade', upgrade }
   }
   if (order.kind === 'resume-build' && validId(order.target)) return { kind: 'resume-build', target: order.target }
-  if (order.kind === 'train' && isUnitKind(order.unit)) return { kind: 'train', unit: order.unit }
+  if (order.kind === 'train' && isUnitKind(order.unit) && (order.count === undefined || validId(order.count))) {
+    return { kind: 'train', unit: order.unit, count: order.count }
+  }
+  if (order.kind === 'cancel-train' && validId(order.count)) return { kind: order.kind, count: order.count }
+  if (order.kind === 'cancel-build') return { kind: order.kind }
   return null
 }

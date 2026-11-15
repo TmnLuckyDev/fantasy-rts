@@ -46,7 +46,7 @@ export type Entity = Point & {
   construction?: number
   constructionStatus?: 'queued' | 'building' | 'paused'
   research?: { kind: UpgradeKind, progress: number }
-  training?: { kind: UnitKind, progress: number, remaining: number, queue?: UnitKind[] }
+  training?: { kind: UnitKind, progress: number, remaining: number, queue?: Array<{ kind: UnitKind, count: number }>, seconds?: number }
   carrying?: ResourceKind
   idle?: boolean
 }
@@ -80,7 +80,9 @@ export type Order =
   | { kind: 'wall-line', from: Point, to: Point }
   | { kind: 'upgrade', upgrade: UpgradeKind }
   | { kind: 'resume-build', target: number }
-  | { kind: 'train', unit: UnitKind }
+  | { kind: 'train', unit: UnitKind, count?: number }
+  | { kind: 'cancel-train', count: number }
+  | { kind: 'cancel-build' }
 
 export type ClientMessage =
   | { type: 'create' | 'solo', faction: Faction }

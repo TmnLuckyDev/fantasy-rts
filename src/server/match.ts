@@ -1,10 +1,10 @@
 import { TILE, ashford, distance, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { MAX_SELECTION, factions, isUnitKind } from '../shared/protocol.ts'
+import { MAX_SELECTION, factions, isBuildingKind, isUnitKind, resourceKinds } from '../shared/protocol.ts'
 import type { Effect, Entity, EntityKind, Faction, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING, STARTING_RESOURCES,
-  TRAINING_QUEUE_LIMIT, buildings as buildingRules, canAfford, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, canAfford, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, findPath } from './navigation.ts'
 import { Visibility } from './visibility.ts'
 
@@ -31,7 +31,7 @@ type Unit = Entity & {
   blockedTicks: number
   job: WorkerJob | null
   cargo: ResourceKind | null
-  queue: Array<{ kind: UnitKind, left: number }>
+  queue: Array<{ kind: UnitKind, left: number, count?: number }>
   buildTicks: number
   buildDuration: number
   buildQueue?: number[]
@@ -145,7 +145,9 @@ export class Match {
       units.push(unit)
     }
     if (order.kind === 'upgrade') return units.length === 1 && this.startUpgrade(units[0], order.upgrade)
-    if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit)
+    if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
+    if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
+    if (order.kind === 'cancel-build') return units.length === 1 && this.cancelConstruction(units[0])
     if (order.kind === 'gather' || order.kind === 'build' || order.kind === 'wall-line' || order.kind === 'resume-build') {
       return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker'), order)
     }
@@ -289,21 +291,47 @@ export class Match {
       else if (!unit.buildDuration) {
         if (unit.kind === 'headquarters') limit += BASE_POPULATION
         if (unit.kind === 'farm') limit += FARM_POPULATION
-        for (const queued of unit.queue) reserved += training[queued.kind].population
+        for (const queued of unit.queue) reserved += training[queued.kind].population * (queued.count ?? 1)
       }
     }
     return { used, reserved, limit }
   }
 
-  private enqueue(building: Unit, kind: UnitKind) {
+  private enqueue(building: Unit, kind: UnitKind, count: number) {
+    if (building.buildDuration || !trainedAt(building.kind).includes(kind) || !Number.isSafeInteger(count) || count < 1) return false
     const rule = training[kind]
     const stock = this.resources[building.faction]
-    if (building.buildDuration || !trainedAt(building.kind).includes(kind) ||
-        building.queue.length >= TRAINING_QUEUE_LIMIT || stock.gold < rule.gold) return false
     const { used, reserved, limit } = this.population(building.faction)
-    if (used + reserved + rule.population > limit) return false
-    stock.gold -= rule.gold
-    building.queue.push({ kind, left: rule.ticks })
+    if (count > Math.floor(stock.gold / rule.gold) || count > Math.floor((limit - used - reserved) / rule.population)) return false
+    stock.gold -= count * rule.gold
+    const tail = building.queue.at(-1)
+    if (tail?.kind === kind) tail.count = (tail.count ?? 1) + count
+    else building.queue.push({ kind, left: rule.ticks, count })
+    return true
+  }
+
+  private cancelTraining(building: Unit, count: number) {
+    if (!Number.isSafeInteger(count) || count < 1 || !building.queue.length) return false
+    const stock = this.resources[building.faction]
+    while (count > 0 && building.queue.length) {
+      const tail = building.queue.at(-1)!
+      const size = tail.count ?? 1
+      const removed = Math.min(count, size)
+      count -= removed
+      stock.gold += removed * training[tail.kind].gold
+      if (removed === size) building.queue.pop()
+      else tail.count = size - removed
+    }
+    return true
+  }
+
+  private cancelConstruction(site: Unit) {
+    if (!site.buildDuration || !isBuildingKind(site.kind)) return false
+    const cost = buildingRules[site.kind].cost
+    const remaining = (site.buildDuration - site.buildTicks) / site.buildDuration
+    const stock = this.resources[site.faction]
+    for (const resource of resourceKinds) stock[resource] += Math.floor((cost[resource] ?? 0) * remaining)
+    this.units.delete(site.id)
     return true
   }
 
@@ -323,7 +351,11 @@ export class Match {
       if (!canStand(this.map, point, obstacles, radius)) continue
       if ([...this.units.values()].some(unit => isUnitKind(unit.kind) &&
           distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4)) continue
-      building.queue.shift()
+      if ((next.count ?? 1) <= 1) building.queue.shift()
+      else {
+        next.count = next.count! - 1
+        next.left = training[next.kind].ticks
+      }
       this.spawn(building.faction, next.kind, point)
       return
     }
@@ -591,7 +623,8 @@ export class Match {
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,
           carrying: cargo ?? undefined,
           idle: kind === 'worker' ? !unit.job && !unit.assigned : undefined,
-          training: next ? { kind: next.kind, progress: 1 - next.left / training[next.kind].ticks, remaining: queue.length, queue: queue.map(entry => entry.kind) } : undefined
+          training: next ? { kind: next.kind, progress: 1 - next.left / training[next.kind].ticks, remaining: queue.reduce((total, entry) => total + (entry.count ?? 1), 0),
+            seconds: Math.ceil(next.left / TICK_HZ), queue: queue.map(entry => ({ kind: entry.kind, count: entry.count ?? 1 })) } : undefined
         }
       })
     }
