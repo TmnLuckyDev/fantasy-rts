@@ -1,13 +1,17 @@
-import { TILE, ashford, distance } from '../shared/map.ts'
+import { TILE, ashford, distance, isMine, snapToCell } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { factions } from '../shared/protocol.ts'
-import type { Effect, Entity, EntityKind, Faction, Order, Point, Result, Snapshot } from '../shared/protocol.ts'
+import { MAX_SELECTION, factions, isUnitKind } from '../shared/protocol.ts'
+import type { Effect, Entity, EntityKind, Faction, Order, Point, Result, Snapshot, UnitKind } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
+import { GOLD_LOAD, MAX_BUILDINGS, MAX_MOBILE_UNITS, MINE_TICKS, STARTING_GOLD, TRAINING_QUEUE_LIMIT,
+  buildings as buildingRules, canTrain, training, validPlacement } from '../shared/economy.ts'
 import { canStand, findPath } from './navigation.ts'
 
 export const TICK_HZ = 20
-export const MAX_SELECTION = 24
 const spacing = 30
+
+type WorkerJob = { kind: 'mine', mine: Point, workTicks: number } | { kind: 'construct', site: number }
+type Obstacle = Point & { radius: number }
 
 type Unit = Entity & {
   order: Order | null
@@ -17,6 +21,11 @@ type Unit = Entity & {
   path: Point[]
   pursued: Point | null
   blockedTicks: number
+  job: WorkerJob | null
+  cargo: boolean
+  queue: Array<{ kind: UnitKind, left: number }>
+  buildTicks: number
+  buildDuration: number
 }
 
 type Missile = { attacker: Unit, targetId: number, arrives: number }
@@ -26,6 +35,7 @@ export class Match {
   readonly map: BattleMap
   tick = 0
   result: Result | null = null
+  private readonly gold: Record<Faction, number> = { human: STARTING_GOLD, orc: STARTING_GOLD }
   private sequence = 0
   private effects: Effect[] = []
   private missiles: Missile[] = []
@@ -44,22 +54,41 @@ export class Match {
         this.spawn(faction, kind, { x: base.x + x * direction, y: base.y + y * direction })
       }
     }
+    for (const faction of factions) {
+      const base = map.bases[faction]
+      const direction = faction === 'human' ? 1 : -1
+      for (const [x, y] of [[-46, 38], [-12, 53], [22, 50]]) {
+        this.spawn(faction, 'worker', { x: base.x + x * direction, y: base.y + y * direction })
+      }
+    }
   }
 
-  private spawn(faction: Faction, kind: EntityKind, position: Point) {
+  private spawn(faction: Faction, kind: EntityKind, position: Point, buildDuration = 0) {
     const health = unitStats[faction][kind].health
     const id = ++this.sequence
-    this.units.set(id, {
-      ...position, faction, kind, id, hp: health, maxHp: health, moving: false,
-      facing: faction === 'human' ? 1 : -1, order: null, assigned: null,
-      path: [], nextPath: 0, nextStrike: 0, pursued: null, blockedTicks: 0
-    })
+    const unit: Unit = {
+      ...position, faction, kind, id, hp: buildDuration ? Math.ceil(health * 0.2) : health,
+      maxHp: health, moving: false, facing: faction === 'human' ? 1 : -1, order: null, assigned: null,
+      path: [], nextPath: 0, nextStrike: 0, pursued: null, blockedTicks: 0,
+      job: null, cargo: false, queue: [], buildTicks: 0, buildDuration
+    }
+    this.units.set(id, unit)
+    return unit
   }
 
   command(faction: Faction, ids: number[], order: Order): boolean {
     if (this.result || ids.length === 0 || ids.length > MAX_SELECTION) return false
-    const units = [...new Set(ids)].map(id => this.units.get(id))
-    if (units.some(unit => !unit || unit.faction !== faction || unit.kind === 'headquarters')) return false
+    const units: Unit[] = []
+    for (const id of new Set(ids)) {
+      const unit = this.units.get(id)
+      if (!unit || unit.faction !== faction) return false
+      units.push(unit)
+    }
+    if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit)
+    if (order.kind === 'gather' || order.kind === 'build' || order.kind === 'resume-build') {
+      return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker'), order)
+    }
+    if (units.some(unit => !isUnitKind(unit.kind))) return false
     if (order.kind === 'attack') {
       const target = this.units.get(order.target)
       if (!target || target.faction === faction) return false
@@ -69,16 +98,13 @@ export class Match {
           order.to.x < 0 || order.to.y < 0 || order.to.x >= this.map.width * TILE ||
           order.to.y >= this.map.height * TILE)) return false
 
-    const troops = units as Unit[]
+    const troops = order.kind === 'attack' ? units.filter(unit => unit.kind !== 'worker') : units
+    if (!troops.length) return false
     const rowSize = Math.ceil(Math.sqrt(troops.length))
     troops.sort((a, b) => (a.kind === 'ranged' ? 1 : 0) - (b.kind === 'ranged' ? 1 : 0) || a.y - b.y)
     troops.forEach((unit, i) => {
+      this.resetOrders(unit)
       unit.order = order.kind === 'halt' ? null : order
-      unit.path = []
-      unit.pursued = null
-      unit.nextPath = this.tick
-      unit.blockedTicks = 0
-      unit.assigned = null
       if (order.kind === 'move' || order.kind === 'advance') {
         const front = faction === 'human' ? 1 : -1
         const rows = Math.ceil(troops.length / rowSize)
@@ -93,6 +119,116 @@ export class Match {
     return true
   }
 
+  private resetOrders(unit: Unit) {
+    unit.order = null
+    unit.job = null
+    unit.path = []
+    unit.pursued = null
+    unit.nextPath = this.tick
+    unit.blockedTicks = 0
+    unit.assigned = null
+  }
+
+  private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'resume-build' }>) {
+    if (!workers.length) return false
+    if (order.kind === 'gather') {
+      if (!isMine(this.map, order.mine)) return false
+      const mine = snapToCell(order.mine)
+      for (const worker of workers) {
+        this.resetOrders(worker)
+        worker.job = { kind: 'mine', mine, workTicks: 0 }
+      }
+      return true
+    }
+    const worker = workers.find(unit => !unit.job) ?? workers.find(unit => unit.job?.kind === 'mine') ?? workers[0]
+    let site = order.kind === 'resume-build' ? this.units.get(order.target) : undefined
+    if (order.kind === 'build') {
+      const rule = buildingRules[order.building]
+      if (this.gold[faction] < rule.gold || !validPlacement(this.map, order.building, order.at, this.units.values())) return false
+      const count = [...this.units.values()].filter(unit => unit.faction === faction && !isUnitKind(unit.kind)).length
+      if (count >= MAX_BUILDINGS) return false
+      this.gold[faction] -= rule.gold
+      site = this.spawn(faction, order.building, snapToCell(order.at), rule.ticks)
+    }
+    if (!site || site.faction !== faction || !site.buildDuration) return false
+    if ([...this.units.values()].some(unit => unit !== worker && unit.job?.kind === 'construct' && unit.job.site === site.id)) return false
+    this.resetOrders(worker)
+    worker.job = { kind: 'construct', site: site.id }
+    return true
+  }
+
+  private enqueue(building: Unit, kind: UnitKind) {
+    const rule = training[kind]
+    if (building.buildDuration || !canTrain(building.kind, kind) ||
+        building.queue.length >= TRAINING_QUEUE_LIMIT || this.gold[building.faction] < rule.gold) return false
+    let committed = 0
+    for (const unit of this.units.values()) {
+      if (unit.faction === building.faction) committed += Number(isUnitKind(unit.kind)) + unit.queue.length
+    }
+    if (committed >= MAX_MOBILE_UNITS) return false
+    this.gold[building.faction] -= rule.gold
+    building.queue.push({ kind, left: rule.ticks })
+    return true
+  }
+
+  private train(building: Unit, obstacles: Obstacle[]) {
+    const next = building.queue[0]
+    if (!next) return
+    if (next.left > 0) next.left--
+    if (next.left > 0) return
+    const radius = unitStats[building.faction][next.kind].radius
+    const bounds = unitStats[building.faction][building.kind].radius + radius + 16
+    const slots = [0, 0.65, -0.65, 1.3, -1.3, 2.0, -2.0, Math.PI]
+    const direction = building.faction === 'human' ? 1 : -1
+    for (const angle of slots) {
+      const point = { x: building.x + direction * Math.cos(angle) * bounds, y: building.y + Math.sin(angle) * bounds }
+      if (!canStand(this.map, point, obstacles, radius)) continue
+      if ([...this.units.values()].some(unit => isUnitKind(unit.kind) &&
+          distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4)) continue
+      building.queue.shift()
+      this.spawn(building.faction, next.kind, point)
+      return
+    }
+  }
+
+  private work(worker: Unit, obstacles: Obstacle[]) {
+    const job = worker.job
+    if (!job) return
+    if (job.kind === 'construct') {
+      const site = this.units.get(job.site)
+      if (!site || !site.buildDuration) {
+        this.resetOrders(worker)
+        return
+      }
+      const radius = unitStats[site.faction][site.kind].radius
+      if (distance(worker, site) > radius + 27) {
+        this.approach(worker, site, obstacles, true)
+        return
+      }
+      const baseHealth = Math.ceil(site.maxHp * 0.2)
+      const addedHealth = (ticks: number) => Math.floor((site.maxHp - baseHealth) * ticks / site.buildDuration)
+      site.hp = Math.min(site.maxHp, site.hp + addedHealth(site.buildTicks + 1) - addedHealth(site.buildTicks))
+      if (++site.buildTicks >= site.buildDuration) {
+        site.buildDuration = 0
+        this.resetOrders(worker)
+      }
+      return
+    }
+    if (worker.cargo) {
+      const base = [...this.units.values()].find(unit => unit.faction === worker.faction && unit.kind === 'headquarters')
+      if (!base) return
+      if (distance(worker, base) <= unitStats[base.faction].headquarters.radius + 26) {
+        this.gold[worker.faction] += GOLD_LOAD
+        worker.cargo = false
+      } else this.approach(worker, base, obstacles, true)
+    } else if (distance(worker, job.mine) < 49) {
+      if (++job.workTicks >= MINE_TICKS) {
+        worker.cargo = true
+        job.workTicks = 0
+      }
+    } else this.approach(worker, job.mine, obstacles, true)
+  }
+
   step() {
     if (this.result) return
     this.tick++
@@ -102,12 +238,18 @@ export class Match {
       else incoming.push(missile)
     }
     this.missiles = incoming
-    const buildings = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
+    const obstacles = [...this.units.values()].filter(unit => !isUnitKind(unit.kind))
       .map(unit => ({ x: unit.x, y: unit.y, radius: unitStats[unit.faction][unit.kind].radius }))
     for (const unit of this.units.values()) {
-      if (unit.kind === 'headquarters') continue
       unit.moving = false
-      const automaticRange = unit.order?.kind === 'advance' ? 180 : unitStats[unit.faction][unit.kind].range + 30
+      if (unit.buildDuration) continue
+      const stats = unitStats[unit.faction][unit.kind]
+      if (!isUnitKind(unit.kind)) this.train(unit, obstacles)
+      if (unit.job) {
+        this.work(unit, obstacles)
+        continue
+      }
+      const automaticRange = stats.damage === 0 ? 0 : unit.order?.kind === 'advance' ? 180 : stats.range + 30
       let target: Unit | undefined
       if (unit.order?.kind === 'attack') {
         target = this.units.get(unit.order.target)
@@ -117,10 +259,10 @@ export class Match {
           unit.pursued = null
         }
       }
-      if (unit.order?.kind !== 'move' && !target) {
+      if (automaticRange > 0 && unit.order?.kind !== 'move' && !target) {
         let nearest = automaticRange
         for (const other of this.units.values()) {
-          if (other.faction === unit.faction) continue
+          if (other.faction === unit.faction || (unit.kind === 'tower' && !isUnitKind(other.kind))) continue
           const separation = distance(unit, other) - unitStats[other.faction][other.kind].radius
           if (separation < nearest) {
             nearest = separation
@@ -139,18 +281,21 @@ export class Match {
           y: target.y + (unit.y - target.y) * range / separation
         }
       }
-      if (!destination) continue
-      if (!unit.pursued || (this.tick >= unit.nextPath &&
-          (distance(unit.pursued, destination) > 14 || unit.blockedTicks >= 8))) {
-        unit.path = findPath(this.map, unit, destination, buildings, unitStats[unit.faction][unit.kind].radius)
-        unit.pursued = destination
-        unit.nextPath = this.tick + 10
-        unit.blockedTicks = 0
-      }
-      this.walk(unit, buildings, Boolean(target))
+      if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
     }
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
+  }
+
+  private approach(unit: Unit, destination: Point, obstacles: Obstacle[], pursuing: boolean) {
+    if (!unit.pursued || (this.tick >= unit.nextPath &&
+        (distance(unit.pursued, destination) > 14 || unit.blockedTicks >= 8))) {
+      unit.path = findPath(this.map, unit, destination, obstacles, unitStats[unit.faction][unit.kind].radius)
+      unit.pursued = { x: destination.x, y: destination.y }
+      unit.nextPath = this.tick + 10
+      unit.blockedTicks = 0
+    }
+    this.walk(unit, obstacles, pursuing)
   }
 
   private fight(unit: Unit, target: Unit): boolean {
@@ -159,7 +304,7 @@ export class Match {
     if (unit.nextStrike > this.tick) return true
     unit.nextStrike = this.tick + stats.cooldown
     unit.facing = target.x < unit.x ? -1 : 1
-    if (unit.kind === 'ranged') {
+    if (unit.kind === 'ranged' || unit.kind === 'tower') {
       const flight = Math.max(2, Math.ceil(distance(unit, target) / 24))
       this.missiles.push({ attacker: unit, targetId: target.id, arrives: this.tick + flight })
       this.effects.push({
@@ -193,7 +338,7 @@ export class Match {
     }
   }
 
-  private walk(unit: Unit, obstacles: Array<Point & { radius: number }>, pursuing: boolean) {
+  private walk(unit: Unit, obstacles: Obstacle[], pursuing: boolean) {
     const next = unit.path[0]
     if (!next) {
       if (!pursuing) {
@@ -219,7 +364,7 @@ export class Match {
       if (!canStand(this.map, test, obstacles, stats.radius)) continue
       let collides = false
       for (const other of this.units.values()) {
-        if (other === unit || other.kind === 'headquarters') continue
+        if (other === unit || !isUnitKind(other.kind)) continue
         const minimum = (stats.radius + unitStats[other.faction][other.kind].radius) * 0.78
         const gap = distance(test, other)
         if (gap < minimum && gap <= distance(unit, other)) {
@@ -242,10 +387,17 @@ export class Match {
     const effects = this.effects
     if (consumeEffects) this.effects = []
     return {
-      type: 'snapshot', tick: this.tick, effects: consumeEffects ? effects : [],
-      entities: [...this.units.values()].map(({ id, x, y, kind, faction, hp, maxHp, facing, moving }) => ({
-        id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving
-      }))
+      type: 'snapshot', tick: this.tick, effects: consumeEffects ? effects : [], gold: { ...this.gold },
+      entities: [...this.units.values()].map(unit => {
+        const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
+        const next = queue[0]
+        return {
+          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving,
+          construction: buildDuration ? buildTicks / buildDuration : undefined,
+          carryingGold: cargo || undefined,
+          training: next ? { kind: next.kind, progress: 1 - next.left / training[next.kind].ticks, remaining: queue.length } : undefined
+        }
+      })
     }
   }
 }

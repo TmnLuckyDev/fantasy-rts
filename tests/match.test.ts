@@ -14,11 +14,11 @@ test('the map is rotationally symmetric and both armies start on walkable ground
 })
 
 test('A* finds a bridge and never steps onto a blocked tile', () => {
-  const path = findPath(ashford, cellCenter(16, 15), cellCenter(30, 15), [], 12)
+  const path = findPath(ashford, cellCenter(16, 15), cellCenter(46, 15), [], 12)
   assert.ok(path.length > 10)
   assert.ok(path.some(point => tileAt(ashford, Math.floor(point.x / TILE), Math.floor(point.y / TILE)) === 'bridge'))
   assert.ok(path.every(point => isWalkable(tileAt(ashford, Math.floor(point.x / TILE), Math.floor(point.y / TILE)))))
-  assert.deepEqual(path.at(-1), cellCenter(30, 15))
+  assert.deepEqual(path.at(-1), cellCenter(46, 15))
 })
 
 test('orders require owned troops, valid destinations and enemy targets', () => {
@@ -34,11 +34,11 @@ test('orders require owned troops, valid destinations and enemy targets', () => 
 test('group movement crosses the river, separates troops and keeps advancing', () => {
   const ids = [2, 3, 4, 5, 6, 7]
   const match = new Match()
-  assert.ok(match.command('human', ids, { kind: 'move', to: cellCenter(34, 11) }))
-  for (let i = 0; i < 380; i++) match.step()
+  assert.ok(match.command('human', ids, { kind: 'move', to: cellCenter(47, 11) }))
+  for (let i = 0; i < 520; i++) match.step()
   const troops = [...match.units.values()].filter(unit => ids.includes(unit.id))
   assert.equal(troops.length, 6)
-  assert.ok(troops.every(unit => unit.x > 24 * TILE && distance(unit, cellCenter(34, 11)) < 65),
+  assert.ok(troops.every(unit => unit.x > ashford.width / 2 * TILE && distance(unit, cellCenter(47, 11)) < 65),
     JSON.stringify(troops.map(({ id, x, y }) => ({ id, x, y }))))
   assert.ok(troops.every(unit => troops.every(other => unit === other || distance(unit, other) >= 12)))
 })
@@ -47,7 +47,7 @@ test('troops can path to an attack position whose tile center is obstructed', ()
   const match = new Match()
   const army = [2, 3, 4, 5, 6, 7]
   const start = match.units.get(2)!.x
-  match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(40, 7) })
+  match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, 7) })
   match.command('human', army, { kind: 'attack', target: 8 })
   for (let i = 0; i < 120; i++) match.step()
   assert.ok(army.every(id => (match.units.get(id)?.x ?? 0) > start + 45))
@@ -57,9 +57,9 @@ test('server resolves damage, projectiles, fatalities and headquarters victory d
   const run = () => {
     const match = new Match()
     const kinds = new Set<string>()
-    match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(40, 7) })
+    match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, 7) })
     match.command('human', [2, 3, 4, 5, 6, 7], { kind: 'attack', target: 8 })
-    for (let i = 0; i < 850 && !match.result; i++) {
+    for (let i = 0; i < 1300 && !match.result; i++) {
       match.step()
       for (const effect of match.snapshot(true).effects) kinds.add(effect.kind)
     }

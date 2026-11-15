@@ -46,6 +46,7 @@ const mobileBrowser = process.env.MOBILE_BROWSER === 'webkit' ? webkit : chromiu
 const mobileProfile = process.env.MOBILE_BROWSER === 'webkit' ? 'iPhone 14' : 'Pixel 7'
 
 test('desktop and landscape touch players can finish an authoritative match', async ({ browser, baseURL }, info) => {
+  test.setTimeout(130_000)
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 750 } })
   const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
   const phone = devices[mobileProfile]
@@ -60,7 +61,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
   const pageErrors: string[] = []
   for (const page of [human, orc]) page.on('pageerror', error => pageErrors.push(error.message))
   const troops = (state: Map<number, Snapshot>, faction: Faction) => newest(state)?.entities
-    .filter(entity => entity.faction === faction && entity.kind !== 'headquarters') ?? []
+    .filter(entity => entity.faction === faction && entity.kind !== 'headquarters' && entity.kind !== 'worker') ?? []
 
   try {
     await human.goto(baseURL!)
@@ -92,11 +93,41 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect(orc.locator('#selection-name')).toHaveText('6 troops selected')
     if (process.env.CAPTURE_BROWSER === '1') await orc.screenshot({ path: info.outputPath('landscape-touch.png') })
 
-    const retreat = cellCenter(40, 7)
+    const retreat = cellCenter(ashford.width - 8, 7)
     await panTo(orc, retreat, true)
     const retreatTap = await screenPoint(orc, retreat, retreat)
     await orc.touchscreen.tap(retreatTap.x, retreatTap.y)
     await expect.poll(() => unit(humanHistory, 9)?.y ?? Infinity).toBeLessThan(firstOrc.y - 35)
+
+    await human.getByRole('button', { name: 'Workers', exact: true }).click()
+    await expect(human.locator('#selection-name')).toHaveText('3 workers selected')
+    const mine = await screenPoint(human, cellCenter(5, 18), ashford.bases.human)
+    await human.mouse.click(mine.x, mine.y, { button: 'right' })
+    await expect.poll(() => newest(humanHistory)?.gold.human ?? 0, { timeout: 18_000 }).toBeGreaterThan(300)
+
+    const barracks = cellCenter(11, 15)
+    const barracksSpot = await screenPoint(human, barracks, ashford.bases.human)
+    await human.getByRole('button', { name: 'Build', exact: true }).click()
+    await human.getByRole('button', { name: 'Barracks · 180 gold', exact: true }).click()
+    await expect(human.locator('#placement-tip')).toBeVisible()
+    await human.mouse.click(barracksSpot.x, barracksSpot.y)
+    await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
+      entity.kind === 'barracks' && entity.construction === undefined), { timeout: 23_000 }).toBe(true)
+    await human.mouse.click(barracksSpot.x, barracksSpot.y - 20)
+    await expect(human.locator('#selection-name')).toHaveText('Barracks')
+    await human.getByRole('button', { name: 'Train', exact: true }).click()
+    await human.getByRole('button', { name: 'Footman · 75 gold', exact: true }).click()
+    await expect.poll(() => troops(orcHistory, 'human').length, { timeout: 12_000 }).toBe(7)
+
+    await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
+    const tower = cellCenter(ashford.width - 3, 19)
+    await panTo(orc, tower, true)
+    const towerSpot = await screenPoint(orc, tower, tower)
+    await orc.getByRole('button', { name: 'Build', exact: true }).tap()
+    await orc.getByRole('button', { name: 'Watch Tower · 150 gold', exact: true }).tap()
+    await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
+    await expect.poll(() => newest(humanHistory)?.entities.some(entity =>
+      entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 18_000 }).toBe(true)
 
     const before = unit(humanHistory, 2)!
     const start = await screenPoint(human, { x: 229, y: 310 }, ashford.bases.human)
@@ -116,8 +147,8 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await orc.reload()
     await expect(orc.locator('#battlefield canvas')).toBeVisible()
     await expect(orc.locator('#banner')).toContainText('Orcish Horde')
-    await expect.poll(() => unit(humanHistory, 8)?.hp ?? 0, { timeout: 30_000 }).toBeLessThan(420)
-    await expect(human.getByRole('heading', { name: 'Victory' })).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => unit(humanHistory, 8)?.hp ?? 0, { timeout: 60_000 }).toBeLessThan(1500)
+    await expect(human.getByRole('heading', { name: 'Victory' })).toBeVisible({ timeout: 60_000 })
     await expect(orc.getByRole('heading', { name: 'Defeat' })).toBeVisible()
     expect(unit(humanHistory, 8)).toBeUndefined()
     expect(pageErrors).toEqual([])

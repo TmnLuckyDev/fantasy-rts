@@ -63,6 +63,7 @@
         <div class="wordmark">Ash <span>&amp;</span> Iron</div>
         <div id="banner" role="status"></div>
         <div class="head-actions">
+          <div class="treasury" title="Gold available"><span aria-hidden="true"></span><output id="gold" aria-label="Gold">0</output></div>
           <button id="sound" type="button" aria-label="Enable sound" aria-pressed="false">Sound off</button>
           <button id="exit" type="button">Leave</button>
         </div>
@@ -76,12 +77,16 @@
           <meter id="selection-health" min="0" max="100" value="0" hidden aria-label="Selected troops health"></meter>
         </div>
         <div class="orders" aria-label="Battle commands">
+          <button id="workers" type="button" title="Select all workers">Workers</button>
+          <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
           <button id="all" type="button" title="Select all troops (Q)">All troops</button>
           <button id="box" type="button" aria-pressed="false" title="Drag a box around your troops">Box select</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
           <button id="halt" type="button" title="Stop (S)">Stop</button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
         </div>
+        <div id="economy-menu" class="economy-menu" aria-label="Economy commands" hidden></div>
+        <div id="placement-tip" class="placement-tip" role="status" hidden><span id="placement-message">Choose a clear tile to build on.</span> <button id="cancel-placement" type="button">Cancel</button></div>
       </footer>
       <dialog id="result">
         <p class="eyebrow">Ashford Crossing</p>
