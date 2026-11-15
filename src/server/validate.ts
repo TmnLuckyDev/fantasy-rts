@@ -45,9 +45,9 @@ function parseOrder(order: Record<string, unknown>): Order | null {
       coordinate(order.to.x) && coordinate(order.to.y)) {
     return { kind: order.kind, to: { x: order.to.x, y: order.to.y } }
   }
-  if (order.kind === 'gather' && object(order.mine) &&
-      coordinate(order.mine.x) && coordinate(order.mine.y)) {
-    return { kind: 'gather', mine: { x: order.mine.x, y: order.mine.y } }
+  if (order.kind === 'gather' && object(order.at) &&
+      coordinate(order.at.x) && coordinate(order.at.y)) {
+    return { kind: 'gather', at: { x: order.at.x, y: order.at.y } }
   }
   if (order.kind === 'build' && isBuildingKind(order.building) && object(order.at) &&
       coordinate(order.at.x) && coordinate(order.at.y)) {

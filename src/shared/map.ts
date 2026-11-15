@@ -1,7 +1,7 @@
-import type { Faction, Point } from './protocol.ts'
+import type { Faction, Point, ResourceKind } from './protocol.ts'
 
 export const TILE = 32
-export type Tile = 'grass' | 'road' | 'forest' | 'water' | 'rock' | 'bridge' | 'mine'
+export type Tile = 'grass' | 'road' | 'forest' | 'water' | 'rock' | 'bridge' | 'mine' | 'quarry'
 export type BattleMap = {
   name: string
   width: number
@@ -46,6 +46,8 @@ for (let x = 4; x < riverColumn; x++) {
 }
 put(5, 18, 'mine')
 put(25, 5, 'mine')
+put(4, 15, 'quarry')
+put(23, 22, 'quarry')
 
 export const ashford: BattleMap = {
   name: 'Ashford Crossing',
@@ -65,6 +67,9 @@ export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 
 export const snapToCell = (point: Point) => cellCenter(Math.floor(point.x / TILE), Math.floor(point.y / TILE))
 
-export function isMine(map: BattleMap, point: Point) {
-  return tileAt(map, Math.floor(point.x / TILE), Math.floor(point.y / TILE)) === 'mine'
+export function resourceAt(map: BattleMap, point: Point): ResourceKind | undefined {
+  const tile = tileAt(map, Math.floor(point.x / TILE), Math.floor(point.y / TILE))
+  if (tile === 'mine') return 'gold'
+  if (tile === 'forest') return 'wood'
+  if (tile === 'quarry') return 'stone'
 }

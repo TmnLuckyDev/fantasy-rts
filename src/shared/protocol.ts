@@ -1,9 +1,9 @@
 export const factions = ['human', 'orc'] as const
 export type Faction = typeof factions[number]
 export type Point = { x: number, y: number }
-export const combatKinds = ['blade', 'ranged', 'heavy'] as const
+export const combatKinds = ['blade', 'polearm', 'ranged', 'marksman', 'heavy'] as const
 export const unitKinds = [...combatKinds, 'worker'] as const
-export const buildingKinds = ['barracks', 'wall', 'tower'] as const
+export const buildingKinds = ['barracks', 'range', 'elite', 'farm', 'wall', 'tower'] as const
 export const entityKinds = [...unitKinds, 'headquarters', ...buildingKinds] as const
 export type UnitKind = typeof unitKinds[number]
 export type BuildingKind = typeof buildingKinds[number]
@@ -11,11 +11,23 @@ export type EntityKind = typeof entityKinds[number]
 export const isUnitKind = (kind: unknown): kind is UnitKind => unitKinds.some(value => value === kind)
 export const isBuildingKind = (kind: unknown): kind is BuildingKind => buildingKinds.some(value => value === kind)
 export const MAX_SELECTION = 24
+export const resourceKinds = ['gold', 'wood', 'stone'] as const
+export type ResourceKind = typeof resourceKinds[number]
+export type Resources = Record<ResourceKind, number>
+export type Population = { used: number, reserved: number, limit: number }
 
 export const factionNames: Record<Faction, string> = { human: 'Human Kingdoms', orc: 'Orcish Horde' }
 export const entityNames: Record<Faction, Record<EntityKind, string>> = {
-  human: { blade: 'Footman', ranged: 'Archer', heavy: 'Knight', headquarters: 'Town Hall', worker: 'Peasant', barracks: 'Barracks', wall: 'Stone Wall', tower: 'Guard Tower' },
-  orc: { blade: 'Grunt', ranged: 'Spearman', heavy: 'Raider', headquarters: 'Great Hall', worker: 'Peon', barracks: 'War Barracks', wall: 'Palisade', tower: 'Watch Tower' }
+  human: {
+    blade: 'Footman', polearm: 'Pikeman', ranged: 'Archer', marksman: 'Crossbowman', heavy: 'Knight',
+    headquarters: 'Town Hall', worker: 'Peasant', barracks: 'Barracks', range: 'Archery Range',
+    elite: 'Stables', farm: 'Farm', wall: 'Stone Wall', tower: 'Guard Tower'
+  },
+  orc: {
+    blade: 'Grunt', polearm: 'Cleaver', ranged: 'Spearman', marksman: 'Axe Thrower', heavy: 'Ogre',
+    headquarters: 'Great Hall', worker: 'Peon', barracks: 'War Barracks', range: 'Hunting Grounds',
+    elite: 'Ogre Den', farm: 'Boar Farm', wall: 'Stone Rampart', tower: 'Watch Tower'
+  }
 }
 
 export const opposite = (faction: Faction): Faction => faction === 'human' ? 'orc' : 'human'
@@ -31,7 +43,7 @@ export type Entity = Point & {
   moving: boolean
   construction?: number
   training?: { kind: UnitKind, progress: number, remaining: number }
-  carryingGold?: boolean
+  carrying?: ResourceKind
 }
 
 export type Effect = {
@@ -56,7 +68,7 @@ export type Order =
   | { kind: 'move' | 'advance', to: Point }
   | { kind: 'attack', target: number }
   | { kind: 'halt' }
-  | { kind: 'gather', mine: Point }
+  | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }
   | { kind: 'resume-build', target: number }
   | { kind: 'train', unit: UnitKind }
@@ -70,7 +82,7 @@ export type ClientMessage =
   | { type: 'ready', ready: boolean }
   | { type: 'command', ids: number[], order: Order }
 
-export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], gold: Record<Faction, number> }
+export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Record<Faction, Resources>, population: Record<Faction, Population> }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }
