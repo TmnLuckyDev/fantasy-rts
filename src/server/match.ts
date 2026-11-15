@@ -4,7 +4,7 @@ import { MAX_SELECTION, factions, isBuildingKind, isUnitKind, resourceKinds } fr
 import type { Effect, Entity, EntityKind, Faction, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING, STARTING_RESOURCES,
-  buildings as buildingRules, canAfford, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, findPath } from './navigation.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
@@ -18,6 +18,7 @@ const defenseDuration = 4 * TICK_HZ
 const isRanged = (kind: EntityKind) => kind === 'ranged' || kind === 'marksman'
 
 type WorkerJob = { kind: 'gather', at: Point, resource: ResourceKind, workTicks: number } | { kind: 'construct', site: number }
+  | { kind: 'repair', site: number, workTicks: number }
 type Defense = { targetId: number, at: Point, until: number }
 type Obstacle = Point & { radius: number }
 
@@ -152,7 +153,14 @@ export class Match {
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
     if (order.kind === 'cancel-build') return units.length === 1 && this.cancelConstruction(units[0])
-    if (order.kind === 'gather' || order.kind === 'build' || order.kind === 'wall-line' || order.kind === 'resume-build') {
+    if (order.kind === 'demolish') {
+      const [building] = units
+      if (units.length !== 1 || isUnitKind(building.kind) || building.buildDuration) return false
+      this.destroy(building)
+      return true
+    }
+    if (order.kind === 'gather' || order.kind === 'build' || order.kind === 'wall-line' ||
+        order.kind === 'resume-build' || order.kind === 'repair') {
       return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker'), order)
     }
     if (units.some(unit => !isUnitKind(unit.kind))) return false
@@ -203,7 +211,7 @@ export class Match {
     unit.assigned = null
   }
 
-  private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' }>) {
+  private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' | 'repair' }>) {
     if (!workers.length) return false
     if (order.kind === 'gather') {
       const resource = resourceAt(this.map, order.at)
@@ -213,6 +221,19 @@ export class Match {
         this.resetOrders(worker)
         worker.job = { kind: 'gather', at, resource, workTicks: 0 }
       }
+      return true
+    }
+    if (order.kind === 'repair') {
+      const site = this.units.get(order.target)
+      if (!site || site.faction !== faction || isUnitKind(site.kind) || site.buildDuration || site.hp >= site.maxHp ||
+          !canAfford(this.resources[faction], repairCost(site.kind))) return false
+      for (const unit of this.units.values()) {
+        if (unit.job?.kind === 'repair' && unit.job.site === site.id) return false
+      }
+      const worker = workers.reduce((nearest, candidate) =>
+        distance(candidate, site) < distance(nearest, site) ? candidate : nearest)
+      this.resetOrders(worker)
+      worker.job = { kind: 'repair', site: site.id, workTicks: 0 }
       return true
     }
     if (order.kind === 'resume-build') {
@@ -375,6 +396,30 @@ export class Match {
   private work(worker: Unit, obstacles: Obstacle[]) {
     const job = worker.job
     if (!job) return
+    if (job.kind === 'repair') {
+      const site = this.units.get(job.site)
+      if (!site || site.hp === site.maxHp) {
+        this.resetOrders(worker)
+        return
+      }
+      const stock = this.resources[worker.faction]
+      const cost = repairCost(site.kind)
+      if (!canAfford(stock, cost)) {
+        this.resetOrders(worker)
+        return
+      }
+      if (distance(worker, site) > unitStats[site.faction][site.kind].radius + 27) {
+        this.approach(worker, site, obstacles, true)
+        return
+      }
+      if (++job.workTicks >= REPAIR.ticks) {
+        job.workTicks = 0
+        spend(stock, cost)
+        site.hp = Math.min(site.maxHp, site.hp + REPAIR.health)
+        if (site.hp === site.maxHp) this.resetOrders(worker)
+      }
+      return
+    }
     if (job.kind === 'construct') {
       const site = this.units.get(job.site)
       if (!site || !site.buildDuration) {
@@ -551,11 +596,14 @@ export class Match {
       id: ++this.sequence, kind: 'hit', at, to: { x: attacker.x, y: attacker.y },
       faction: attacker.faction, entityKind: attacker.kind
     })
-    if (!target.hp) {
-      this.units.delete(target.id)
-      this.nearby.remove(target)
-      this.effects.push({ id: ++this.sequence, kind: 'fallen', at, faction: target.faction, entityKind: target.kind })
-    }
+    if (!target.hp) this.destroy(target)
+  }
+
+  private destroy(target: Unit) {
+    this.units.delete(target.id)
+    this.nearby.remove(target)
+    this.effects.push({ id: ++this.sequence, kind: 'fallen', at: { x: target.x, y: target.y },
+      faction: target.faction, entityKind: target.kind })
   }
 
   private walk(unit: Unit, obstacles: Obstacle[], pursuing: boolean) {
@@ -601,7 +649,7 @@ export class Match {
       entities: world.entities.flatMap(entity => {
         if (entity.faction === faction) return [entity]
         if (!visible(entity)) return []
-        const { idle: _idle, constructionStatus: _status, research: _research, training: _training, ...seen } = entity
+        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, ...seen } = entity
         return [seen]
       }),
       effects: world.effects.filter(effect => visible(effect.at) && (!effect.to || visible(effect.to)))
@@ -611,8 +659,13 @@ export class Match {
   snapshot(consumeEffects = false): WorldSnapshot {
     const effects = this.effects
     const construction = new Map<number, Entity['constructionStatus']>()
+    const repairs = new Set<number>()
     for (const unit of this.units.values()) {
       if (unit.job?.kind === 'construct') construction.set(unit.job.site, 'building')
+      if (unit.job?.kind === 'repair') {
+        repairs.add(unit.job.site)
+        repairs.add(unit.id)
+      }
       for (const id of unit.buildQueue ?? []) construction.set(id, 'queued')
     }
     if (consumeEffects) this.effects = []
@@ -629,6 +682,7 @@ export class Match {
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,
+          repairing: repairs.has(id) || undefined,
           carrying: cargo ?? undefined,
           idle: kind === 'worker' ? !unit.job && !unit.assigned : undefined,
           training: next ? { kind: next.kind, progress: 1 - next.left / training[next.kind].ticks, remaining: queue.reduce((total, entry) => total + (entry.count ?? 1), 0),

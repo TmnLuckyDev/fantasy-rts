@@ -27,6 +27,8 @@ During a match:
 
 Nearby troops counterattack when an allied unit or building is hit. They break off if the attacker retreats beyond the defended area. An explicit move or attack order takes priority.
 
+Select a completed building and choose **Repair** to send the closest idle worker. You can also select workers and right-click or tap a damaged friendly building. Each repair step restores up to 20 HP for 1 wood and 1 stone. Walls use 1 stone per step. A worker stops when the building is fully repaired or materials run out. Choose **Demolish** to remove a completed building after confirming. Demolition has no refund. Demolishing your headquarters forfeits the match.
+
 The headquarters supports 10 population. A completed Farm or Boar Farm adds ten. Total population capacity grows with every farm. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
 
 | Action | Desktop | Touch |
