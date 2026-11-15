@@ -123,8 +123,16 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   .wordmark { font-size: 0.95rem; }
 }
 
-.treasury { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 0.55rem; color: #f5ce79; font-weight: 700; font-variant-numeric: tabular-nums; }
-.treasury span { width: 13px; height: 13px; border-radius: 50%; background: #c68c36; border: 2px solid #f6d679; box-shadow: 0 0 0 1px #6e441e; }
+.resource-bar { display: flex; align-items: center; gap: 0.55rem; padding-inline: 0.35rem; flex-shrink: 0; }
+.resource { display: flex; align-items: center; gap: 0.28rem; color: #efe4cc; font-weight: 700; font-variant-numeric: tabular-nums; }
+.resource small { display: block; color: #c6b596; font-size: 0.62rem; font-weight: 500; line-height: 1; }
+.resource output { font-size: 0.86rem; line-height: 1.25; }
+.resource span { width: 12px; height: 12px; background: #c68c36; border: 2px solid #f6d679; border-radius: 50%; }
+.resource.wood span { background: repeating-linear-gradient(0deg, #a46c3e 0 3px, #ce9a65 3px 5px); border: 0; border-radius: 2px; transform: rotate(-24deg); }
+.resource.stone span { background: linear-gradient(140deg, #d8e1e8, #78828f); border: 0; border-radius: 0; clip-path: polygon(42% 0, 88% 20%, 100% 70%, 63% 100%, 9% 83%, 0 42%); }
+.resource.population span { background: #dfc5a0; border: 0; border-radius: 0; clip-path: polygon(50% 0, 100% 39%, 86% 39%, 86% 100%, 15% 100%, 15% 39%, 0 39%); }
+.resource.population[data-full="true"] output { color: #f39578; }
+.economy-hint { flex: 0 0 100%; color: #efbd8c; padding: 0.1rem 0.3rem; }
 .hud { position: relative; }
 .economy-menu, .placement-tip { position: absolute; right: 0.6rem; bottom: calc(100% + 0.35rem); background: #1e1d15; border: 1px solid #866435; box-shadow: 0 4px 16px #000a; padding: 0.4rem; max-width: min(90vw, 520px); }
 .economy-menu { display: flex; flex-wrap: wrap; gap: 0.35rem; }
@@ -133,5 +141,14 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 @media (max-width: 960px) and (orientation: landscape) {
   .orders { flex-wrap: wrap; justify-content: flex-end; }
   .orders button { padding-inline: 0.45rem; }
-  .treasury { padding-inline: 0.28rem; }
+  .resource-bar { gap: 0.38rem; padding-inline: 0.18rem; }
+}
+
+@media (max-width: 520px) {
+  .match-head { flex-wrap: wrap; gap: 0.22rem 0.5rem; }
+  #banner { order: 3; width: 100%; font-size: 0.7rem; }
+  .head-actions { gap: 0.22rem; }
+  .resource { gap: 0.16rem; }
+  .resource span { width: 9px; height: 9px; }
+  .resource small { font-size: 0.55rem; }
 }

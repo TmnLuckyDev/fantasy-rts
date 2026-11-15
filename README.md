@@ -1,6 +1,6 @@
 # Ash & Iron
 
-A 1v1 browser RTS with the blue Human Kingdoms and the red Orcish Horde. Both players start with six combat units, three workers, 300 gold and a headquarters on Ashford Crossing, a hand-designed map mirrored by rotation. Destroy the opposing headquarters to win.
+A 1v1 browser RTS with the blue Human Kingdoms and the red Orcish Horde. Both players start with six combat units, three workers, 300 gold, 180 wood, 120 stone and a headquarters on Ashford Crossing, a hand-designed map mirrored by rotation. Destroy the opposing headquarters to win.
 
 ## Play
 
@@ -9,10 +9,19 @@ A game needs one running Node service. Both players open its URL, then:
 1. Choose a faction and select **Create room**.
 2. Send the opponent the invite link or five-character code. The opponent selects **Join** and receives the available faction.
 3. Both select **Ready**. The match starts with the same map and state for both sides.
-4. Select **Workers**, then right-click or tap a gold mine. Peasants and Peons bring 30 gold per trip back to their hall.
-5. Select a worker, choose **Build** and place a barracks, wall or tower on open ground. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
-6. Select a completed barracks to train troops. Select the Town Hall or Great Hall to train more workers. Walls block ground movement. Completed towers fire at nearby enemies.
+4. Select **Workers**, then right-click or tap a mine for gold, trees for wood, or a marked quarry for stone. Workers carry each load back to their hall and repeat the trip.
+5. Select a worker, choose **Build** and place a structure on open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
+6. Select a completed production building, then **Train**. Training costs gold and reserves population. Walls block ground movement. Completed towers fire at nearby enemies.
 7. Move your army across either bridge and destroy the enemy headquarters to win.
+
+| Human structure | Orc structure | Training |
+| --- | --- | --- |
+| Town Hall | Great Hall | Peasant / Peon |
+| Barracks | War Barracks | Footman and Pikeman / Grunt and Cleaver |
+| Archery Range | Hunting Grounds | Archer and Crossbowman / Spearman and Axe Thrower |
+| Stables | Ogre Den | Knight / Ogre |
+
+The headquarters supports 10 population. A completed Farm or Boar Farm adds five, up to 30. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
 
 | Action | Desktop | Touch |
 | --- | --- | --- |
@@ -57,6 +66,6 @@ The browser test uses Chromium desktop against a landscape touch profile. The de
 
 ## Current scope
 
-The skirmish includes three troop types per faction, attack-move, A* navigation around obstacles, formations, projectile and damage effects, minimap, room codes, reconnects, and headquarters victory. Art uses original canvas-drawn terrain, props, buildings and sprites, plus original generated title art. Sound effects are synthesized with Web Audio.
+The skirmish includes five combat unit types per faction, attack-move, A* navigation around obstacles, formations, projectile and damage effects, minimap, room codes, reconnects, and headquarters victory. Art uses original canvas-drawn terrain, props, buildings and sprites, plus original generated title art. Sound effects are synthesized with Web Audio.
 
-Gold is the current building and training resource. Lumber, additional units, upgrades, fog of war, computer AI and other maps are planned.
+Upgrades, fog of war, computer AI and other maps are planned.
