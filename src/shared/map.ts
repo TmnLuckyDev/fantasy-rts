@@ -74,3 +74,31 @@ export function resourceAt(map: BattleMap, point: Point): ResourceKind | undefin
   if (tile === 'forest') return 'wood'
   if (tile === 'quarry') return 'stone'
 }
+
+export function wallLine(map: BattleMap, from: Point, to: Point): Point[] {
+  if (![from, to].every(point => point.x >= 0 && point.x < map.width * TILE &&
+    point.y >= 0 && point.y < map.height * TILE)) return []
+  let x = Math.floor(from.x / TILE)
+  let y = Math.floor(from.y / TILE)
+  const endX = Math.floor(to.x / TILE)
+  const endY = Math.floor(to.y / TILE)
+  const dx = Math.abs(endX - x)
+  const dy = Math.abs(endY - y)
+  const sx = Math.sign(endX - x)
+  const sy = Math.sign(endY - y)
+  const cells = [cellCenter(x, y)]
+  let ix = 0
+  let iy = 0
+  while (ix < dx || iy < dy) {
+    // Step in one axis at a time so a diagonal swipe still makes a continuous wall.
+    if (ix < dx && (iy >= dy || (ix + 0.5) * dy <= (iy + 0.5) * dx)) {
+      x += sx
+      ix++
+    } else {
+      y += sy
+      iy++
+    }
+    cells.push(cellCenter(x, y))
+  }
+  return cells
+}

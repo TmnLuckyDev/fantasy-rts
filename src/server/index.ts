@@ -57,7 +57,7 @@ const http = createServer((request, response) => {
   }
 })
 
-const sockets = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: false })
+const sockets = new WebSocketServer({ noServer: true, maxPayload: 16_384, perMessageDeflate: false })
 const rooms = new Rooms()
 const lastPong = new Map<WebSocket, number>()
 http.on('upgrade', (request, socket, head) => {

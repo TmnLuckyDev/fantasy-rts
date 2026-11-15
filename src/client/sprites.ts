@@ -149,6 +149,12 @@ function structure(faction: Faction, kind: BuildingKind) {
     block(bone, 28, 20, 10, 8, 3)
     rect(vermilion[1], 30, 22, 6, 4)
     rect(bone[0], 32, 23, 2, 2)
+  } else if (kind === 'smithy') {
+    block(iron, 29, 12, 5, 15, 4)
+    block(iron, 27, 11, 8, 4, 5)
+    rect('#f7b563', 16, 26, 4, 4)
+    block(steel, 27, 28, 8, 3, 4)
+    rect(iron[2], 30, 31, 3, 3)
   } else if (kind === 'elite') {
     if (human) gate(ink, 24, 32, 9, brass)
     else {

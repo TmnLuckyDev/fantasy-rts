@@ -177,3 +177,17 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   .gather-choices { flex: 0 0 auto; flex-wrap: nowrap; }
   .economy-hint { flex: 0 0 auto; align-self: center; }
 }
+
+.production-panel {
+  left: 0.6rem;
+  right: auto;
+  display: grid;
+  min-width: min(18rem, 85vw);
+  max-height: min(46dvh, 15rem);
+  overflow: auto;
+}
+.production-panel > div { padding: 0.4rem 0.55rem; background: #172729; font-size: 0.78rem; }
+#production-count { color: var(--gold); }
+@media (max-height: 530px) and (orientation: landscape) {
+  .production-panel { max-width: 80vw; }
+}

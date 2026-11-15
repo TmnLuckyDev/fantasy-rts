@@ -1,4 +1,4 @@
-import { MAX_POPULATION, buildings, canAfford } from '../shared/economy.ts'
+import { buildings, canAfford } from '../shared/economy.ts'
 import { TILE, cellCenter, distance, isWalkable, resourceAt } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
 import { isUnitKind, opposite } from '../shared/protocol.ts'
@@ -119,7 +119,7 @@ export class ComputerOpponent {
     }
     const has = (kind: BuildingKind) => structures.some(entity => entity.kind === kind)
     const population = view.population
-    const needsFarm = population.limit < MAX_POPULATION && population.limit - population.used - population.reserved <= 1
+    const needsFarm = population.limit - population.used - population.reserved <= 1
     const desired: Array<[BuildingKind, boolean]> = [
       ['barracks', !has('barracks')],
       ['farm', needsFarm],

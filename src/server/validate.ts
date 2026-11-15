@@ -1,4 +1,4 @@
-import { MAX_SELECTION, isBuildingKind, isFaction, isUnitKind } from '../shared/protocol.ts'
+import { MAX_SELECTION, isBuildingKind, isFaction, isUnitKind, upgradeKinds } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -53,6 +53,14 @@ function parseOrder(order: Record<string, unknown>): Order | null {
   if (order.kind === 'build' && isBuildingKind(order.building) && object(order.at) &&
       coordinate(order.at.x) && coordinate(order.at.y)) {
     return { kind: 'build', building: order.building, at: { x: order.at.x, y: order.at.y } }
+  }
+  if (order.kind === 'wall-line' && object(order.from) && object(order.to) &&
+      coordinate(order.from.x) && coordinate(order.from.y) && coordinate(order.to.x) && coordinate(order.to.y)) {
+    return { kind: 'wall-line', from: { x: order.from.x, y: order.from.y }, to: { x: order.to.x, y: order.to.y } }
+  }
+  if (order.kind === 'upgrade') {
+    const upgrade = upgradeKinds.find(kind => kind === order.upgrade)
+    if (upgrade) return { kind: 'upgrade', upgrade }
   }
   if (order.kind === 'resume-build' && validId(order.target)) return { kind: 'resume-build', target: order.target }
   if (order.kind === 'train' && isUnitKind(order.unit)) return { kind: 'train', unit: order.unit }

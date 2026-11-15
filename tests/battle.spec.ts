@@ -176,6 +176,10 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
+    await expect(human.locator('#placement-tip')).toBeVisible()
+    await human.getByRole('button', { name: 'Done', exact: true }).click()
+    await human.getByRole('button', { name: /^Queues/ }).click()
+    await expect(human.getByRole('region', { name: 'Production queues' })).toContainText('Barracks · Building')
     await expect.poll(() => newest(humanHistory)?.entities.some(entity =>
       entity.kind === 'barracks' && entity.construction === undefined), { timeout: 23_000 }).toBe(true)
     await human.mouse.click(barracksSpot.x, barracksSpot.y - 20)
@@ -189,7 +193,8 @@ test('desktop and landscape touch players can finish an authoritative match', as
     const farm = await screenPoint(human, cellCenter(14, 15), ashford.bases.human)
     await human.getByRole('button', { name: 'Farm · 70 wood · 20 stone', exact: true }).click()
     await human.mouse.click(farm.x, farm.y)
-    await expect(human.locator('#population')).toHaveText('10/15', { timeout: 20_000 })
+    await human.getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(human.locator('#population')).toHaveText('10/20', { timeout: 20_000 })
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
     const quarry = cellCenter(ashford.width - 5, ashford.height - 16)
@@ -202,6 +207,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
     const towerSpot = await screenPoint(orc, tower, tower)
     await orc.getByRole('button', { name: 'Watch Tower · 55 wood · 85 stone', exact: true }).tap()
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
+    await orc.getByRole('button', { name: 'Done', exact: true }).tap()
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
       entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 18_000 }).toBe(true)
 
@@ -283,6 +289,28 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await page.goto(baseURL!)
     await page.getByRole('button', { name: 'Resume solo match', exact: true }).tap()
     await expect(idle()).toHaveText(/2/)
+    await idle().tap()
+    await page.getByRole('button', { name: 'Stone Rampart · 28 stone', exact: true }).tap()
+    await page.getByRole('button', { name: 'Base', exact: true }).tap()
+    const start = await screenPoint(page, cellCenter(ashford.width - 11, ashford.height - 16), hall)
+    const end = await screenPoint(page, cellCenter(ashford.width - 13, ashford.height - 16), hall)
+    if (mobileBrowser === chromium) {
+      const session = await context.newCDPSession(page)
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] })
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [end] })
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await session.detach()
+    } else {
+      const field = page.locator('#battlefield')
+      await field.dispatchEvent('pointerdown', { button: 0, pointerId: 7, pointerType: 'touch', clientX: start.x, clientY: start.y })
+      await field.dispatchEvent('pointermove', { button: 0, pointerId: 7, pointerType: 'touch', clientX: end.x, clientY: end.y })
+      await field.dispatchEvent('pointerup', { button: 0, pointerId: 7, pointerType: 'touch', clientX: end.x, clientY: end.y })
+    }
+    await expect(page.locator('#stone')).toHaveText('36')
+    await expect(page.locator('#production-count')).toHaveText('3')
+    await page.getByRole('button', { name: 'Done', exact: true }).tap()
+    await page.getByRole('button', { name: /^Queues/ }).tap()
+    await expect(page.getByRole('region', { name: 'Production queues' })).toContainText('Stone Rampart · Queued')
     page.once('dialog', dialog => dialog.accept())
     await page.getByRole('button', { name: 'Leave', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Play vs Computer', exact: true })).toBeEnabled()

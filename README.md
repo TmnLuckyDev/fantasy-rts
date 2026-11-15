@@ -23,9 +23,11 @@ During a match:
 | Archery Range | Hunting Grounds | Archer and Crossbowman / Spearman and Axe Thrower |
 | Stables | Ogre Den | Knight / Ogre |
 
+**Queues** lists construction, training and research progress. Blacksmiths and War Forges can research +2 troop damage and +1 troop armor for their faction.
+
 Nearby troops counterattack when an allied unit or building is hit. They break off if the attacker retreats beyond the defended area. An explicit move or attack order takes priority.
 
-The headquarters supports 10 population. A completed Farm or Boar Farm adds five, up to 30. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
+The headquarters supports 10 population. A completed Farm or Boar Farm adds ten. Total population capacity grows with every farm. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
 
 | Action | Desktop | Touch |
 | --- | --- | --- |
