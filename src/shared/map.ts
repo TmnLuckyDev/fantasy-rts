@@ -10,9 +10,9 @@ export type BattleMap = {
   bases: Record<Faction, Point>
 }
 
-const width = 64
+const width = 88
 export const riverColumn = width / 2 - 1
-const height = 30
+const height = 40
 const tiles: Tile[] = Array.from({ length: width * height }, () => 'grass')
 const put = (x: number, y: number, tile: Tile) => {
   tiles[y * width + x] = tile
@@ -26,33 +26,34 @@ for (let y = 0; y < height; y++) {
     if ((x - 8) ** 2 / 25 + (y - 5) ** 2 / 9 < 1 ||
         (x - 14) ** 2 / 25 + (y - 23) ** 2 / 14 < 1 ||
         (x - 19) ** 2 / 13 + (y - 3) ** 2 / 9 < 1 ||
-        (x - 27) ** 2 / 8 + (y - 25) ** 2 / 8 < 1) put(x, y, 'forest')
-    if ((x - 18) ** 2 / 8 + (y - 17) ** 2 / 5 < 1) put(x, y, 'rock')
+        (x - 27) ** 2 / 18 + (y - 25) ** 2 / 14 < 1 ||
+        (x - 34) ** 2 / 20 + (y - 16) ** 2 / 25 < 1 ||
+        (x - 29) ** 2 / 40 + (y - 36) ** 2 / 16 < 1) put(x, y, 'forest')
+    if ((x - 18) ** 2 / 8 + (y - 17) ** 2 / 5 < 1 ||
+        (x - 19) ** 2 / 26 + (y - 33) ** 2 / 9 < 1 ||
+        (x - 38) ** 2 / 8 + (y - 25) ** 2 / 18 < 1) put(x, y, 'rock')
     if (x === riverColumn) put(x, y, 'water')
   }
 }
-for (let x = 4; x < width / 2; x++) {
-  const y = x < 14 ? 11 : 10 - Math.floor((x - 14) / 7)
-  put(x, y, x === riverColumn ? 'bridge' : 'road')
-  put(x, y + 1, x === riverColumn ? 'bridge' : 'road')
-}
-for (const y of [8, 9, 20, 21]) {
-  tiles[y * width + riverColumn] = 'bridge'
-  tiles[y * width + riverColumn + 1] = 'bridge'
-}
 for (let x = 4; x < riverColumn; x++) {
-  const y = x < 12 ? 12 + Math.floor((x - 4) / 2) : 16 + Math.floor((x - 12) / 2)
-  if (tiles[y * width + x] === 'grass') put(x, y, 'road')
+  const north = x < 14 ? 11 : 11 - Math.floor((x - 14) / 7)
+  const south = x < 12 ? 12 + Math.floor((x - 4) / 2) : Math.min(height - 10, 16 + Math.floor((x - 12) / 2))
+  for (const y of [north, north + 1, south, south + 1]) {
+    if (tiles[y * width + x] === 'grass') put(x, y, 'road')
+  }
 }
+for (const y of [8, 9, height - 10, height - 9]) put(riverColumn, y, 'bridge')
 put(5, 18, 'mine')
 put(25, 5, 'mine')
+put(34, 33, 'mine')
 put(4, 15, 'quarry')
 put(23, 22, 'quarry')
+put(33, 5, 'quarry')
 
 export const ashford: BattleMap = {
   name: 'Ashford Crossing',
   width, height, tiles,
-  bases: { human: { x: 6.5 * TILE, y: 11.5 * TILE }, orc: { x: (width - 6.5) * TILE, y: 18.5 * TILE } }
+  bases: { human: { x: 6.5 * TILE, y: 11.5 * TILE }, orc: { x: (width - 6.5) * TILE, y: (height - 11.5) * TILE } }
 }
 
 export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {

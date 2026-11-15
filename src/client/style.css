@@ -83,11 +83,11 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #banner { font-size: 0.77rem; text-align: center; color: #e7c98e; }
 .head-actions, .orders { display: flex; gap: 0.3rem; }
 .head-actions button, .orders button { font-size: 0.75rem; white-space: nowrap; }
-#battlefield { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #101711; touch-action: none; overscroll-behavior: none; user-select: none; }
+#battlefield { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #101711; touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 #battlefield canvas { display: block; image-rendering: pixelated; touch-action: none; }
 .hud { min-height: 76px; padding: 0.35rem 0.65rem max(0.35rem, env(safe-area-inset-bottom)); border-top: 2px solid #7b613f; }
 #map-button { background: #0f150f; padding: 2px; min-width: 100px; display: grid; place-items: center; touch-action: none; }
-#minimap { width: 104px; height: 65px; display: block; }
+#minimap { width: 132px; height: 60px; display: block; }
 .selection { flex: 1; min-width: 4rem; overflow: hidden; }
 #selection-name { display: block; font-family: Georgia, serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #selection-detail { color: var(--muted); margin-top: 2px; font-size: 0.73rem; }
@@ -115,7 +115,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   .match-head { min-height: 46px; }
   .hud { min-height: 58px; gap: 0.45rem; }
   #map-button { min-width: 0; }
-  #minimap { width: 72px; height: 45px; }
+  #minimap { width: 99px; height: 45px; }
   .orders button { padding-inline: 0.55rem; }
 }
 @media (max-width: 500px) {

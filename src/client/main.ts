@@ -31,7 +31,6 @@ let faction: Faction = 'human'
 let room: RoomState | null = null
 let scene: BattleScene | null = null
 let game: Phaser.Game | null = null
-let box = false
 let orderMessageTimer: number | undefined
 let resources: Resources = { gold: 0, wood: 0, stone: 0 }
 let population: Population = { used: 0, reserved: 0, limit: 0 }
@@ -103,8 +102,8 @@ function receive(message: ServerMessage) {
       }
       break
     case 'snapshot':
-      resources = message.resources[faction]
-      population = message.population[faction]
+      resources = message.resources
+      population = message.population
       drawEconomy()
       scene?.snapshot(message)
       break
@@ -145,8 +144,6 @@ function drawLobby() {
 function showBattle() {
   lobby.hidden = true
   match.hidden = false
-  box = false
-  button('box').setAttribute('aria-pressed', 'false')
   button('advance').setAttribute('aria-pressed', 'false')
   scene = new BattleScene(faction, battlefield, minimap, {
     order: (ids, order) => {
@@ -157,7 +154,7 @@ function showBattle() {
     placement: (active, blocked) => {
       placing = active
       placementTip.hidden = !active
-      element('placement-message').textContent = blocked ? 'This spot is blocked. Choose open ground.' : 'Choose a clear tile to build on.'
+      element('placement-message').textContent = blocked ? 'Choose visible, open ground.' : 'Choose a clear tile to build on.'
     },
     effect: kind => audio.play(kind)
   })
@@ -204,7 +201,7 @@ function drawSelection(entities: Entity[]) {
   meter.hidden = !selected
   if (!selected) {
     label.textContent = 'No units selected'
-    detail.textContent = touch ? 'Tap a troop or use All troops.' : 'Click or drag to select.'
+    detail.textContent = touch ? 'Drag to select · Two fingers to pan.' : 'Click or drag to select.'
     return
   }
   const hp = entities.reduce((total, entity) => total + entity.hp, 0)
@@ -362,11 +359,6 @@ button('exit').onclick = () => {
   if (room?.phase === 'finished' || window.confirm('Leave the battle and forfeit?')) leave()
 }
 button('all').onclick = () => scene?.selectAll()
-button('box').onclick = () => {
-  box = !box
-  button('box').setAttribute('aria-pressed', String(box))
-  scene?.setBoxMode(box)
-}
 button('advance').onclick = toggleAdvance
 button('halt').onclick = () => scene?.halt()
 button('home').onclick = () => scene?.home()

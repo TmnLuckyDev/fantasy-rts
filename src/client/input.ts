@@ -6,19 +6,20 @@ type Actions = {
   select: (point: Point, append: boolean, touch: boolean) => void
   selectBox: (rect: SelectionRect, append: boolean) => void
   order: (point: Point) => void
-  pan: (dx: number, dy: number) => void
-  zoom: (point: Point, ratio: number) => void
+  camera: (from: Point, to: Point, zoomRatio: number) => void
 }
 
+type CameraGesture = { center: Point, span: number, initialSpan: number, zooming: boolean }
+const dragThreshold = 8
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 const middle = (a: Point, b: Point) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
 
 export class BattlefieldInput {
-  boxMode = false
   selection: SelectionRect | null = null
   private pointers = new Map<number, Point>()
   private down: Point | null = null
-  private didGesture = false
+  private gesture: CameraGesture | null = null
+  private frame = 0
   private listeners = new AbortController()
 
   constructor(private element: HTMLElement, private actions: Actions) {
@@ -31,11 +32,15 @@ export class BattlefieldInput {
     element.addEventListener('lostpointercapture', this.cancel, options)
     element.addEventListener('wheel', event => {
       event.preventDefault()
-      this.actions.zoom(this.point(event), Math.exp(-event.deltaY * 0.0012))
+      const point = this.point(event)
+      this.actions.camera(point, point, Math.exp(-event.deltaY * 0.0012))
     }, { ...options, passive: false })
   }
 
-  destroy() { this.listeners.abort() }
+  destroy() {
+    this.listeners.abort()
+    cancelAnimationFrame(this.frame)
+  }
 
   private point(event: MouseEvent): Point {
     const bounds = this.element.getBoundingClientRect()
@@ -50,50 +55,78 @@ export class BattlefieldInput {
       return
     }
     if (event.button !== 0) return
-    this.element.setPointerCapture(event.pointerId)
+    try {
+      this.element.setPointerCapture(event.pointerId)
+    } catch {
+      // A pointer that has already ended can no longer be captured.
+    }
     this.pointers.set(event.pointerId, point)
     if (this.pointers.size === 1) {
       this.down = point
-      this.didGesture = false
     } else {
-      this.didGesture = true
+      this.down = null
       this.selection = null
+      this.resetGesture()
     }
   }
 
   private move = (event: PointerEvent) => {
-    const previous = this.pointers.get(event.pointerId)
-    if (!previous) return
+    if (!this.pointers.has(event.pointerId)) return
     const point = this.point(event)
     this.pointers.set(event.pointerId, point)
-    if (this.pointers.size === 2) {
-      const other = [...this.pointers.entries()].find(([id]) => id !== event.pointerId)?.[1]
-      if (!other) return
-      const before = middle(previous, other)
-      const after = middle(point, other)
-      this.actions.pan(after.x - before.x, after.y - before.y)
-      const oldDistance = distance(previous, other)
-      if (oldDistance > 6) this.actions.zoom(after, Math.max(0.85, Math.min(1.18, distance(point, other) / oldDistance)))
-      return
+    if (this.gesture) {
+      if (!this.frame) this.frame = requestAnimationFrame(this.updateGesture)
+    } else if (this.down && (this.selection || distance(this.down, point) >= dragThreshold)) {
+      this.selection = { from: this.down, to: point }
     }
-    if (this.didGesture || !this.down || distance(point, this.down) < 6) return
-    if (event.pointerType === 'mouse' || this.boxMode) this.selection = { from: this.down, to: point }
+  }
+
+  private updateGesture = () => {
+    this.frame = 0
+    const gesture = this.gesture
+    if (!gesture) return
+    const [a, b] = this.pointers.values()
+    const center = middle(a, b)
+    const span = Math.max(8, distance(a, b))
+    // Sample both pointers once per frame so translation does not look like a pinch.
+    gesture.zooming ||= Math.abs(span - gesture.initialSpan) >= Math.max(9, gesture.initialSpan * 0.07)
+    this.actions.camera(gesture.center, center, gesture.zooming ? span / gesture.span : 1)
+    gesture.center = center
+    gesture.span = span
+  }
+
+  private resetGesture() {
+    cancelAnimationFrame(this.frame)
+    this.frame = 0
+    this.gesture = null
+    if (this.pointers.size === 2) {
+      const [a, b] = this.pointers.values()
+      const span = Math.max(8, distance(a, b))
+      this.gesture = { center: middle(a, b), span, initialSpan: span, zooming: false }
+    }
   }
 
   private end = (event: PointerEvent) => {
-    if (!this.pointers.delete(event.pointerId)) return
-    if (this.didGesture || this.pointers.size > 0 || !this.down) return
+    if (!this.pointers.has(event.pointerId)) return
     const point = this.point(event)
-    if (this.selection) this.actions.selectBox({ from: this.selection.from, to: point }, event.shiftKey)
-    else if (distance(this.down, point) < 10) this.actions.select(point, event.shiftKey, event.pointerType !== 'mouse')
-    this.down = null
-    this.selection = null
+    if (this.frame) {
+      cancelAnimationFrame(this.frame)
+      this.pointers.set(event.pointerId, point)
+      this.updateGesture()
+    }
+    this.cancel(event)
   }
 
   private cancel = (event: PointerEvent) => {
     if (!this.pointers.delete(event.pointerId)) return
+    const from = this.down
+    const dragged = Boolean(this.selection)
     this.down = null
     this.selection = null
-    this.didGesture = true
+    this.resetGesture()
+    if (!from || event.type !== 'pointerup') return
+    const to = this.point(event)
+    if (dragged || distance(from, to) >= dragThreshold) this.actions.selectBox({ from, to }, event.shiftKey)
+    else this.actions.select(to, event.shiftKey, event.pointerType !== 'mouse')
   }
 }

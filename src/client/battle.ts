@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { TILE, ashford, cellCenter, distance, resourceAt, riverColumn, snapToCell } from '../shared/map.ts'
 import { MAX_SELECTION, entityKinds, isUnitKind } from '../shared/protocol.ts'
+import { decodeFog } from '../shared/fog.ts'
 import { validPlacement } from '../shared/economy.ts'
 import type { BuildingKind, Effect, Entity, Faction, Order, Point, Snapshot } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
@@ -29,6 +30,10 @@ export class BattleScene extends Phaser.Scene {
   private ui!: Phaser.GameObjects.Graphics
   private controls!: BattlefieldInput
   private miniTerrain!: HTMLCanvasElement
+  private fogTexture!: Phaser.Textures.CanvasTexture
+  private fogPixels!: ImageData
+  private fogMask = ''
+  private fog: Uint8Array = new Uint8Array(ashford.tiles.length)
   private markers: Array<{ point: Point, color: number, born: number }> = []
   private keys!: Record<string, Phaser.Input.Keyboard.Key>
   private minimapDirty = true
@@ -49,8 +54,14 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create() {
-    this.textures.addCanvas('terrain', terrainTexture())
-    this.add.image(0, 0, 'terrain').setOrigin(0).setDepth(-5)
+    const chunk = 32
+    for (let y = 0; y < ashford.height; y += chunk) {
+      for (let x = 0; x < ashford.width; x += chunk) {
+        const key = 'terrain-' + x + '-' + y
+        this.textures.addCanvas(key, terrainTexture(x, y, Math.min(chunk, ashford.width - x), Math.min(chunk, ashford.height - y)))
+        this.add.image(x * TILE, y * TILE, key).setOrigin(0).setDepth(-5)
+      }
+    }
     this.water = this.add.graphics().setDepth(-4)
     for (const tile of ['forest', 'rock', 'mine', 'quarry'] as const) {
       for (let v = 0; v < (tile === 'forest' ? 3 : 1); v++) this.textures.addCanvas(tile + v, propTexture(tile, v))
@@ -70,7 +81,12 @@ export class BattleScene extends Phaser.Scene {
       sprite.setScale(tile === 'rock' ? 1.23 : 1.18).setOrigin(0.5, 0.82).setDepth(point.y - 1)
     })
     this.graphics = this.add.graphics().setDepth(mapHeight + 2)
-    this.ui = this.add.graphics().setDepth(mapHeight + 3)
+    this.fogTexture = this.textures.createCanvas('fog', ashford.width, ashford.height)!
+    this.fogTexture.setFilter(Phaser.Textures.FilterMode.NEAREST)
+    this.fogPixels = this.fogTexture.context.createImageData(ashford.width, ashford.height)
+    this.paintFog()
+    this.add.image(0, 0, 'fog').setOrigin(0).setScale(TILE).setDepth(mapHeight + 3)
+    this.ui = this.add.graphics().setDepth(mapHeight + 4)
     this.miniTerrain = canvas(this.minimap.width, this.minimap.height)
     const mini = this.miniTerrain.getContext('2d')!
     const tw = this.miniTerrain.width / ashford.width
@@ -88,8 +104,7 @@ export class BattleScene extends Phaser.Scene {
       select: (point, append, touch) => this.click(point, append, touch),
       selectBox: (rect, append) => this.selectBox(rect, append),
       order: point => this.orderAt(point),
-      pan: (dx, dy) => this.pan(dx, dy),
-      zoom: (point, ratio) => this.zoom(point, ratio)
+      camera: (from, to, ratio) => this.transformCamera(from, to, ratio)
     })
     const track = (event: PointerEvent) => {
       const rect = this.host.getBoundingClientRect()
@@ -108,6 +123,11 @@ export class BattleScene extends Phaser.Scene {
   snapshot(snapshot: Snapshot) {
     this.newest = snapshot
     if (!this.initialized) return
+    if (snapshot.fog !== this.fogMask) {
+      this.fogMask = snapshot.fog
+      this.fog = decodeFog(snapshot.fog, ashford.tiles.length)
+      this.paintFog()
+    }
     const present = new Set(snapshot.entities.map(entity => entity.id))
     for (const [id, visual] of this.visuals) {
       if (!present.has(id)) {
@@ -143,7 +163,25 @@ export class BattleScene extends Phaser.Scene {
     this.selectionChanged()
   }
 
-  setBoxMode(enabled: boolean) { if (this.controls) this.controls.boxMode = enabled }
+  private paintFog() {
+    const pixels = this.fogPixels.data
+    for (let i = 0; i < this.fog.length; i++) {
+      const offset = i * 4
+      pixels[offset] = 13
+      pixels[offset + 1] = 19
+      pixels[offset + 2] = 16
+      pixels[offset + 3] = this.fog[i] === 2 ? 0 : this.fog[i] === 1 ? 174 : 255
+    }
+    this.fogTexture.context.putImageData(this.fogPixels, 0, 0)
+    this.fogTexture.refresh()
+  }
+
+  private sightAt(point: Point) {
+    const x = Math.floor(point.x / TILE)
+    const y = Math.floor(point.y / TILE)
+    if (x < 0 || x >= ashford.width || y < 0 || y >= ashford.height) return 0
+    return this.fog[y * ashford.width + x]
+  }
 
   selectAll() {
     this.selectKind(false)
@@ -177,7 +215,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.placing) {
       const ids = this.workerIds()
       const at = snapToCell(point)
-      if (ids.length && validPlacement(ashford, this.placing, at, this.entities())) {
+      if (ids.length && this.sightAt(at) === 2 && validPlacement(ashford, this.placing, at, this.entities())) {
         this.actions.order(ids, { kind: 'build', building: this.placing, at })
         this.place(null)
       } else this.actions.placement(true, true)
@@ -251,9 +289,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private gatherPoint(point: Point) {
-    if (resourceAt(ashford, point)) return snapToCell(point)
+    if (this.sightAt(point) && resourceAt(ashford, point)) return snapToCell(point)
     const ground = { x: point.x, y: point.y + 12 }
-    return resourceAt(ashford, ground) ? snapToCell(ground) : null
+    return this.sightAt(ground) && resourceAt(ashford, ground) ? snapToCell(ground) : null
   }
 
   private orderAt(screen: Point) {
@@ -312,11 +350,11 @@ export class BattleScene extends Phaser.Scene {
     this.clampCamera()
   }
 
-  private zoom(point: Point, ratio: number) {
+  private transformCamera(from: Point, to: Point, ratio: number) {
     const camera = this.cameras.main
-    const old = this.world(point)
+    const old = this.world(from)
     camera.setZoom(Math.max(0.38, Math.min(1.7, camera.zoom * ratio)))
-    const next = this.world(point)
+    const next = this.world(to)
     camera.scrollX += old.x - next.x
     camera.scrollY += old.y - next.y
     this.clampCamera()
@@ -378,18 +416,18 @@ export class BattleScene extends Phaser.Scene {
       if (entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
     this.paintEffects(time)
+    this.ui.clear()
     this.markers = this.markers.filter(mark => {
       const t = (time - mark.born) / 410
       if (t > 1) return false
-      this.graphics.lineStyle(2, mark.color, 1 - t)
-      this.graphics.strokeEllipse(mark.point.x, mark.point.y, 12 + t * 22, 6 + t * 12)
+      this.ui.lineStyle(2, mark.color, 1 - t)
+      this.ui.strokeEllipse(mark.point.x, mark.point.y, 12 + t * 22, 6 + t * 12)
       return true
     })
-    this.ui.clear()
     if (this.placing && this.pointer) {
       const at = snapToCell(this.world(this.pointer))
       const radius = unitStats[this.faction][this.placing].radius
-      const color = validPlacement(ashford, this.placing, at, this.entities()) ? 0x9fdf8d : 0xf27b65
+      const color = this.sightAt(at) === 2 && validPlacement(ashford, this.placing, at, this.entities()) ? 0x9fdf8d : 0xf27b65
       this.ui.fillStyle(color, 0.27).fillRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
       this.ui.lineStyle(1, color, 0.9).strokeRect(at.x - radius, at.y - radius, radius * 2, radius * 2)
     }
@@ -457,6 +495,8 @@ export class BattleScene extends Phaser.Scene {
     const w = this.minimap.width
     const h = this.minimap.height
     ctx.drawImage(this.miniTerrain, 0, 0)
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(this.fogTexture.canvas, 0, 0, w, h)
     for (const { entity } of this.visuals.values()) {
       ctx.fillStyle = entity.faction === 'human' ? '#a3d6ff' : '#ff9575'
       const r = entity.kind === 'headquarters' ? 3 : isUnitKind(entity.kind) ? 1.3 : 1.8
