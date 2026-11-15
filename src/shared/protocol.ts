@@ -10,7 +10,7 @@ export type BuildingKind = typeof buildingKinds[number]
 export type EntityKind = typeof entityKinds[number]
 export const isUnitKind = (kind: unknown): kind is UnitKind => unitKinds.some(value => value === kind)
 export const isBuildingKind = (kind: unknown): kind is BuildingKind => buildingKinds.some(value => value === kind)
-export const MAX_SELECTION = 24
+export const MAX_SELECTION = 30
 export const resourceKinds = ['gold', 'wood', 'stone'] as const
 export type ResourceKind = typeof resourceKinds[number]
 export type Resources = Record<ResourceKind, number>
