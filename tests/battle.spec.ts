@@ -173,7 +173,6 @@ test('desktop and landscape touch players can finish an authoritative match', as
 
     const barracks = cellCenter(11, 15)
     const barracksSpot = await screenPoint(human, barracks, ashford.bases.human)
-    await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
@@ -181,7 +180,6 @@ test('desktop and landscape touch players can finish an authoritative match', as
       entity.kind === 'barracks' && entity.construction === undefined), { timeout: 23_000 }).toBe(true)
     await human.mouse.click(barracksSpot.x, barracksSpot.y - 20)
     await expect(human.locator('#selection-name')).toHaveText('Barracks')
-    await human.getByRole('button', { name: 'Train', exact: true }).click()
     await human.getByRole('button', { name: 'Footman · 75 gold', exact: true }).click()
     await expect.poll(() => troops(humanHistory, 'human').length, { timeout: 12_000 }).toBe(7)
     await expect(human.locator('#population')).toHaveText('10/10')
@@ -189,7 +187,6 @@ test('desktop and landscape touch players can finish an authoritative match', as
 
     await human.getByRole('button', { name: 'Workers', exact: true }).click()
     const farm = await screenPoint(human, cellCenter(14, 15), ashford.bases.human)
-    await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Farm · 70 wood · 20 stone', exact: true }).click()
     await human.mouse.click(farm.x, farm.y)
     await expect(human.locator('#population')).toHaveText('10/15', { timeout: 20_000 })
@@ -203,7 +200,6 @@ test('desktop and landscape touch players can finish an authoritative match', as
     const tower = cellCenter(ashford.width - 3, ashford.height - 11)
     await panTo(orc, tower, true)
     const towerSpot = await screenPoint(orc, tower, tower)
-    await orc.getByRole('button', { name: 'Build', exact: true }).tap()
     await orc.getByRole('button', { name: 'Watch Tower · 55 wood · 85 stone', exact: true }).tap()
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
@@ -248,34 +244,45 @@ test('desktop and landscape touch players can finish an authoritative match', as
 })
 
 
-test('a phone can start, control, reconnect to and leave a solo skirmish', async ({ browser, baseURL }) => {
+test('a phone can resume a saved solo match and use worker commands without a server socket', async ({ browser, baseURL }) => {
   const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
   const phone = devices[mobileProfile]
   const context = await mobileEngine.newContext({
     ...phone,
     viewport: { width: phone.viewport.height, height: phone.viewport.width }
   })
-  const page = await context.newPage()
-  const history = observe(page)
   try {
+    let page = await context.newPage()
     await page.goto(baseURL!)
-    await expect(page.locator('#connection')).toHaveText('Online')
     await page.locator('button[data-faction="orc"]').tap()
     await page.getByRole('button', { name: 'Play vs Computer', exact: true }).tap()
     await expect(page.locator('#battlefield canvas')).toBeVisible()
     await expect(page.locator('#banner')).toContainText('Orcish Horde vs Computer')
-    await page.getByRole('button', { name: 'All troops', exact: true }).tap()
-    await expect(page.locator('#selection-name')).toHaveText('6 troops selected')
-    await expect.poll(() => unit(history, 9)?.x).toBeDefined()
-    const first = unit(history, 9)!
-    const to = cellCenter(ashford.width - 15, ashford.height - 12)
-    const point = await screenPoint(page, to, ashford.bases.orc)
-    await page.touchscreen.tap(point.x, point.y)
-    await expect.poll(() => unit(history, 9)?.x ?? first.x).toBeLessThan(first.x - 25)
+    const hall = ashford.bases.orc
+    const hallTap = await screenPoint(page, { x: hall.x, y: hall.y - 28 }, hall)
+    await page.touchscreen.tap(hallTap.x, hallTap.y)
+    await expect(page.getByRole('button', { name: 'Peon · 60 gold', exact: true })).toBeVisible()
+
+    const idle = () => page.getByRole('button', { name: /^Idle worker/ })
+    await expect(idle()).toHaveText(/3/)
+    await idle().tap()
+    await expect(page.locator('#selection-name')).toHaveText('Peon')
+    await expect(page.getByRole('button', { name: 'Boar Farm · 70 wood · 20 stone', exact: true })).toBeVisible()
+    // After loading the game assets the browser can play solo without any connection.
+    await context.setOffline(true)
+    await page.getByRole('button', { name: 'Mine gold', exact: true }).tap()
+    await expect(idle()).toHaveText(/2/)
+    await expect.poll(async () => Number(await page.locator('#gold').textContent()), { timeout: 15_000 }).toBeGreaterThan(300)
+    await context.setOffline(false)
 
     await page.reload()
-    await expect(page.locator('#battlefield canvas')).toBeVisible()
     await expect(page.locator('#banner')).toContainText('Orcish Horde vs Computer')
+    await expect(idle()).toHaveText(/2/)
+    await page.close()
+    page = await context.newPage()
+    await page.goto(baseURL!)
+    await page.getByRole('button', { name: 'Resume solo match', exact: true }).tap()
+    await expect(idle()).toHaveText(/2/)
     page.once('dialog', dialog => dialog.accept())
     await page.getByRole('button', { name: 'Leave', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Play vs Computer', exact: true })).toBeEnabled()

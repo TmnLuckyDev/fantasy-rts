@@ -34,7 +34,7 @@
           </div>
 
           <div id="entry-actions">
-            <button id="solo" type="button" class="primary" disabled>Play vs Computer</button>
+            <button id="solo" type="button" class="primary">Play vs Computer</button>
             <button id="create" type="button" disabled>Create room</button>
             <form id="join-form">
               <input class="room-input" id="join-code" aria-label="Room code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" required pattern="[A-Za-z2-9]{5}" value="">
@@ -84,6 +84,7 @@
           <meter id="selection-health" min="0" max="100" value="0" hidden aria-label="Selected troops health"></meter>
         </div>
         <div class="orders" aria-label="Battle commands">
+          <button id="idle-worker" type="button" title="Cycle through idle workers (I)" disabled>Idle worker <span id="idle-count">0</span></button>
           <button id="workers" type="button" title="Select all workers">Workers</button>
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
           <button id="all" type="button" title="Select all troops (Q)">All troops</button>

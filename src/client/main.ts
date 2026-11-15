@@ -1,12 +1,13 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
-import type { Entity, EntityKind, Faction, Population, Resources, RoomState, ServerMessage } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, resourceKinds } from '../shared/protocol.ts'
+import type { Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, trainedAt, training, TRAINING_QUEUE_LIMIT } from '../shared/economy.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
 import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
+import { SoloClient } from './solo.ts'
 import { entityTexture } from './sprites.ts'
 import './style.css'
 
@@ -44,13 +45,20 @@ let economyContext = ''
 const invite = new URLSearchParams(location.search).get('room')
 if (invite && /^[A-Z2-9]{5}$/i.test(invite)) joinCode.value = invite.toUpperCase()
 
+const solo = new SoloClient(receive, refreshSoloButton)
 const client = new ConnectionClient(receive, status)
+refreshSoloButton()
+if (!invite && !client.hasSeat && solo.restoreOnReload) solo.start(faction, true)
+
+function refreshSoloButton() {
+  button('solo').textContent = solo.saved ? 'Resume solo match' : 'Play vs Computer'
+  button('solo').disabled = client.hasSeat
+}
 
 function status(state: 'waiting' | 'open' | 'closed') {
   const open = state === 'open'
   connection.dataset.state = state
   connection.textContent = open ? 'Online' : state === 'waiting' ? 'Connecting' : 'Reconnecting'
-  button('solo').disabled = !open
   button('create').disabled = !open
   button('join').disabled = !open
   button('ready').disabled = !open
@@ -63,8 +71,8 @@ function note(message: string, error = false) {
 }
 
 function updateBanner(online: boolean) {
-  if (!online) banner.textContent = 'Reconnecting to match…'
-  else if (room?.players.some(seat => seat.faction === opposite(faction) && !seat.connected)) banner.textContent = 'Opponent disconnected · 45s to return'
+  if (!online && !solo.active) banner.textContent = 'Reconnecting to match…'
+  else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
   else banner.textContent = factionNames[faction] + (room?.mode === 'solo' ? ' vs Computer' : '') +
     ' · Destroy the enemy headquarters'
 }
@@ -87,6 +95,7 @@ function showLobby() {
   element('entry-actions').hidden = false
   for (const item of factionButtons) item.disabled = false
   history.replaceState(null, '', location.pathname)
+  refreshSoloButton()
   note('Choose a faction to start.')
 }
 
@@ -109,6 +118,9 @@ function receive(message: ServerMessage) {
       resources = message.resources
       population = message.population
       drawEconomy()
+      const idle = message.entities.filter(entity => entity.faction === faction && entity.idle).length
+      button('idle-worker').disabled = idle === 0
+      setText('idle-count', String(idle))
       scene?.snapshot(message)
       break
     case 'error':
@@ -151,10 +163,7 @@ function showBattle() {
   match.dataset.faction = faction
   button('advance').setAttribute('aria-pressed', 'false')
   scene = new BattleScene(faction, battlefield, minimap, {
-    order: (ids, order) => {
-      client.send({ type: 'command', ids, order })
-      audio.play('order')
-    },
+    order: issueOrder,
     selection: drawSelection,
     placement: (active, blocked) => {
       placing = active
@@ -163,6 +172,8 @@ function showBattle() {
     },
     effect: kind => audio.play(kind)
   })
+  button('idle-worker').disabled = true
+  setText('idle-count', '0')
   scene.advanceMode = false
   resources = { gold: 0, wood: 0, stone: 0 }
   population = { used: 0, reserved: 0, limit: 0 }
@@ -199,18 +210,26 @@ function paintPortrait(target: HTMLCanvasElement, side: Faction, kind: EntityKin
   ctx.drawImage(sprite, Math.floor((target.width - width) / 2), Math.floor((target.height - height) / 2), width, height)
 }
 
-function drawSelection(entities: Entity[]) {
+function issueOrder(ids: number[], order: Order) {
+  if (solo.active) solo.command(ids, order)
+  else client.send({ type: 'command', ids, order })
+  audio.play('order')
+}
+
+function drawSelection(entities: Entity[], interactive = false) {
   selection = entities
   const selected = entities[0]
   const workers = entities.some(entity => entity.kind === 'worker')
   const trainer = entities.length === 1 && selected && selected.construction === undefined &&
     trainedAt(selected.kind).length ? selected : undefined
   const nextContext = workers ? 'build' : trainer ? 'train:' + trainer.id : ''
-  if (nextContext !== economyContext) closeEconomyMenu()
+  const changed = nextContext !== economyContext
   economyContext = nextContext
   economyAction.hidden = !nextContext
   economyAction.textContent = workers ? 'Build' : 'Train'
-  if (!menu.hidden) updateEconomyOptions()
+  if (!nextContext) closeEconomyMenu()
+  else if (changed || interactive) openEconomyMenu(changed)
+  else if (!menu.hidden) updateEconomyOptions()
   const label = element('selection-name')
   const detail = element('selection-detail')
   const meter = element<HTMLMeterElement>('selection-health')
@@ -236,7 +255,7 @@ function drawSelection(entities: Entity[]) {
       const next = entityNames[faction][selected.training.kind]
       detail.textContent = `${next} · ${Math.floor(selected.training.progress * 100)}% · ${selected.training.remaining} queued`
     } else if (selected.kind === 'worker') {
-      detail.textContent = selected.carrying ? `Carrying ${selected.carrying} to the hall.` : gatherHint()
+      detail.textContent = selected.carrying ? `Carrying ${selected.carrying} to the hall.` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
     } else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP`
     else detail.textContent = stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`
   } else {
@@ -276,7 +295,8 @@ function updateEconomyOptions() {
   const available = population.limit - population.used - population.reserved
   let needsFarm = false
   for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
-    const rule = choiceRules.get(choice)!
+    const rule = choiceRules.get(choice)
+    if (!rule) continue
     const needsSpace = rule.population > 0 && rule.population > available
     needsFarm ||= needsSpace
     choice.disabled = full || needsSpace || !canAfford(resources, rule.cost)
@@ -308,35 +328,57 @@ function economyChoice(kind: EntityKind, cost: Cost, population: number, act: ()
   return choice
 }
 
-economyAction.onclick = () => {
-  if (!menu.hidden || placing) {
-    closeEconomyMenu()
-    scene?.place(null)
-    return
+function gatherChoice(resource: ResourceKind, label: string) {
+  const choice = document.createElement('button')
+  choice.type = 'button'
+  choice.className = 'gather-choice resource ' + resource
+  const icon = document.createElement('span')
+  icon.setAttribute('aria-hidden', 'true')
+  choice.append(icon, label)
+  choice.onclick = () => {
+    if (scene?.gatherNearest(resource)) closeEconomyMenu()
+    else receive({ type: 'error', message: 'Explore a source of ' + resource + ' first.' })
   }
-  if (economyContext === 'build') {
-    menu.replaceChildren(...buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
-      closeEconomyMenu()
-      scene?.place(kind)
-    })))
-  } else {
-    const building = selection[0]
-    if (!building) return
-    const hint = document.createElement('small')
-    hint.className = 'economy-hint'
-    hint.textContent = 'Build a farm to raise your population limit.'
-    menu.replaceChildren(...trainedAt(building.kind).map(kind =>
-      economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () => {
-        client.send({ type: 'command', ids: [building.id], order: { kind: 'train', unit: kind } })
-        audio.play('order')
-      })), hint)
+  return choice
+}
 
+function buildChoices() {
+  const gathering = document.createElement('div')
+  gathering.className = 'gather-choices'
+  gathering.append(gatherChoice('gold', 'Mine gold'), gatherChoice('wood', 'Chop wood'), gatherChoice('stone', 'Quarry stone'))
+  return [gathering, ...buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
+    closeEconomyMenu()
+    scene?.place(kind)
+  }))]
+}
+
+function openEconomyMenu(rebuild = false) {
+  if (!economyContext || placing) return
+  if (rebuild) {
+    if (economyContext === 'build') menu.replaceChildren(...buildChoices())
+    else {
+      const building = selection[0]
+      if (!building) return
+      const hint = document.createElement('small')
+      hint.className = 'economy-hint'
+      hint.textContent = 'Build a farm to raise your population limit.'
+      menu.replaceChildren(...trainedAt(building.kind).map(kind =>
+        economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
+          issueOrder([building.id], { kind: 'train', unit: kind }))), hint)
+    }
   }
   updateEconomyOptions()
   menu.hidden = false
   economyAction.setAttribute('aria-expanded', 'true')
 }
 
+economyAction.onclick = () => {
+  if (placing) scene?.place(null)
+  if (menu.hidden) openEconomyMenu()
+  else closeEconomyMenu()
+}
+
+button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
 button('cancel-placement').onclick = () => scene?.place(null)
 
@@ -349,8 +391,11 @@ function drawResult(outcome: NonNullable<RoomState['result']>) {
 }
 
 function leave() {
-  client.send({ type: 'leave' })
-  client.clear()
+  if (solo.active) solo.leave()
+  else {
+    client.send({ type: 'leave' })
+    client.clear()
+  }
   showLobby()
 }
 
@@ -368,7 +413,9 @@ for (const item of factionButtons) {
     else setFaction(choice)
   }
 }
-button('solo').onclick = () => client.send({ type: 'solo', faction })
+button('solo').onclick = () => {
+  if (!client.hasSeat) solo.start(faction, solo.saved)
+}
 button('create').onclick = () => client.send({ type: 'create', faction })
 element<HTMLFormElement>('join-form').onsubmit = event => {
   event.preventDefault()
@@ -414,6 +461,7 @@ result.oncancel = event => event.preventDefault()
 window.addEventListener('keydown', event => {
   if (!scene || result.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
   switch (event.key.toLowerCase()) {
+    case 'i': scene.selectIdleWorker(); break
     case 'q': scene.selectAll(); break
     case 'a': toggleAdvance(); break
     case 's': scene.halt(); break

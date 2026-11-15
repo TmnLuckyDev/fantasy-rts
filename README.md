@@ -11,9 +11,9 @@ Open the game in your browser and choose a faction.
 
 During a match:
 
-1. Select **Workers**, then right-click or tap a mine for gold, trees for wood, or a marked quarry for stone. Workers carry each load back to their hall and repeat the trip.
-2. Select a worker, choose **Build** and place a structure on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
-3. Select a completed production building, then **Train**. Training costs gold and reserves population. Walls block ground movement. Completed towers fire at nearby enemies.
+1. Select a worker or use **Idle worker** to cycle through workers without orders. Use **Mine gold**, **Chop wood** or **Quarry stone** to go to the closest explored source, or target a source directly. Workers carry each load back to their hall and repeat the trip.
+2. Select a worker, choose a building from its action panel and place it on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
+3. Select a completed production building to see the available units and train them directly. Training costs gold and reserves population. Walls block ground movement. Completed towers fire at nearby enemies.
 4. Scout across either bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
 
 | Human structure | Orc structure | Training |
@@ -35,7 +35,7 @@ The headquarters supports 10 population. A completed Farm or Boar Farm adds five
 | Pan and zoom | Arrow keys, minimap and mouse wheel. | Two-finger pan, pinch and minimap. Landscape gives the widest view. |
 | Other orders | **Q** selects all troops, **S** stops them, **H** centers on your base. | **All troops**, **Stop** and **Base** on the command bar. |
 
-Reloading the same tab can recover a lost seat within 45 seconds. Multiplayer matches continue during a reconnect. Solo matches pause while the player's connection is lost. Leaving a multiplayer match forfeits it. Leaving a solo match closes it. Rooms live in server memory and are cleared when the process restarts.
+Solo matches run in the browser and save progress on that device. Reload the same tab to resume or use **Resume solo match** in the lobby. Switching away from the tab pauses the match. Multiplayer matches pause until disconnected players return. Multiplayer rooms live in server memory and are cleared when the process restarts. **Leave** ends a solo match and forfeits a multiplayer match.
 
 ## Preview and development
 
