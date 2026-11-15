@@ -199,7 +199,5 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   .orders button { flex-shrink: 0; }
 }
 
-.queue-controls input { width: 5rem; min-height: 44px; padding: 0.4rem; font-size: 16px; }
-
 .solo-difficulty { grid-column: 1 / -1; display: flex; gap: 0.55rem; align-items: center; font-size: 0.8rem; }
 .solo-difficulty select { min-height: 36px; font-size: 16px; }

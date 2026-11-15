@@ -272,7 +272,19 @@ test('a phone can resume a saved solo match and use worker commands without a se
     const hall = ashford.bases.orc
     const hallTap = await screenPoint(page, { x: hall.x, y: hall.y - 28 }, hall)
     await page.touchscreen.tap(hallTap.x, hallTap.y)
-    await expect(page.getByRole('button', { name: 'Peon · 60 gold', exact: true })).toBeVisible()
+    const peon = page.getByRole('button', { name: 'Peon · 60 gold', exact: true })
+    await expect(peon).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Mute sound' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('spinbutton', { name: 'Training quantity' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^\+(5|10)$/ })).toHaveCount(0)
+    await peon.tap()
+    await expect(page.locator('#production-count')).toHaveText('1')
+    await expect(page.locator('#gold')).toHaveText('240')
+    await page.getByRole('button', { name: 'Cancel last', exact: true }).tap()
+    await expect(page.locator('#production-count')).toHaveText('0')
+    await expect(page.locator('#gold')).toHaveText('300')
+    await page.getByRole('button', { name: 'Mute sound' }).tap()
+    await expect(page.getByRole('button', { name: 'Enable sound' })).toHaveAttribute('aria-pressed', 'false')
 
     const idle = () => page.getByRole('button', { name: /^Idle worker/ })
     await expect(idle()).toHaveText(/3/)
@@ -299,6 +311,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
 
     await page.reload()
     await expect(page.locator('#banner')).toContainText('Orcish Horde vs Computer')
+    await expect(page.getByRole('button', { name: 'Enable sound' })).toBeVisible()
     await expect(idle()).toHaveText(/2/)
     await page.close()
     page = await context.newPage()

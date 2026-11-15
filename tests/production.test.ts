@@ -28,6 +28,14 @@ test('1, 5, 6, 20, 100 and 1000 workers reserve resources in one compact run', (
   }
 })
 
+test('repeated single training orders queue more than five units and each reserves its own cost', () => {
+  const match = stocked()
+  for (let i = 0; i < 12; i++) assert.ok(match.command('human', [1], { kind: 'train', unit: 'worker' }))
+  assert.equal(match.view('human').population.reserved, 12)
+  assert.equal(match.view('human').resources.gold, 100_000 - 12 * training.worker.gold)
+  assert.deepEqual(match.view('human').entities[0].training?.queue, [{ kind: 'worker', count: 12 }])
+})
+
 test('mixed batches produce in order and cancellation and destruction release reservations', () => {
   const match = stocked()
   const barracks = { ...match.units.get(1)!, id: 2000, kind: 'barracks' as const, x: 336, y: 496, queue: [] }

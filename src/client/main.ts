@@ -42,8 +42,7 @@ let resources: Resources = { gold: 0, wood: 0, stone: 0 }
 let ownEntities: Entity[] = []
 let researched: UpgradeKind[] = []
 let population: Population = { used: 0, reserved: 0, limit: 0 }
-let trainCount = 1
-const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind, bulk?: boolean }>()
+const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind }>()
 let selection: Entity[] = []
 let placing = false
 let economyContext = ''
@@ -235,7 +234,9 @@ function paintPortrait(target: HTMLCanvasElement, side: Faction, kind: EntityKin
 function issueOrder(ids: number[], order: Order) {
   if (solo.active) solo.command(ids, order)
   else client.send({ type: 'command', ids, order })
-  audio.play('order')
+  if (order.kind === 'train') audio.play('train')
+  else if (order.kind === 'build' || order.kind === 'wall-line') audio.play('build')
+  else audio.play('order')
 }
 
 function drawSelection(entities: Entity[], interactive = false) {
@@ -326,16 +327,11 @@ function updateEconomyOptions() {
   for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
     const rule = choiceRules.get(choice)
     if (!rule) continue
-    const needsSpace = rule.population > 0 && rule.population * (rule.bulk ? trainCount : 1) > available
+    const needsSpace = rule.population > 0 && rule.population > available
     needsFarm ||= needsSpace
     const unavailable = rule.upgrade && (researched.includes(rule.upgrade) ||
       Boolean(selection[0]?.research) || ownEntities.some(entity => entity.research?.kind === rule.upgrade))
-    const cost = rule.bulk ? { gold: (rule.cost.gold ?? 0) * trainCount } : rule.cost
-    choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, cost)
-    if (rule.bulk) {
-      const label = choice.querySelector('small')
-      if (label) label.textContent = trainCount === 1 ? cost.gold + ' gold' : trainCount + ' × · ' + cost.gold + ' gold'
-    }
+    choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, rule.cost)
     if (rule.upgrade) choice.title = researched.includes(rule.upgrade) ? 'Researched' : ''
   }
   const hint = menu.querySelector<HTMLElement>('.economy-hint')
@@ -396,38 +392,15 @@ function actionButton(label: string, run: () => void) {
 }
 
 function productionChoices(building: Entity) {
-  trainCount = 1
-  const quantity = document.createElement('input')
-  quantity.type = 'number'
-  quantity.inputMode = 'numeric'
-  quantity.min = '1'
-  quantity.value = '1'
-  quantity.setAttribute('aria-label', 'Training quantity')
-  const change = () => {
-    const value = Number(quantity.value)
-    trainCount = Number.isSafeInteger(value) && value >= 1 ? value : 1
-    updateEconomyOptions()
-  }
-  quantity.oninput = change
-  const controls = document.createElement('div')
-  controls.className = 'gather-choices queue-controls'
-  const more = (step: number) => actionButton('+' + step, () => {
-    quantity.value = String(Math.min(Number.MAX_SAFE_INTEGER, trainCount + step))
-    change()
-  })
-  controls.append(quantity, more(5), more(10), actionButton('Cancel last', () =>
-    issueOrder([building.id], { kind: 'cancel-train', count: 1 })), actionButton('Cancel quantity', () =>
-    issueOrder([building.id], { kind: 'cancel-train', count: trainCount })))
-  const choices = trainedAt(building.kind).map(kind => {
-    const choice = economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
-      issueOrder([building.id], { kind: 'train', unit: kind, count: trainCount }))
-    choiceRules.get(choice)!.bulk = true
-    return choice
-  })
+  const choices = trainedAt(building.kind).map(kind =>
+    economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
+      issueOrder([building.id], { kind: 'train', unit: kind })))
+  const cancelLast = actionButton('Cancel last', () =>
+    issueOrder([building.id], { kind: 'cancel-train', count: 1 }))
   const hint = document.createElement('small')
   hint.className = 'economy-hint'
-  hint.textContent = 'More farm capacity is needed for this quantity.'
-  return [...choices, controls, hint]
+  hint.textContent = 'Build more farms to train this unit.'
+  return [...choices, cancelLast, hint]
 }
 
 function openEconomyMenu(rebuild = false) {
@@ -588,12 +561,22 @@ button('all').onclick = () => scene?.selectAll()
 button('advance').onclick = toggleAdvance
 button('halt').onclick = () => scene?.halt()
 button('home').onclick = () => scene?.home()
-button('sound').onclick = async () => {
-  const enabled = await audio.toggle()
-  button('sound').setAttribute('aria-pressed', String(enabled))
-  button('sound').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound')
-  button('sound').textContent = enabled ? 'Sound on' : 'Sound off'
+function drawSoundButton() {
+  button('sound').setAttribute('aria-pressed', String(audio.enabled))
+  button('sound').setAttribute('aria-label', audio.enabled ? 'Mute sound' : 'Enable sound')
+  button('sound').textContent = audio.enabled ? 'Sound on' : 'Sound off'
 }
+
+drawSoundButton()
+button('sound').onclick = () => {
+  audio.toggle()
+  drawSoundButton()
+}
+function unlockSound(event: Event) {
+  if (event.target !== button('sound')) void audio.unlock()
+}
+document.addEventListener('click', unlockSound, { capture: true })
+document.addEventListener('keydown', unlockSound, { capture: true })
 button('map-button').addEventListener('pointerdown', event => {
   const bounds = minimap.getBoundingClientRect()
   const clamp = (value: number) => Math.min(1, Math.max(0, value))
