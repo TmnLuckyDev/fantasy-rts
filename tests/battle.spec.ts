@@ -32,8 +32,8 @@ async function panTo(page: Page, point: Point, touch: boolean) {
 }
 
 async function screenPoint(page: Page, point: Point, focused: Point) {
-  await expect.poll(() => page.locator('#battlefield canvas').evaluate((canvas: HTMLCanvasElement) =>
-    canvas.width === canvas.parentElement!.clientWidth && canvas.height === canvas.parentElement!.clientHeight)).toBe(true)
+  await page.evaluate(() => new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   const bounds = (await page.locator('#battlefield').boundingBox())!
   const zoom = bounds.width < 950 ? 0.88 : 1.06
   const clamp = (target: number, size: number, view: number) =>
@@ -199,15 +199,13 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect(human.locator('#population')).toHaveText('10/20', { timeout: 20_000 })
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
-    const quarry = cellCenter(ashford.width - 5, ashford.height - 16)
-    await panTo(orc, quarry, true)
-    const quarryTap = await screenPoint(orc, quarry, quarry)
-    await orc.touchscreen.tap(quarryTap.x, quarryTap.y)
+    await orc.getByRole('button', { name: 'Quarry stone', exact: true }).tap()
     await expect.poll(() => newest(orcHistory)?.resources.stone ?? 0, { timeout: 18_000 }).toBeGreaterThan(120)
     const tower = cellCenter(ashford.width - 3, ashford.height - 11)
     await panTo(orc, tower, true)
-    const towerSpot = await screenPoint(orc, tower, tower)
+    await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
     await orc.getByRole('button', { name: 'Watch Tower · 55 wood · 85 stone', exact: true }).tap()
+    const towerSpot = await screenPoint(orc, tower, tower)
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
     await orc.getByRole('button', { name: 'Done', exact: true }).tap()
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
