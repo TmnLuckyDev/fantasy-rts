@@ -26,6 +26,8 @@ const recruit: Partial<Record<Entity['kind'], readonly UnitKind[]>> = {
   elite: ['heavy']
 }
 
+export type ComputerCheckpoint = { attacking: number[], nextAssault: number, recruits: number }
+
 export class ComputerOpponent {
   readonly faction: Faction
   private readonly home: Point
@@ -55,6 +57,16 @@ export class ComputerOpponent {
       const preferred = { x: this.home.x + offset.x * TILE * direction, y: this.home.y + offset.y * TILE * direction }
       this.constructionSites.set(kind, [...land].sort((a, b) => distance(a, preferred) - distance(b, preferred)))
     }
+  }
+
+  checkpoint(): ComputerCheckpoint {
+    return { attacking: [...this.attacking], nextAssault: this.nextAssault, recruits: this.recruits }
+  }
+
+  restore(checkpoint: ComputerCheckpoint) {
+    for (const id of checkpoint.attacking) this.attacking.add(id)
+    this.nextAssault = checkpoint.nextAssault
+    this.recruits = checkpoint.recruits
   }
 
   think(match: Match) {

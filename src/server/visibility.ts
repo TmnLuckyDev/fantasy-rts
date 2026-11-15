@@ -1,3 +1,4 @@
+import { decodeFog } from '../shared/fog.ts'
 import { TILE } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
 import { factions } from '../shared/protocol.ts'
@@ -55,6 +56,10 @@ export class Visibility {
     const y = Math.floor(point.y / TILE)
     if (x < 0 || x >= width || y < 0 || y >= height) return 0
     return this.cells[faction][y * width + x]
+  }
+
+  restore(masks: Record<Faction, string>) {
+    for (const faction of factions) this.cells[faction].set(decodeFog(masks[faction], this.cells[faction].length))
   }
 
   mask(faction: Faction): string {

@@ -42,6 +42,16 @@ type WorldSnapshot = Omit<Snapshot, 'resources' | 'population' | 'fog'> & {
 
 type Missile = { attacker: Unit, targetId: number, arrives: number }
 
+export type MatchCheckpoint = {
+  tick: number
+  result: Result | null
+  sequence: number
+  resources: Record<Faction, Resources>
+  units: Unit[]
+  missiles: Missile[]
+  fog: Record<Faction, string>
+}
+
 export class Match {
   readonly units = new Map<number, Unit>()
   readonly map: BattleMap
@@ -78,6 +88,28 @@ export class Match {
       }
     }
     this.visibility.update(this.units.values())
+  }
+
+  static restore(checkpoint: MatchCheckpoint, map: BattleMap = ashford) {
+    const match = new Match(map)
+    match.tick = checkpoint.tick
+    match.result = checkpoint.result
+    match.sequence = checkpoint.sequence
+    Object.assign(match.resources, checkpoint.resources)
+    match.units.clear()
+    for (const unit of checkpoint.units) match.units.set(unit.id, unit)
+    match.missiles = checkpoint.missiles.map(missile =>
+      ({ ...missile, attacker: match.units.get(missile.attacker.id) ?? missile.attacker }))
+    match.visibility.restore(checkpoint.fog)
+    return match
+  }
+
+  checkpoint(): MatchCheckpoint {
+    return {
+      tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
+      units: [...this.units.values()], missiles: this.missiles,
+      fog: { human: this.visibility.mask('human'), orc: this.visibility.mask('orc') }
+    }
   }
 
   private spawn(faction: Faction, kind: EntityKind, position: Point, buildDuration = 0) {
@@ -455,7 +487,12 @@ export class Match {
     return {
       type: 'snapshot', tick: world.tick, fog: this.visibility.mask(faction),
       resources: world.resources[faction], population: world.population[faction],
-      entities: world.entities.filter(entity => entity.faction === faction || visible(entity)),
+      entities: world.entities.flatMap(entity => {
+        if (entity.faction === faction) return [entity]
+        if (!visible(entity)) return []
+        const { idle: _idle, ...seen } = entity
+        return [seen]
+      }),
       effects: world.effects.filter(effect => visible(effect.at) && (!effect.to || visible(effect.to)))
     }
   }
@@ -474,6 +511,7 @@ export class Match {
           id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving,
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           carrying: cargo ?? undefined,
+          idle: kind === 'worker' ? !unit.job && !unit.assigned : undefined,
           training: next ? { kind: next.kind, progress: 1 - next.left / training[next.kind].ticks, remaining: queue.length } : undefined
         }
       })

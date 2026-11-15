@@ -43,7 +43,7 @@ export class Rooms {
       const room = this.rooms.get(message.code)
       const seat = room?.seats.find(candidate => candidate.token === message.token)
       if (!room || !seat) {
-        send(peer, { type: 'error', message: 'This match session has expired.', resetSession: true })
+        send(peer, { type: 'error', message: 'This room is no longer available.', resetSession: true })
         return
       }
       if (seat.peer) {
@@ -78,6 +78,10 @@ export class Rooms {
       return
     }
     if (message.type === 'command') {
+      if (this.paused(room)) {
+        send(peer, { type: 'error', message: 'The match is paused until everyone reconnects.' })
+        return
+      }
       if (room.match && !room.match.command(seat.faction, message.ids, message.order)) {
         send(peer, { type: 'error', message: 'That order cannot be issued.' })
       }
@@ -165,24 +169,19 @@ export class Rooms {
         if (now - room.finishedAt > resultLifetime) this.close(room)
         continue
       }
-      if (room.computer && !room.seats[0].peer) {
-        if (now - room.seats[0].disconnectedAt >= reconnectWindow) this.close(room)
-        continue
-      }
-      const expired = room.seats.filter(seat => !seat.peer && now - seat.disconnectedAt >= reconnectWindow)
-      if (expired.length) {
-        const connected = room.seats.find(seat => seat.peer)
-        room.match.result = { winner: connected?.faction ?? null, reason: 'disconnect' }
-      } else {
-        room.computer?.think(room.match)
-        room.match.step()
-      }
+      if (this.paused(room)) continue
+      room.computer?.think(room.match)
+      room.match.step()
       if (room.match.result) {
         room.finishedAt = now
         this.broadcastSnapshot(room)
         this.broadcastRoom(room)
       } else if (room.match.tick % 2 === 0) this.broadcastSnapshot(room)
     }
+  }
+
+  private paused(room: Room) {
+    return Boolean(room.match && !room.match.result && room.seats.some(seat => !seat.peer))
   }
 
   private broadcastSnapshot(room: Room) {
@@ -201,6 +200,7 @@ export class Rooms {
       mode: room.computer ? 'solo' : 'multiplayer',
       phase: room.match?.result ? 'finished' : room.match ? 'playing' : 'lobby',
       result: room.match?.result ?? null,
+      paused: this.paused(room),
       players
     }
     for (const seat of room.seats) send(seat.peer, { type: 'room', room: state, faction: seat.faction })
