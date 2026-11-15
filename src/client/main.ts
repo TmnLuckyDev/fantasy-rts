@@ -50,6 +50,7 @@ function status(state: 'waiting' | 'open' | 'closed') {
   const open = state === 'open'
   connection.dataset.state = state
   connection.textContent = open ? 'Online' : state === 'waiting' ? 'Connecting' : 'Reconnecting'
+  button('solo').disabled = !open
   button('create').disabled = !open
   button('join').disabled = !open
   button('ready').disabled = !open
@@ -64,7 +65,8 @@ function note(message: string, error = false) {
 function updateBanner(online: boolean) {
   if (!online) banner.textContent = 'Reconnecting to match…'
   else if (room?.players.some(seat => seat.faction === opposite(faction) && !seat.connected)) banner.textContent = 'Opponent disconnected · 45s to return'
-  else banner.textContent = factionNames[faction] + ' · Destroy the enemy headquarters'
+  else banner.textContent = factionNames[faction] + (room?.mode === 'solo' ? ' vs Computer' : '') +
+    ' · Destroy the enemy headquarters'
 }
 
 function setFaction(choice: Faction) {
@@ -80,12 +82,12 @@ function showLobby() {
   room = null
   match.hidden = true
   lobby.hidden = false
-  element('lobby-title').textContent = 'Multiplayer lobby'
+  element('lobby-title').textContent = 'Game lobby'
   element('room-actions').hidden = true
   element('entry-actions').hidden = false
   for (const item of factionButtons) item.disabled = false
   history.replaceState(null, '', location.pathname)
-  note('Choose a faction and invite an opponent.')
+  note('Choose a faction to start.')
 }
 
 function receive(message: ServerMessage) {
@@ -366,6 +368,7 @@ for (const item of factionButtons) {
     else setFaction(choice)
   }
 }
+button('solo').onclick = () => client.send({ type: 'solo', faction })
 button('create').onclick = () => client.send({ type: 'create', faction })
 element<HTMLFormElement>('join-form').onsubmit = event => {
   event.preventDefault()
@@ -386,7 +389,8 @@ button('copy').onclick = async () => {
 button('leave').onclick = leave
 button('return').onclick = leave
 button('exit').onclick = () => {
-  if (room?.phase === 'finished' || window.confirm('Leave the battle and forfeit?')) leave()
+  const prompt = room?.mode === 'solo' ? 'End this solo match?' : 'Leave the battle and forfeit?'
+  if (room?.phase === 'finished' || window.confirm(prompt)) leave()
 }
 button('all').onclick = () => scene?.selectAll()
 button('advance').onclick = toggleAdvance

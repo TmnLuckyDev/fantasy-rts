@@ -149,3 +149,49 @@ test('combat effects do not disclose origins or destinations hidden by fog', () 
   assert.deepEqual(match.view('human', world).effects.map(event => event.id), [1])
   assert.deepEqual(match.view('orc', world).effects, [])
 })
+
+for (const protectedKind of ['worker', 'headquarters'] as const) {
+  test(`nearby troops defend an allied ${protectedKind} against a ranged attack`, () => {
+    const match = new Match()
+    const victim = match.units.get(protectedKind === 'worker' ? 15 : 1)!
+    const guard = match.units.get(2)!
+    const remote = match.units.get(3)!
+    const ordered = match.units.get(4)!
+    const attacker = match.units.get(12)!
+    Object.assign(victim, cellCenter(28, 11))
+    Object.assign(guard, { x: victim.x - 78, y: victim.y - 26 })
+    Object.assign(remote, { x: victim.x - 220, y: victim.y })
+    Object.assign(ordered, { x: victim.x - 60, y: victim.y + 50 })
+    Object.assign(attacker, { x: victim.x + 108, y: victim.y })
+    const start = { x: guard.x, y: guard.y }
+    const retreat = { x: ordered.x - 165, y: ordered.y }
+    assert.ok(match.command('human', [ordered.id], { kind: 'move', to: retreat }))
+
+    for (let i = 0; i < 85; i++) match.step()
+
+    assert.ok(victim.hp < victim.maxHp, 'the ranged attack hit')
+    assert.ok(attacker.hp < attacker.maxHp, 'the nearby melee guard struck back')
+    assert.ok(distance(guard, start) > 70, 'the guard went out to intercept')
+    assert.equal(remote.x, victim.x - 220, 'troops stationed farther away hold position')
+    assert.ok(distance(ordered, retreat) < 10, 'an explicit move order takes priority')
+  })
+}
+
+test('defenders break pursuit when attackers leave the area', () => {
+  const match = new Match()
+  const victim = match.units.get(15)!
+  const guard = match.units.get(2)!
+  const attacker = match.units.get(12)!
+  Object.assign(victim, cellCenter(28, 11))
+  Object.assign(guard, { x: victim.x - 78, y: victim.y - 26 })
+  Object.assign(attacker, { x: victim.x + 108, y: victim.y })
+  for (let i = 0; i < 12; i++) match.step()
+  assert.equal(guard.defense?.targetId, attacker.id)
+
+  Object.assign(attacker, cellCenter(39, 10))
+  match.step()
+  const stopped = { x: guard.x, y: guard.y }
+  for (let i = 0; i < 65; i++) match.step()
+  assert.equal(guard.defense, null)
+  assert.deepEqual({ x: guard.x, y: guard.y }, stopped)
+})

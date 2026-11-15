@@ -17,9 +17,9 @@
           <div class="ornament" aria-hidden="true"><i></i> ◆ <i></i></div>
         </header>
 
-        <section class="war-table" aria-label="Multiplayer lobby">
+        <section class="war-table" aria-label="Game lobby">
           <div class="table-head">
-            <h2 id="lobby-title">Multiplayer lobby</h2>
+            <h2 id="lobby-title">Game lobby</h2>
             <span class="connection" id="connection" data-state="waiting" role="status">Connecting</span>
           </div>
           <div class="factions" role="group" aria-label="Choose faction">
@@ -34,7 +34,8 @@
           </div>
 
           <div id="entry-actions">
-            <button id="create" type="button" class="primary" disabled>Create room</button>
+            <button id="solo" type="button" class="primary" disabled>Play vs Computer</button>
+            <button id="create" type="button" disabled>Create room</button>
             <form id="join-form">
               <input class="room-input" id="join-code" aria-label="Room code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" required pattern="[A-Za-z2-9]{5}" value="">
               <button id="join" type="submit" disabled>Join</button>
@@ -52,9 +53,9 @@
               <button id="leave" type="button">Leave</button>
             </div>
           </div>
-          <p id="lobby-message" role="status">Choose a faction and invite an opponent.</p>
+          <p id="lobby-message" role="status">Choose a faction to start.</p>
         </section>
-        <footer class="lobby-foot"><span>1 vs 1</span><span>Ashford Crossing</span><span>Destroy the enemy headquarters</span></footer>
+        <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Ashford Crossing</span><span>Destroy the enemy headquarters</span></footer>
       </div>
     </main>
 

@@ -11,7 +11,8 @@ Ash & Iron uses Phaser 3.90, TypeScript, Vite, Node 22 and the `ws` WebSocket li
 ## Client and server
 
 - `src/shared/` defines the map, faction and unit data, and wire message shapes. The map stores tiles and base positions in a map definition that the simulation consumes.
-- `src/server/match.ts` owns unit positions, hit points, cooldowns, projectiles, path requests and the outcome. It advances in fixed 50 ms steps. Orders are applied by the server to the owning faction's units.
+- `src/server/match.ts` owns unit positions, hit points, cooldowns, projectiles, path requests and the outcome. It advances in fixed 50 ms steps. Orders are applied by the server to the owning faction's units. Damage events can call nearby allied troops to defend, with limits on pursuit and sight.
+- `src/server/computer.ts` controls the opposing faction in solo rooms. It uses the faction view and the same validated orders for gathering, construction, recruitment and attack-move as a human player.
 - `src/server/navigation.ts` calculates A* routes and checks terrain and headquarters footprints. Units use local steering to avoid one another when following those routes.
 - `src/server/rooms.ts` manages seats, lobby readiness, match lifetimes and reconnection tokens. It sends faction-specific snapshots at 10 Hz. Each match is separate from its network sessions, so later spectator support can subscribe without granting command rights. A larger roster of players would also need team ownership and room-capacity changes.
 - `src/server/index.ts` serves the Vite build and handles WebSocket upgrades, message limits and liveness checks. `validate.ts` parses inbound messages before gameplay ownership and bounds checks.

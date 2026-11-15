@@ -10,9 +10,13 @@ import { Visibility } from './visibility.ts'
 
 export const TICK_HZ = 20
 const spacing = 30
+const defenseRadius = 5 * TILE
+const defenseLeash = 8 * TILE
+const defenseDuration = 4 * TICK_HZ
 const isRanged = (kind: EntityKind) => kind === 'ranged' || kind === 'marksman'
 
 type WorkerJob = { kind: 'gather', at: Point, resource: ResourceKind, workTicks: number } | { kind: 'construct', site: number }
+type Defense = { targetId: number, at: Point, until: number }
 type Obstacle = Point & { radius: number }
 
 type Unit = Entity & {
@@ -23,6 +27,7 @@ type Unit = Entity & {
   path: Point[]
   pursued: Point | null
   lastTarget: Point | null
+  defense: Defense | null
   blockedTicks: number
   job: WorkerJob | null
   cargo: ResourceKind | null
@@ -81,7 +86,7 @@ export class Match {
     const unit: Unit = {
       ...position, faction, kind, id, hp: buildDuration ? Math.ceil(health * 0.2) : health,
       maxHp: health, moving: false, facing: faction === 'human' ? 1 : -1, order: null, assigned: null,
-      path: [], nextPath: 0, nextStrike: 0, pursued: null, lastTarget: null, blockedTicks: 0,
+      path: [], nextPath: 0, nextStrike: 0, pursued: null, lastTarget: null, defense: null, blockedTicks: 0,
       job: null, cargo: null, queue: [], buildTicks: 0, buildDuration
     }
     this.units.set(id, unit)
@@ -141,6 +146,7 @@ export class Match {
     unit.path = []
     unit.pursued = null
     unit.lastTarget = null
+    unit.defense = null
     unit.nextPath = this.tick
     unit.blockedTicks = 0
     unit.assigned = null
@@ -300,6 +306,8 @@ export class Match {
           }
         }
       }
+      const defenderTarget = this.defendedAgainst(unit)
+      target ??= defenderTarget
       if (automaticRange > 0 && unit.order?.kind !== 'move' && !target) {
         let nearest = automaticRange
         for (const other of this.units.values()) {
@@ -314,7 +322,7 @@ export class Match {
       if (target && this.fight(unit, target)) continue
 
       let destination = unit.assigned
-      if (target && (unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
+      if (target && (defenderTarget || unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
         const range = unitStats[unit.faction][unit.kind].range + unitStats[target.faction][target.kind].radius - 4
         const separation = distance(unit, target) || 1
         destination = {
@@ -327,6 +335,29 @@ export class Match {
     this.visibility.update(this.units.values())
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
+  }
+
+  private defendedAgainst(unit: Unit) {
+    if (!unit.defense) return
+    const { targetId, at, until } = unit.defense
+    const attacker = this.units.get(targetId)
+    if (attacker && this.tick < until && distance(unit, at) <= defenseLeash &&
+        distance(attacker, at) <= defenseLeash && this.visibility.at(unit.faction, attacker) === 2) return attacker
+    unit.defense = null
+  }
+
+  private callDefenders(victim: Unit, attacker: Unit) {
+    if (!this.units.has(attacker.id) || this.visibility.at(victim.faction, attacker) !== 2) return
+    const at = { x: victim.x, y: victim.y }
+    const radius = defenseRadius + unitStats[victim.faction][victim.kind].radius
+    if (distance(at, attacker) > defenseLeash) return
+    for (const unit of this.units.values()) {
+      if (unit.faction !== victim.faction || !isUnitKind(unit.kind) || !unitStats[unit.faction][unit.kind].damage ||
+          unit.order?.kind === 'move' || unit.order?.kind === 'attack' || distance(unit, at) > radius) continue
+      const current = this.defendedAgainst(unit)
+      if (current && current !== attacker && distance(unit, current) <= distance(unit, attacker)) continue
+      unit.defense = { targetId: attacker.id, at, until: this.tick + defenseDuration }
+    }
   }
 
   private approach(unit: Unit, destination: Point, obstacles: Obstacle[], pursuing: boolean) {
@@ -362,6 +393,7 @@ export class Match {
     if (!target) return
     const damage = Math.max(1, unitStats[attacker.faction][attacker.kind].damage - unitStats[target.faction][target.kind].armor)
     target.hp = Math.max(0, target.hp - damage)
+    this.callDefenders(target, attacker)
     const at = { x: target.x, y: target.y }
     this.effects.push({
       id: ++this.sequence, kind: 'hit', at, to: { x: attacker.x, y: attacker.y },

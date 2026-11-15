@@ -3,6 +3,7 @@ import { WebSocket } from 'ws'
 import { opposite } from '../shared/protocol.ts'
 import type { ClientMessage, Faction, RoomState, ServerMessage } from '../shared/protocol.ts'
 import { Match } from './match.ts'
+import { ComputerOpponent } from './computer.ts'
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const reconnectWindow = 45_000
@@ -21,6 +22,7 @@ type Room = {
   code: string
   seats: Seat[]
   match: Match | null
+  computer: ComputerOpponent | null
   updatedAt: number
   finishedAt: number
 }
@@ -52,21 +54,9 @@ export class Rooms {
       this.attach(peer, room, seat)
       return
     }
-    if (message.type === 'create' || message.type === 'join') {
+    if (message.type === 'create' || message.type === 'solo' || message.type === 'join') {
       if (session) return
-      if (message.type === 'create') {
-        if (this.rooms.size >= roomLimit) {
-          send(peer, { type: 'error', message: 'Server is full. Try again shortly.' })
-          return
-        }
-        let code: string
-        do {
-          code = Array.from({ length: 5 }, () => alphabet[randomInt(alphabet.length)]).join('')
-        } while (this.rooms.has(code))
-        const room: Room = { code, seats: [], match: null, updatedAt: now, finishedAt: 0 }
-        this.rooms.set(code, room)
-        this.join(peer, room, message.faction)
-      } else {
+      if (message.type === 'join') {
         const room = this.rooms.get(message.code)
         if (!room || room.match || room.seats.length >= 2) {
           send(peer, { type: 'error', message: 'Room is unavailable or already full.' })
@@ -74,6 +64,10 @@ export class Rooms {
         }
         const faction = room.seats.some(seat => seat.faction === message.faction) ? opposite(message.faction) : message.faction
         this.join(peer, room, faction)
+      } else {
+        const room = this.createRoom(message.faction, message.type === 'solo', now)
+        if (!room) send(peer, { type: 'error', message: 'Server is full. Try again shortly.' })
+        else this.join(peer, room, message.faction)
       }
       return
     }
@@ -106,8 +100,21 @@ export class Rooms {
     if (room.match) this.broadcastSnapshot(room)
   }
 
+  private createRoom(faction: Faction, solo: boolean, now: number) {
+    if (this.rooms.size >= roomLimit) return
+    let code: string
+    do {
+      code = Array.from({ length: 5 }, () => alphabet[randomInt(alphabet.length)]).join('')
+    } while (this.rooms.has(code))
+    const match = solo ? new Match() : null
+    const computer = match ? new ComputerOpponent(opposite(faction), match.map) : null
+    const room: Room = { code, seats: [], match, computer, updatedAt: now, finishedAt: 0 }
+    this.rooms.set(code, room)
+    return room
+  }
+
   private join(peer: WebSocket, room: Room, faction: Faction) {
-    const seat: Seat = { faction, ready: false, token: randomBytes(32).toString('hex'), peer: null, disconnectedAt: 0 }
+    const seat: Seat = { faction, ready: Boolean(room.computer), token: randomBytes(32).toString('hex'), peer: null, disconnectedAt: 0 }
     room.seats.push(seat)
     room.updatedAt = Date.now()
     this.attach(peer, room, seat)
@@ -129,6 +136,10 @@ export class Rooms {
     const { room, seat } = session
     seat.peer = null
     seat.disconnectedAt = now
+    if (explicit && room.computer) {
+      this.close(room)
+      return
+    }
     if (!room.match) {
       seat.ready = false
       if (explicit) room.seats = room.seats.filter(candidate => candidate !== seat)
@@ -154,11 +165,18 @@ export class Rooms {
         if (now - room.finishedAt > resultLifetime) this.close(room)
         continue
       }
+      if (room.computer && !room.seats[0].peer) {
+        if (now - room.seats[0].disconnectedAt >= reconnectWindow) this.close(room)
+        continue
+      }
       const expired = room.seats.filter(seat => !seat.peer && now - seat.disconnectedAt >= reconnectWindow)
       if (expired.length) {
         const connected = room.seats.find(seat => seat.peer)
         room.match.result = { winner: connected?.faction ?? null, reason: 'disconnect' }
-      } else room.match.step()
+      } else {
+        room.computer?.think(room.match)
+        room.match.step()
+      }
       if (room.match.result) {
         room.finishedAt = now
         this.broadcastSnapshot(room)
@@ -176,11 +194,14 @@ export class Rooms {
   }
 
   private broadcastRoom(room: Room) {
+    const players = room.seats.map(({ faction, ready, peer }) => ({ faction, ready, connected: Boolean(peer) }))
+    if (room.computer) players.push({ faction: room.computer.faction, ready: true, connected: true })
     const state: RoomState = {
       code: room.code,
+      mode: room.computer ? 'solo' : 'multiplayer',
       phase: room.match?.result ? 'finished' : room.match ? 'playing' : 'lobby',
       result: room.match?.result ?? null,
-      players: room.seats.map(({ faction, ready, peer }) => ({ faction, ready, connected: Boolean(peer) }))
+      players
     }
     for (const seat of room.seats) send(seat.peer, { type: 'room', room: state, faction: seat.faction })
   }
