@@ -152,8 +152,8 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .economy-menu strong, .economy-menu small { display: block; }
 .economy-menu strong { font-size: 0.77rem; }
 .economy-menu small { font-size: 0.67rem; color: #ddd0ac; margin-top: 0.13rem; }
-.placement-tip { font-size: 0.8rem; }
-.placement-tip button { margin-left: 0.4rem; }
+.placement-tip { font-size: 0.8rem; pointer-events: none; }
+.placement-tip button { margin-left: 0.4rem; pointer-events: auto; }
 @media (max-width: 960px) and (orientation: landscape) {
   .orders { flex-wrap: wrap; justify-content: flex-end; }
   .orders button { padding-inline: 0.45rem; }

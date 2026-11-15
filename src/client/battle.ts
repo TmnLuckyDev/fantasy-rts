@@ -114,12 +114,30 @@ export class BattleScene extends Phaser.Scene {
       this.pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top }
     }
     this.host.addEventListener('pointermove', track)
+    const resize = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      if (width > 0 && height > 0 && (width !== this.scale.width || height !== this.scale.height)) {
+        this.scale.setParentSize(width, height)
+      }
+    })
+    const onResize = (_gameSize: Phaser.Structs.Size, _baseSize: Phaser.Structs.Size,
+      _displaySize: Phaser.Structs.Size, oldWidth: number, oldHeight: number) => {
+      // Phaser adjusts the camera viewport before emitting RESIZE to the scene.
+      if (oldWidth > 0 && oldHeight > 0) {
+        camera.scrollX += (oldWidth - camera.width) / 2
+        camera.scrollY += (oldHeight - camera.height) / 2
+      }
+      this.clampCamera()
+    }
+    this.scale.on(Phaser.Scale.Events.RESIZE, onResize)
+    resize.observe(this.host)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.controls.destroy()
       this.host.removeEventListener('pointermove', track)
+      this.scale.off(Phaser.Scale.Events.RESIZE, onResize)
+      resize.disconnect()
     })
     this.keys = this.input.keyboard?.addKeys('UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.clampCamera())
     if (this.newest) this.snapshot(this.newest)
   }
 
