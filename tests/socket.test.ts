@@ -76,7 +76,8 @@ test('two sockets share a room, reject forged commands and recover a seat after 
   orc.send({ type: 'ready', ready: true })
   const [world1, world2] = await Promise.all([human.wait('snapshot'), orc.wait('snapshot')])
   assert.deepEqual(world1, world2)
-  assert.equal(world1.entities.length, 14)
+  assert.deepEqual(world1.gold, { human: 300, orc: 300 })
+  assert.equal(world1.entities.length, 20)
   human.send({ type: 'command', ids: [9], order: { kind: 'move', to: { x: 400, y: 400 } } })
   assert.match((await human.wait('error')).message, /cannot be issued/)
   const oldX = world1.entities.find(entity => entity.id === 2)!.x

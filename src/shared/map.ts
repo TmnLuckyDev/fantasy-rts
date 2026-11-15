@@ -10,7 +10,8 @@ export type BattleMap = {
   bases: Record<Faction, Point>
 }
 
-const width = 48
+const width = 64
+export const riverColumn = width / 2 - 1
 const height = 30
 const tiles: Tile[] = Array.from({ length: width * height }, () => 'grass')
 const put = (x: number, y: number, tile: Tile) => {
@@ -24,31 +25,32 @@ for (let y = 0; y < height; y++) {
     if (x < 3 && (y < 8 || y > 22)) put(x, y, 'rock')
     if ((x - 8) ** 2 / 25 + (y - 5) ** 2 / 9 < 1 ||
         (x - 14) ** 2 / 25 + (y - 23) ** 2 / 14 < 1 ||
-        (x - 19) ** 2 / 13 + (y - 3) ** 2 / 9 < 1) put(x, y, 'forest')
+        (x - 19) ** 2 / 13 + (y - 3) ** 2 / 9 < 1 ||
+        (x - 27) ** 2 / 8 + (y - 25) ** 2 / 8 < 1) put(x, y, 'forest')
     if ((x - 18) ** 2 / 8 + (y - 17) ** 2 / 5 < 1) put(x, y, 'rock')
-    if (x === 23) put(x, y, 'water')
+    if (x === riverColumn) put(x, y, 'water')
   }
 }
 for (let x = 4; x < width / 2; x++) {
-  const y = x < 14 ? 11 : 10 - Math.floor((x - 14) / 4)
-  put(x, y, x === 23 ? 'bridge' : 'road')
-  put(x, y + 1, x === 23 ? 'bridge' : 'road')
+  const y = x < 14 ? 11 : 10 - Math.floor((x - 14) / 7)
+  put(x, y, x === riverColumn ? 'bridge' : 'road')
+  put(x, y + 1, x === riverColumn ? 'bridge' : 'road')
 }
 for (const y of [8, 9, 20, 21]) {
-  tiles[y * width + 23] = 'bridge'
-  tiles[y * width + 24] = 'bridge'
+  tiles[y * width + riverColumn] = 'bridge'
+  tiles[y * width + riverColumn + 1] = 'bridge'
 }
-for (let x = 4; x < 23; x++) {
+for (let x = 4; x < riverColumn; x++) {
   const y = x < 12 ? 12 + Math.floor((x - 4) / 2) : 16 + Math.floor((x - 12) / 2)
   if (tiles[y * width + x] === 'grass') put(x, y, 'road')
 }
 put(5, 18, 'mine')
-put(18, 5, 'mine')
+put(25, 5, 'mine')
 
 export const ashford: BattleMap = {
   name: 'Ashford Crossing',
   width, height, tiles,
-  bases: { human: { x: 6.5 * TILE, y: 11.5 * TILE }, orc: { x: 41.5 * TILE, y: 18.5 * TILE } }
+  bases: { human: { x: 6.5 * TILE, y: 11.5 * TILE }, orc: { x: (width - 6.5) * TILE, y: 18.5 * TILE } }
 }
 
 export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {
@@ -59,3 +61,10 @@ export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {
 export const isWalkable = (tile: Tile | undefined) => tile === 'grass' || tile === 'road' || tile === 'bridge'
 export const cellCenter = (x: number, y: number): Point => ({ x: (x + 0.5) * TILE, y: (y + 0.5) * TILE })
 export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
+
+
+export const snapToCell = (point: Point) => cellCenter(Math.floor(point.x / TILE), Math.floor(point.y / TILE))
+
+export function isMine(map: BattleMap, point: Point) {
+  return tileAt(map, Math.floor(point.x / TILE), Math.floor(point.y / TILE)) === 'mine'
+}

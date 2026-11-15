@@ -1,6 +1,5 @@
-import { isFaction } from '../shared/protocol.ts'
+import { MAX_SELECTION, isBuildingKind, isFaction, isUnitKind } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
-import { MAX_SELECTION } from './match.ts'
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -46,5 +45,15 @@ function parseOrder(order: Record<string, unknown>): Order | null {
       coordinate(order.to.x) && coordinate(order.to.y)) {
     return { kind: order.kind, to: { x: order.to.x, y: order.to.y } }
   }
+  if (order.kind === 'gather' && object(order.mine) &&
+      coordinate(order.mine.x) && coordinate(order.mine.y)) {
+    return { kind: 'gather', mine: { x: order.mine.x, y: order.mine.y } }
+  }
+  if (order.kind === 'build' && isBuildingKind(order.building) && object(order.at) &&
+      coordinate(order.at.x) && coordinate(order.at.y)) {
+    return { kind: 'build', building: order.building, at: { x: order.at.x, y: order.at.y } }
+  }
+  if (order.kind === 'resume-build' && validId(order.target)) return { kind: 'resume-build', target: order.target }
+  if (order.kind === 'train' && isUnitKind(order.unit)) return { kind: 'train', unit: order.unit }
   return null
 }
