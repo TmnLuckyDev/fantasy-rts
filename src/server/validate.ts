@@ -18,6 +18,7 @@ export function parseMessage(raw: string): ClientMessage | null {
   const { type, faction, code, token, ready, ids, order } = value
   switch (type) {
     case 'create':
+    case 'solo':
     case 'faction':
       return isFaction(faction) ? { type, faction } : null
     case 'join':

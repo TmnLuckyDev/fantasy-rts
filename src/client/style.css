@@ -63,6 +63,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .orc-crest { background: linear-gradient(135deg, #f58d71 48%, #b95042 49%); }
 .orc-crest::after { content: "✕"; }
 #entry-actions, .ready-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+#solo { grid-column: 1 / -1; }
 #join-form { display: flex; gap: 0.35rem; }
 .room-input { min-width: 0; width: 100%; border: 1px solid var(--edge); background: #10120f; color: var(--pale); padding: 0.5rem; text-transform: uppercase; font: 700 16px monospace; }
 .room-input::placeholder { color: #9f927e; font-size: 0.7rem; }
@@ -110,6 +111,9 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 }
 @media (max-height: 530px) and (orientation: landscape) {
   .lobby-inner { width: min(100%, 475px); }
+  #entry-actions { grid-template-columns: max-content max-content minmax(0, 1fr); gap: 0.35rem; }
+  #entry-actions button { padding-inline: 0.5rem; font-size: 0.82rem; }
+  #solo { grid-column: auto; }
   .lobby { padding: 0.45rem; }
   .title-block h1 { font-size: 3.1rem; }
   .ornament { margin-bottom: 0.35rem; }

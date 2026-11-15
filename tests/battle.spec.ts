@@ -246,3 +246,41 @@ test('desktop and landscape touch players can finish an authoritative match', as
     if (mobileEngine !== browser) await mobileEngine.close()
   }
 })
+
+
+test('a phone can start, control, reconnect to and leave a solo skirmish', async ({ browser, baseURL }) => {
+  const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
+  const phone = devices[mobileProfile]
+  const context = await mobileEngine.newContext({
+    ...phone,
+    viewport: { width: phone.viewport.height, height: phone.viewport.width }
+  })
+  const page = await context.newPage()
+  const history = observe(page)
+  try {
+    await page.goto(baseURL!)
+    await expect(page.locator('#connection')).toHaveText('Online')
+    await page.locator('button[data-faction="orc"]').tap()
+    await page.getByRole('button', { name: 'Play vs Computer', exact: true }).tap()
+    await expect(page.locator('#battlefield canvas')).toBeVisible()
+    await expect(page.locator('#banner')).toContainText('Orcish Horde vs Computer')
+    await page.getByRole('button', { name: 'All troops', exact: true }).tap()
+    await expect(page.locator('#selection-name')).toHaveText('6 troops selected')
+    await expect.poll(() => unit(history, 9)?.x).toBeDefined()
+    const first = unit(history, 9)!
+    const to = cellCenter(ashford.width - 15, ashford.height - 12)
+    const point = await screenPoint(page, to, ashford.bases.orc)
+    await page.touchscreen.tap(point.x, point.y)
+    await expect.poll(() => unit(history, 9)?.x ?? first.x).toBeLessThan(first.x - 25)
+
+    await page.reload()
+    await expect(page.locator('#battlefield canvas')).toBeVisible()
+    await expect(page.locator('#banner')).toContainText('Orcish Horde vs Computer')
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: 'Leave', exact: true }).tap()
+    await expect(page.getByRole('button', { name: 'Play vs Computer', exact: true })).toBeEnabled()
+  } finally {
+    await context.close()
+    if (mobileEngine !== browser) await mobileEngine.close()
+  }
+})

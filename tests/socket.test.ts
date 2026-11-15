@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { test } from 'node:test'
+import type { TestContext } from 'node:test'
 import { WebSocket } from 'ws'
 import type { ClientMessage, ServerMessage } from '../src/shared/protocol.ts'
 
@@ -41,7 +42,7 @@ class TestPeer {
   }
 }
 
-test('two sockets share a room, reject forged commands and recover a seat after reconnect', { timeout: 12_000 }, async t => {
+async function startServer(t: TestContext) {
   const processServer = spawn(process.execPath, ['--experimental-strip-types', 'src/server/index.ts'], {
     env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'inherit']
   })
@@ -54,12 +55,16 @@ test('two sockets share a room, reject forged commands and recover a seat after 
   assert.equal(health.status, 200)
   assert.deepEqual(await health.json(), { status: 'ok' })
 
-  const connect = async () => {
+  return async () => {
     const peer = new TestPeer(`ws://127.0.0.1:${port}/socket`)
     t.after(() => peer.socket.terminate())
     await once(peer.socket, 'open')
     return peer
   }
+}
+
+test('two sockets share a room, reject forged commands and recover a seat after reconnect', { timeout: 12_000 }, async t => {
+  const connect = await startServer(t)
   const human = await connect()
   const orc = await connect()
   const intruder = await connect()
@@ -106,4 +111,39 @@ test('two sockets share a room, reject forged commands and recover a seat after 
   replacement.send({ type: 'leave' })
   const { room } = await human.wait('room', message => message.room.phase === 'finished')
   assert.deepEqual(room.result, { winner: 'human', reason: 'disconnect' })
+})
+
+
+test('a solo room starts immediately, reserves the opponent for the CPU and survives a reconnect', { timeout: 12_000 }, async t => {
+  const connect = await startServer(t)
+  const player = await connect()
+  player.send({ type: 'solo', faction: 'orc' })
+  const session = await player.wait('session')
+  const { room } = await player.wait('room')
+  assert.equal(room.mode, 'solo')
+  assert.equal(room.phase, 'playing')
+  assert.deepEqual(room.players, [
+    { faction: 'orc', ready: true, connected: true },
+    { faction: 'human', ready: true, connected: true }
+  ])
+  const start = await player.wait('snapshot')
+  assert.ok(start.entities.every(entity => entity.faction === 'orc'))
+
+  const intruder = await connect()
+  intruder.send({ type: 'join', code: session.code, faction: 'human' })
+  assert.match((await intruder.wait('error')).message, /already full/)
+
+  player.send({ type: 'command', ids: [2], order: { kind: 'halt' } })
+  assert.match((await player.wait('error')).message, /cannot be issued/)
+  player.socket.close()
+  await once(player.socket, 'close')
+
+  const replacement = await connect()
+  replacement.send({ type: 'resume', code: session.code, token: session.token })
+  assert.equal((await replacement.wait('room')).room.mode, 'solo')
+  const resumed = await replacement.wait('snapshot')
+  await replacement.wait('snapshot', snapshot => snapshot.tick > resumed.tick)
+  replacement.send({ type: 'leave' })
+  replacement.send({ type: 'resume', code: session.code, token: session.token })
+  assert.equal((await replacement.wait('error')).resetSession, true)
 })

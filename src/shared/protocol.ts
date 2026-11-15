@@ -59,6 +59,7 @@ export type Player = { faction: Faction, connected: boolean, ready: boolean }
 export type Result = { winner: Faction | null, reason: 'headquarters' | 'disconnect' }
 export type RoomState = {
   code: string
+  mode: 'multiplayer' | 'solo'
   phase: 'lobby' | 'playing' | 'finished'
   players: Player[]
   result: Result | null
@@ -74,7 +75,7 @@ export type Order =
   | { kind: 'train', unit: UnitKind }
 
 export type ClientMessage =
-  | { type: 'create', faction: Faction }
+  | { type: 'create' | 'solo', faction: Faction }
   | { type: 'join', code: string, faction: Faction }
   | { type: 'resume', code: string, token: string }
   | { type: 'leave' }
