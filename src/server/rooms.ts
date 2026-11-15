@@ -220,8 +220,17 @@ export class Rooms {
   private broadcastSnapshot(room: Room) {
     if (!room.match) return
     const snapshot = room.match.snapshot(true)
+    // Encode each faction view at most once, even when seats share a faction.
+    const payloads = new Map<Faction, string>()
     for (const seat of room.seats) {
-      if (seat.peer) send(seat.peer, room.match.view(seat.faction, snapshot))
+      const peer = seat.peer
+      if (!peer || peer.readyState !== WebSocket.OPEN || peer.bufferedAmount >= 256_000) continue
+      let payload = payloads.get(seat.faction)
+      if (!payload) {
+        payload = JSON.stringify(room.match.view(seat.faction, snapshot))
+        payloads.set(seat.faction, payload)
+      }
+      peer.send(payload)
     }
   }
 
