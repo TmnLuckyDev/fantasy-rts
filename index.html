@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#171811">
+    <meta name="description" content="Ash & Iron, a two-player fantasy real-time strategy game.">
+    <title>Ash &amp; Iron</title>
+  </head>
+  <body>
+    <main id="lobby" class="lobby">
+      <div class="lobby-art" aria-hidden="true"></div>
+      <div class="lobby-inner">
+        <header class="title-block">
+          <p class="eyebrow">The Battle for Ashford Crossing</p>
+          <h1>Ash <span>&amp;</span> Iron</h1>
+          <div class="ornament" aria-hidden="true"><i></i> ◆ <i></i></div>
+        </header>
+
+        <section class="war-table" aria-label="Multiplayer lobby">
+          <div class="table-head">
+            <h2 id="lobby-title">Multiplayer lobby</h2>
+            <span class="connection" id="connection" data-state="waiting" role="status">Connecting</span>
+          </div>
+          <div class="factions" role="group" aria-label="Choose faction">
+            <button class="faction human" type="button" data-faction="human" aria-pressed="true">
+              <span class="crest human-crest" aria-hidden="true"></span>
+              <span><strong>Human Kingdoms</strong><small>Blue &amp; silver</small></span>
+            </button>
+            <button class="faction orc" type="button" data-faction="orc" aria-pressed="false">
+              <span class="crest orc-crest" aria-hidden="true"></span>
+              <span><strong>Orcish Horde</strong><small>Red &amp; iron</small></span>
+            </button>
+          </div>
+
+          <div id="entry-actions">
+            <button id="create" type="button" class="primary" disabled>Create room</button>
+            <form id="join-form">
+              <input class="room-input" id="join-code" aria-label="Room code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" required pattern="[A-Za-z2-9]{5}" value="">
+              <button id="join" type="submit" disabled>Join</button>
+            </form>
+          </div>
+
+          <div id="room-actions" hidden>
+            <div class="room-heading">
+              <div><span class="eyebrow">Room code</span><strong id="room-code"></strong></div>
+              <button id="copy" type="button">Copy invite</button>
+            </div>
+            <div id="seats" aria-live="polite"></div>
+            <div class="ready-actions">
+              <button id="ready" type="button" class="primary">Ready</button>
+              <button id="leave" type="button">Leave</button>
+            </div>
+          </div>
+          <p id="lobby-message" role="status">Choose a faction and invite an opponent.</p>
+        </section>
+        <footer class="lobby-foot"><span>1 vs 1</span><span>Ashford Crossing</span><span>Destroy the enemy headquarters</span></footer>
+      </div>
+    </main>
+
+    <main id="match" class="match" hidden>
+      <header class="match-head">
+        <div class="wordmark">Ash <span>&amp;</span> Iron</div>
+        <div id="banner" role="status"></div>
+        <div class="head-actions">
+          <button id="sound" type="button" aria-label="Enable sound" aria-pressed="false">Sound off</button>
+          <button id="exit" type="button">Leave</button>
+        </div>
+      </header>
+      <section id="battlefield" aria-label="Battlefield"></section>
+      <footer class="hud">
+        <button id="map-button" type="button" title="Click to pan the camera" aria-label="Minimap"><canvas id="minimap" width="160" height="100"></canvas></button>
+        <div class="selection">
+          <strong id="selection-name">No units selected</strong>
+          <div id="selection-detail">Select your troops to issue orders.</div>
+          <meter id="selection-health" min="0" max="100" value="0" hidden aria-label="Selected troops health"></meter>
+        </div>
+        <div class="orders" aria-label="Battle commands">
+          <button id="all" type="button" title="Select all troops (Q)">All troops</button>
+          <button id="box" type="button" aria-pressed="false" title="Drag a box around your troops">Box select</button>
+          <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
+          <button id="halt" type="button" title="Stop (S)">Stop</button>
+          <button id="home" type="button" title="Focus headquarters (H)">Base</button>
+        </div>
+      </footer>
+      <dialog id="result">
+        <p class="eyebrow">Ashford Crossing</p>
+        <h2 id="result-title"></h2>
+        <p id="result-detail"></p>
+        <button id="return" type="button" class="primary">Back to lobby</button>
+      </dialog>
+      <div class="rotate" aria-hidden="true">Rotate your phone for a wider battlefield.</div>
+    </main>
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>

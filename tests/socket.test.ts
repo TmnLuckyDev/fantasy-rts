@@ -1,0 +1,97 @@
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { test } from 'node:test'
+import { WebSocket } from 'ws'
+import type { ClientMessage, ServerMessage } from '../src/shared/protocol.ts'
+
+class TestPeer {
+  readonly messages: ServerMessage[] = []
+  readonly socket: WebSocket
+
+  constructor(url: string) {
+    this.socket = new WebSocket(url)
+    this.socket.on('message', data => this.messages.push(JSON.parse(data.toString()) as ServerMessage))
+  }
+
+  send(message: ClientMessage) { this.socket.send(JSON.stringify(message)) }
+
+  async wait<T extends ServerMessage['type']>(
+    type: T,
+    predicate: (message: Extract<ServerMessage, { type: T }>) => boolean = () => true
+  ) {
+    const find = () => this.messages.find((message): message is Extract<ServerMessage, { type: T }> =>
+      message.type === type && predicate(message as Extract<ServerMessage, { type: T }>))
+    const match = find()
+    if (match) return match
+    return new Promise<Extract<ServerMessage, { type: T }>>((resolve, reject) => {
+      const onMessage = () => {
+        const message = find()
+        if (!message) return
+        clearTimeout(timer)
+        this.socket.off('message', onMessage)
+        resolve(message)
+      }
+      const timer = setTimeout(() => {
+        this.socket.off('message', onMessage)
+        reject(new Error('No matching ' + type + ' message'))
+      }, 4000)
+      this.socket.on('message', onMessage)
+    })
+  }
+}
+
+test('two sockets share a room, reject forged commands and recover a seat after reconnect', { timeout: 12_000 }, async t => {
+  const processServer = spawn(process.execPath, ['--experimental-strip-types', 'src/server/index.ts'], {
+    env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'inherit']
+  })
+  t.after(() => processServer.kill())
+  const [line] = await once(processServer.stdout, 'data') as [Buffer]
+  const port = line.toString().trim().split(' ').at(-1)
+  assert.match(port ?? '', /^\d+$/)
+  const baseURL = `http://127.0.0.1:${port}`
+  const health = await fetch(baseURL + '/healthz')
+  assert.equal(health.status, 200)
+  assert.deepEqual(await health.json(), { status: 'ok' })
+
+  const connect = async () => {
+    const peer = new TestPeer(`ws://127.0.0.1:${port}/socket`)
+    t.after(() => peer.socket.terminate())
+    await once(peer.socket, 'open')
+    return peer
+  }
+  const human = await connect()
+  const orc = await connect()
+  const intruder = await connect()
+  human.send({ type: 'create', faction: 'human' })
+  const { code } = await human.wait('session')
+  orc.send({ type: 'join', code, faction: 'human' })
+  const { token, faction } = await orc.wait('session')
+  assert.equal(faction, 'orc')
+  intruder.send({ type: 'join', code, faction: 'human' })
+  assert.match((await intruder.wait('error')).message, /already full/)
+  human.send({ type: 'ready', ready: true })
+  await human.wait('room', ({ room }) => room.players[0].ready)
+  assert.equal(human.messages.some(message => message.type === 'snapshot'), false)
+  orc.send({ type: 'ready', ready: true })
+  const [world1, world2] = await Promise.all([human.wait('snapshot'), orc.wait('snapshot')])
+  assert.deepEqual(world1, world2)
+  assert.equal(world1.entities.length, 14)
+  human.send({ type: 'command', ids: [9], order: { kind: 'move', to: { x: 400, y: 400 } } })
+  assert.match((await human.wait('error')).message, /cannot be issued/)
+  const oldX = world1.entities.find(entity => entity.id === 2)!.x
+  human.send({ type: 'command', ids: [2], order: { kind: 'move', to: { x: oldX + 130, y: 337 } } })
+  await orc.wait('snapshot', message => (message.entities.find(entity => entity.id === 2)?.x ?? 0) > oldX + 10)
+
+  orc.socket.close()
+  await human.wait('room', ({ room }) => room.phase === 'playing' && room.players.some(player => !player.connected))
+  intruder.send({ type: 'resume', code, token: '0'.repeat(64) })
+  assert.equal((await intruder.wait('error', error => Boolean(error.resetSession))).resetSession, true)
+  const replacement = await connect()
+  replacement.send({ type: 'resume', code, token })
+  assert.equal((await replacement.wait('session')).faction, 'orc')
+  await replacement.wait('snapshot', message => message.tick > world2.tick)
+  replacement.send({ type: 'leave' })
+  const { room } = await human.wait('room', message => message.room.phase === 'finished')
+  assert.deepEqual(room.result, { winner: 'human', reason: 'disconnect' })
+})
