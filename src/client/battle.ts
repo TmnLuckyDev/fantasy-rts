@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { TILE, ashford, cellCenter, distance, isMine, riverColumn, snapToCell } from '../shared/map.ts'
+import { TILE, ashford, cellCenter, distance, resourceAt, riverColumn, snapToCell } from '../shared/map.ts'
 import { MAX_SELECTION, entityKinds, isUnitKind } from '../shared/protocol.ts'
 import { validPlacement } from '../shared/economy.ts'
 import type { BuildingKind, Effect, Entity, Faction, Order, Point, Snapshot } from '../shared/protocol.ts'
@@ -52,7 +52,7 @@ export class BattleScene extends Phaser.Scene {
     this.textures.addCanvas('terrain', terrainTexture())
     this.add.image(0, 0, 'terrain').setOrigin(0).setDepth(-5)
     this.water = this.add.graphics().setDepth(-4)
-    for (const tile of ['forest', 'rock', 'mine'] as const) {
+    for (const tile of ['forest', 'rock', 'mine', 'quarry'] as const) {
       for (let v = 0; v < (tile === 'forest' ? 3 : 1); v++) this.textures.addCanvas(tile + v, propTexture(tile, v))
     }
     for (const faction of ['human', 'orc'] as const) {
@@ -62,7 +62,7 @@ export class BattleScene extends Phaser.Scene {
       }
     }
     ashford.tiles.forEach((tile, i) => {
-      if (tile !== 'forest' && tile !== 'rock' && tile !== 'mine') return
+      if (tile !== 'forest' && tile !== 'rock' && tile !== 'mine' && tile !== 'quarry') return
       const point = cellCenter(i % ashford.width, Math.floor(i / ashford.width))
       const rand = randomAt(i * 61 + 905)
       const variant = tile === 'forest' ? Math.floor(rand() * 3) : 0
@@ -183,7 +183,7 @@ export class BattleScene extends Phaser.Scene {
       } else this.actions.placement(true, true)
       return
     }
-    if (touch && this.workerIds().length && this.mineAt(point)) {
+    if (touch && this.workerIds().length && this.gatherPoint(point)) {
       this.orderAt(screen)
       return
     }
@@ -250,10 +250,10 @@ export class BattleScene extends Phaser.Scene {
     for (const current of this.visuals.values()) yield current.entity
   }
 
-  private mineAt(point: Point) {
-    if (isMine(ashford, point)) return snapToCell(point)
-    const raised = { x: point.x, y: point.y + 12 }
-    return isMine(ashford, raised) ? snapToCell(raised) : null
+  private gatherPoint(point: Point) {
+    if (resourceAt(ashford, point)) return snapToCell(point)
+    const ground = { x: point.x, y: point.y + 12 }
+    return resourceAt(ashford, ground) ? snapToCell(ground) : null
   }
 
   private orderAt(screen: Point) {
@@ -265,9 +265,9 @@ export class BattleScene extends Phaser.Scene {
     if (point.x < 0 || point.y < 0 || point.x >= mapWidth || point.y >= mapHeight) return
     const picked = this.pick(point, true)
     const workers = this.workerIds()
-    const mine = workers.length ? this.mineAt(point) : null
-    if (mine) {
-      this.actions.order(workers, { kind: 'gather', mine })
+    const resource = workers.length ? this.gatherPoint(point) : null
+    if (resource) {
+      this.actions.order(workers, { kind: 'gather', at: resource })
       return
     }
     if (workers.length && picked?.faction === this.faction && picked.construction !== undefined) {
@@ -356,9 +356,10 @@ export class BattleScene extends Phaser.Scene {
       }
       if (entity.construction !== undefined) sprite.setAlpha(0.38 + entity.construction * 0.52)
       else sprite.setAlpha(1)
-      if (entity.carryingGold) {
+      if (entity.carrying) {
+        const cargoColor = { gold: 0xf6cd61, wood: 0xc48d56, stone: 0xc4ccd3 }
         this.graphics.fillStyle(0x493920, 1).fillRect(sprite.x - 11, sprite.y - 13, 9, 8)
-        this.graphics.fillStyle(0xf6cd61, 1).fillRect(sprite.x - 9, sprite.y - 12, 5, 5)
+        this.graphics.fillStyle(cargoColor[entity.carrying], 1).fillRect(sprite.x - 9, sprite.y - 12, 5, 5)
       }
       const selected = this.selected.has(entity.id)
       const color = factionColor[entity.faction]
@@ -368,7 +369,7 @@ export class BattleScene extends Phaser.Scene {
       }
       const w = building ? unitStats[entity.faction][entity.kind].radius * 1.8 : 22
       const x = sprite.x - w / 2
-      const y = sprite.y - (entity.kind === 'headquarters' ? 82 : entity.kind === 'tower' ? 65 : entity.kind === 'barracks' ? 47 : 40)
+      const y = sprite.y - (entity.kind === 'headquarters' ? 82 : entity.kind === 'tower' ? 65 : (building && entity.kind !== 'wall') ? 47 : 40)
       this.graphics.fillStyle(0x1b1914, 0.9).fillRect(x - 1, y - 1, w + 2, 5)
       this.graphics.fillStyle(0x30271e, 1).fillRect(x, y, w, 3)
       this.graphics.fillStyle(color, 0.97).fillRect(x, y, w * entity.hp / entity.maxHp, 3)

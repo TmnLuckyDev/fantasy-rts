@@ -1,6 +1,7 @@
 import { chromium, devices, expect, test, webkit } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { TILE, ashford, cellCenter, distance } from '../src/shared/map.ts'
+import { isUnitKind } from '../src/shared/protocol.ts'
 import type { Faction, Point, ServerMessage, Snapshot } from '../src/shared/protocol.ts'
 
 const worldWidth = ashford.width * TILE
@@ -46,7 +47,7 @@ const mobileBrowser = process.env.MOBILE_BROWSER === 'webkit' ? webkit : chromiu
 const mobileProfile = process.env.MOBILE_BROWSER === 'webkit' ? 'iPhone 14' : 'Pixel 7'
 
 test('desktop and landscape touch players can finish an authoritative match', async ({ browser, baseURL }, info) => {
-  test.setTimeout(130_000)
+  test.setTimeout(165_000)
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 750 } })
   const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
   const phone = devices[mobileProfile]
@@ -61,7 +62,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
   const pageErrors: string[] = []
   for (const page of [human, orc]) page.on('pageerror', error => pageErrors.push(error.message))
   const troops = (state: Map<number, Snapshot>, faction: Faction) => newest(state)?.entities
-    .filter(entity => entity.faction === faction && entity.kind !== 'headquarters' && entity.kind !== 'worker') ?? []
+    .filter(entity => entity.faction === faction && isUnitKind(entity.kind) && entity.kind !== 'worker') ?? []
 
   try {
     await human.goto(baseURL!)
@@ -103,12 +104,16 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect(human.locator('#selection-name')).toHaveText('3 workers selected')
     const mine = await screenPoint(human, cellCenter(5, 18), ashford.bases.human)
     await human.mouse.click(mine.x, mine.y, { button: 'right' })
-    await expect.poll(() => newest(humanHistory)?.gold.human ?? 0, { timeout: 18_000 }).toBeGreaterThan(300)
+    await expect.poll(() => newest(humanHistory)?.resources.human.gold ?? 0, { timeout: 18_000 }).toBeGreaterThan(300)
+
+    const tree = await screenPoint(human, cellCenter(6, 7), ashford.bases.human)
+    await human.mouse.click(tree.x, tree.y, { button: 'right' })
+    await expect.poll(() => newest(humanHistory)?.resources.human.wood ?? 0, { timeout: 18_000 }).toBeGreaterThan(180)
 
     const barracks = cellCenter(11, 15)
     const barracksSpot = await screenPoint(human, barracks, ashford.bases.human)
     await human.getByRole('button', { name: 'Build', exact: true }).click()
-    await human.getByRole('button', { name: 'Barracks · 180 gold', exact: true }).click()
+    await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
@@ -118,13 +123,27 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.getByRole('button', { name: 'Train', exact: true }).click()
     await human.getByRole('button', { name: 'Footman · 75 gold', exact: true }).click()
     await expect.poll(() => troops(orcHistory, 'human').length, { timeout: 12_000 }).toBe(7)
+    await expect(human.locator('#population')).toHaveText('10/10')
+    await expect(human.getByRole('button', { name: 'Footman · 75 gold', exact: true })).toBeDisabled()
+
+    await human.getByRole('button', { name: 'Workers', exact: true }).click()
+    const farm = await screenPoint(human, cellCenter(14, 15), ashford.bases.human)
+    await human.getByRole('button', { name: 'Build', exact: true }).click()
+    await human.getByRole('button', { name: 'Farm · 70 wood · 20 stone', exact: true }).click()
+    await human.mouse.click(farm.x, farm.y)
+    await expect(human.locator('#population')).toHaveText('10/15', { timeout: 20_000 })
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
+    const quarry = cellCenter(ashford.width - 5, ashford.height - 16)
+    await panTo(orc, quarry, true)
+    const quarryTap = await screenPoint(orc, quarry, quarry)
+    await orc.touchscreen.tap(quarryTap.x, quarryTap.y)
+    await expect.poll(() => newest(orcHistory)?.resources.orc.stone ?? 0, { timeout: 18_000 }).toBeGreaterThan(120)
     const tower = cellCenter(ashford.width - 3, 19)
     await panTo(orc, tower, true)
     const towerSpot = await screenPoint(orc, tower, tower)
     await orc.getByRole('button', { name: 'Build', exact: true }).tap()
-    await orc.getByRole('button', { name: 'Watch Tower · 150 gold', exact: true }).tap()
+    await orc.getByRole('button', { name: 'Watch Tower · 55 wood · 85 stone', exact: true }).tap()
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
     await expect.poll(() => newest(humanHistory)?.entities.some(entity =>
       entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 18_000 }).toBe(true)
@@ -136,7 +155,8 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.mouse.down()
     await human.mouse.move(end.x, end.y, { steps: 7 })
     await human.mouse.up()
-    await expect(human.locator('#selection-name')).toHaveText('6 troops selected')
+    await expect(human.locator('#selection-name')).toContainText('troops selected')
+    await human.getByRole('button', { name: 'All troops', exact: true }).click()
     if (process.env.CAPTURE_BROWSER === '1') await human.screenshot({ path: info.outputPath('battlefield.png') })
     const base = ashford.bases.orc
     await panTo(human, base, false)

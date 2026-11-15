@@ -1,11 +1,12 @@
 import { TILE, ashford } from '../shared/map.ts'
 import type { Tile } from '../shared/map.ts'
-import type { EntityKind, Faction } from '../shared/protocol.ts'
+import { isBuildingKind } from '../shared/protocol.ts'
+import type { BuildingKind, EntityKind, Faction } from '../shared/protocol.ts'
 
 export const factionColor = { human: 0x7db7f8, orc: 0xf08a6b }
 export const terrainColor: Record<Tile, string> = {
   grass: '#536338', road: '#806748', forest: '#314628', water: '#386871',
-  bridge: '#927557', rock: '#53564d', mine: '#665a38'
+  bridge: '#927557', rock: '#53564d', mine: '#665a38', quarry: '#9a9ca1'
 }
 
 export function randomAt(seed: number) {
@@ -87,7 +88,7 @@ function brush(surface: HTMLCanvasElement): Brush {
   }
 }
 
-export function propTexture(tile: 'forest' | 'rock' | 'mine', variant: number) {
+export function propTexture(tile: 'forest' | 'rock' | 'mine' | 'quarry', variant: number) {
   const surface = canvas(34, 36)
   const { rect, poly, shadow } = brush(surface)
   shadow(18, 30, 15, 4)
@@ -107,6 +108,15 @@ export function propTexture(tile: 'forest' | 'rock' | 'mine', variant: number) {
     poly('#91918a', 6, 23, 10, 13, 21, 7, 25, 16, 18, 21)
     poly('#777a71', 3, 27, 7, 21, 18, 18, 23, 28, 12, 30)
     poly('#565a55', 21, 7, 30, 16, 32, 27, 23, 30, 18, 20)
+    if (tile === 'quarry') {
+      poly('#c6c9c4', 1, 28, 6, 19, 13, 17, 18, 25, 13, 31)
+      poly('#a5adb1', 18, 27, 22, 16, 29, 18, 33, 27, 28, 32)
+      rect('#e1e2ca', 6, 21, 5, 2)
+      rect('#e1e2ca', 23, 19, 4, 2)
+      rect('#95765b', 2, 8, 2, 17)
+      rect('#d8cead', 2, 8, 10, 6)
+      rect('#655d5e', 4, 10, 6, 2)
+    }
     if (tile === 'mine') {
       rect('#724627', 11, 19, 14, 11)
       rect('#523520', 12, 15, 13, 5)
@@ -174,7 +184,7 @@ function fortress(faction: Faction) {
   return surface
 }
 
-function structureTexture(faction: Faction, kind: 'wall' | 'tower' | 'barracks') {
+function structureTexture(faction: Faction, kind: BuildingKind) {
   const surface = canvas(kind === 'wall' ? 23 : 41, kind === 'tower' ? 49 : 34)
   const { rect, poly, shadow } = brush(surface)
   const human = faction === 'human'
@@ -210,6 +220,56 @@ function structureTexture(faction: Faction, kind: 'wall' | 'tower' | 'barracks')
     poly(accent, 26, 1, 40, 2, 36, 6, 26, 7)
     return surface
   }
+  if (kind === 'farm') {
+    shadow(20, 30, 19, 4)
+    rect('#695033', 1, 24, 38, 7)
+    rect('#9d824c', 2, 25, 37, 2)
+    rect('#b39154', 3, 16, 20, 12)
+    poly(human ? '#d5ab57' : '#ae7950', 1, 17, 11, 6, 23, 12, 26, 18, 12, 21)
+    rect('#67462c', 11, 21, 5, 7)
+    rect(accent, 17, 19, 4, 3)
+    for (const x of [25, 29, 33, 37]) {
+      rect('#b28343', x, 20, 2, 8)
+      rect('#d4ad62', x, 19, 3, 3)
+    }
+    if (!human) rect('#ca8f7f', 27, 23, 8, 4)
+    return surface
+  }
+  if (kind === 'range') {
+    shadow(20, 30, 19, 4)
+    rect(dark, 1, 12, 24, 18)
+    rect(mid, 2, 16, 21, 12)
+    poly(accent, 0, 15, 6, 9, 25, 10, 23, 17)
+    rect('#37281d', 11, 19, 7, 8)
+    for (const [x, y] of [[26, 17], [31, 10]]) {
+      rect('#69482e', x + 3, y + 6, 2, 9)
+      rect('#c8ac7a', x, y, 8, 8)
+      rect('#824c45', x + 1, y + 1, 6, 6)
+      rect('#ede0a0', x + 3, y + 3, 2, 2)
+    }
+    return surface
+  }
+  if (kind === 'elite') {
+    shadow(20, 30, 19, 4)
+    if (!human) {
+      poly('#43342d', 1, 28, 5, 11, 16, 5, 27, 7, 38, 19, 39, 30)
+      poly('#76644a', 4, 25, 9, 10, 20, 7, 29, 14, 34, 28)
+      poly('#2d2420', 13, 29, 15, 19, 23, 16, 28, 29)
+      poly('#d6b98d', 8, 28, 6, 14, 13, 23, 14, 28)
+      poly('#ccb389', 28, 30, 35, 15, 34, 28)
+      rect(accent, 18, 10, 9, 3)
+    } else {
+      rect(dark, 1, 18, 38, 12)
+      rect(mid, 4, 17, 33, 11)
+      poly(accent, 1, 18, 11, 7, 31, 8, 39, 17, 25, 20)
+      rect(light, 5, 18, 4, 10)
+      rect(light, 30, 18, 4, 10)
+      rect('#3b2b22', 11, 20, 7, 9)
+      rect('#3b2b22', 21, 20, 7, 9)
+      rect('#d4bd83', 17, 13, 5, 3)
+    }
+    return surface
+  }
   shadow(20, 30, 19, 4)
   rect(dark, 3, 15, 35, 16)
   rect(mid, 4, 15, 26, 14)
@@ -225,7 +285,25 @@ function structureTexture(faction: Faction, kind: 'wall' | 'tower' | 'barracks')
 
 export function entityTexture(faction: Faction, kind: EntityKind, frame = 0) {
   if (kind === 'headquarters') return fortress(faction)
-  if (kind === 'wall' || kind === 'tower' || kind === 'barracks') return structureTexture(faction, kind)
+  if (isBuildingKind(kind)) return structureTexture(faction, kind)
+  if (kind === 'heavy' && faction === 'orc') {
+    const surface = canvas(33, 31)
+    const { rect, poly, shadow } = brush(surface)
+    const step = frame ? 2 : 0
+    shadow(16, 27, 13, 4)
+    rect('#422b23', 8, 22, 6, 7 - step)
+    rect('#422b23', 18, 22, 6, 5 + step)
+    poly('#44362b', 3, 22, 5, 12, 10, 7, 22, 7, 27, 14, 27, 24, 9, 25)
+    poly('#af8d64', 4, 21, 6, 13, 11, 10, 23, 11, 25, 19, 22, 23, 7, 23)
+    rect('#c5412c', 8, 19, 16, 4)
+    rect('#bfa476', 14, 3, 9, 9)
+    rect('#3d3226', 20, 6, 3, 1)
+    rect('#ede0be', 21, 10, 3, 2)
+    rect('#6a4831', 26, 8, 3, 14)
+    poly('#664830', 24, 9, 24, 3, 29, 1, 32, 4, 31, 9)
+    rect('#c1ab86', 27, 4, 4, 2)
+    return surface
+  }
   const surface = canvas(28, 29)
   const { rect, poly, shadow } = brush(surface)
   const human = faction === 'human'
@@ -279,7 +357,19 @@ export function entityTexture(faction: Faction, kind: EntityKind, frame = 0) {
     rect('#242c21', 16, top + 4, 2, 1)
     rect('#e4d1a2', 17, top + 6, 3, 1)
   }
-  if (kind === 'ranged') {
+  if (kind === 'polearm') {
+    for (let i = 0; i < 17; i++) rect('#947049', 17 + Math.floor(i / 2), 25 - i, 2, 1)
+    poly('#c2c9bd', 23, 10, 25, 3, 27, 7, 26, 12)
+    if (!human) poly('#abb0a9', 25, 5, 29, 6, 29, 12, 26, 13)
+  } else if (kind === 'marksman') {
+    if (human) {
+      rect('#a58151', 18, 13, 10, 3)
+      poly('#bdc3bc', 19, 14, 22, 10, 25, 9, 23, 14, 25, 19, 22, 18)
+    } else {
+      rect('#986d45', 21, 8, 2, 13)
+      poly('#b7bbb4', 18, 8, 23, 5, 28, 6, 27, 12, 23, 13)
+    }
+  } else if (kind === 'ranged') {
     if (human) {
       poly('#b38550', 21, 7, 24, 9, 26, 15, 25, 19, 23, 22, 22, 21, 24, 16, 23, 11)
       rect('#d6c29e', 22, 10, 1, 11)

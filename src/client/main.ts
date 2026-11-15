@@ -1,7 +1,8 @@
 import Phaser from 'phaser'
-import { buildingKinds, combatKinds, entityNames, factionNames, isFaction, isUnitKind, opposite } from '../shared/protocol.ts'
-import type { Entity, Faction, RoomState, ServerMessage, UnitKind } from '../shared/protocol.ts'
-import { buildings, training, TRAINING_QUEUE_LIMIT } from '../shared/economy.ts'
+import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
+import type { Entity, Faction, Population, Resources, RoomState, ServerMessage } from '../shared/protocol.ts'
+import type { Cost } from '../shared/economy.ts'
+import { buildings, canAfford, FARM_POPULATION, trainedAt, training, TRAINING_QUEUE_LIMIT } from '../shared/economy.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
 import { BattleScene } from './battle.ts'
@@ -32,7 +33,9 @@ let scene: BattleScene | null = null
 let game: Phaser.Game | null = null
 let box = false
 let orderMessageTimer: number | undefined
-let gold = 0
+let resources: Resources = { gold: 0, wood: 0, stone: 0 }
+let population: Population = { used: 0, reserved: 0, limit: 0 }
+const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number }>()
 let selection: Entity[] = []
 let placing = false
 let economyContext = ''
@@ -100,8 +103,9 @@ function receive(message: ServerMessage) {
       }
       break
     case 'snapshot':
-      gold = message.gold[faction]
-      element('gold').textContent = String(gold)
+      resources = message.resources[faction]
+      population = message.population[faction]
+      drawEconomy()
       scene?.snapshot(message)
       break
     case 'error':
@@ -158,8 +162,9 @@ function showBattle() {
     effect: kind => audio.play(kind)
   })
   scene.advanceMode = false
-  gold = 0
-  element('gold').textContent = '0'
+  resources = { gold: 0, wood: 0, stone: 0 }
+  population = { used: 0, reserved: 0, limit: 0 }
+  drawEconomy()
   placementTip.hidden = true
   placing = false
   closeEconomyMenu()
@@ -182,8 +187,8 @@ function drawSelection(entities: Entity[]) {
   selection = entities
   const selected = entities[0]
   const workers = entities.some(entity => entity.kind === 'worker')
-  const trainer = entities.length === 1 && selected?.construction === undefined &&
-    (selected?.kind === 'headquarters' || selected?.kind === 'barracks') ? selected : undefined
+  const trainer = entities.length === 1 && selected && selected.construction === undefined &&
+    trainedAt(selected.kind).length ? selected : undefined
   const nextContext = workers ? 'build' : trainer ? 'train:' + trainer.id : ''
   if (nextContext !== economyContext) closeEconomyMenu()
   economyContext = nextContext
@@ -213,15 +218,34 @@ function drawSelection(entities: Entity[]) {
       const next = entityNames[faction][selected.training.kind]
       detail.textContent = `${next} · ${Math.floor(selected.training.progress * 100)}% · ${selected.training.remaining} queued`
     } else if (selected.kind === 'worker') {
-      detail.textContent = selected.carryingGold ? 'Carrying gold to the hall.' : touch ? 'Tap a gold mine to gather.' : 'Right-click a gold mine to gather.'
-    } else detail.textContent = stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`
+      detail.textContent = selected.carrying ? `Carrying ${selected.carrying} to the hall.` : gatherHint()
+    } else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP`
+    else detail.textContent = stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`
   } else {
     const onlyWorkers = entities.every(entity => entity.kind === 'worker')
     label.textContent = `${entities.length} ${onlyWorkers ? 'workers' : 'troops'} selected`
     detail.textContent = onlyWorkers
-      ? (touch ? 'Tap a gold mine to gather.' : 'Right-click a gold mine to gather.')
+      ? gatherHint()
       : (touch ? 'Tap ground to move or an enemy to attack.' : 'Right-click ground to move or an enemy to attack.')
   }
+}
+
+function drawEconomy() {
+  for (const kind of resourceKinds) setText(kind, String(resources[kind]))
+  const committed = population.used + population.reserved
+  setText('population', `${committed}/${population.limit}`)
+  const meter = element('population-meter')
+  meter.dataset.full = String(committed >= population.limit)
+  meter.title = `${population.used} in play · ${population.reserved} queued · ${population.limit} capacity`
+}
+
+function setText(id: string, text: string) {
+  const target = element(id)
+  if (target.textContent !== text) target.textContent = text
+}
+
+function gatherHint() {
+  return touch ? 'Tap a mine, tree or quarry to gather.' : 'Right-click a mine, tree or quarry to gather.'
 }
 
 function closeEconomyMenu() {
@@ -230,17 +254,26 @@ function closeEconomyMenu() {
 }
 
 function updateEconomyOptions() {
-  const full = economyContext.startsWith('train:') && (selection[0]?.training?.remaining ?? 0) >= TRAINING_QUEUE_LIMIT
+  const full = (selection[0]?.training?.remaining ?? 0) >= TRAINING_QUEUE_LIMIT
+  const available = population.limit - population.used - population.reserved
+  let needsFarm = false
   for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
-    choice.disabled = full || Number(choice.dataset.gold) > gold
+    const rule = choiceRules.get(choice)!
+    const needsSpace = rule.population > 0 && rule.population > available
+    needsFarm ||= needsSpace
+    choice.disabled = full || needsSpace || !canAfford(resources, rule.cost)
   }
+  const hint = menu.querySelector<HTMLElement>('.economy-hint')
+  if (hint) hint.hidden = !needsFarm
 }
 
-function economyChoice(name: string, cost: number, act: () => void) {
+function economyChoice(name: string, cost: Cost, population: number, act: () => void) {
   const choice = document.createElement('button')
   choice.type = 'button'
-  choice.dataset.gold = String(cost)
-  choice.textContent = `${name} · ${cost} gold`
+  choiceRules.set(choice, { cost, population })
+  const prices = resourceKinds.flatMap(kind => cost[kind] ? [`${cost[kind]} ${kind}`] : [])
+  if (population > 1) prices.push(`${population} pop`)
+  choice.textContent = [name, ...prices].join(' · ')
   choice.onclick = act
   return choice
 }
@@ -253,18 +286,22 @@ economyAction.onclick = () => {
   }
   const names = entityNames[faction]
   if (economyContext === 'build') {
-    menu.replaceChildren(...buildingKinds.map(kind => economyChoice(names[kind], buildings[kind].gold, () => {
+    menu.replaceChildren(...buildingKinds.map(kind => economyChoice(names[kind], buildings[kind].cost, 0, () => {
       closeEconomyMenu()
       scene?.place(kind)
     })))
   } else {
     const building = selection[0]
     if (!building) return
-    const kinds: readonly UnitKind[] = building.kind === 'headquarters' ? ['worker'] : combatKinds
-    menu.replaceChildren(...kinds.map(kind => economyChoice(names[kind], training[kind].gold, () => {
-      client.send({ type: 'command', ids: [building.id], order: { kind: 'train', unit: kind } })
-      audio.play('order')
-    })))
+    const hint = document.createElement('small')
+    hint.className = 'economy-hint'
+    hint.textContent = 'Build a farm to raise your population limit.'
+    menu.replaceChildren(...trainedAt(building.kind).map(kind =>
+      economyChoice(names[kind], { gold: training[kind].gold }, training[kind].population, () => {
+        client.send({ type: 'command', ids: [building.id], order: { kind: 'train', unit: kind } })
+        audio.play('order')
+      })), hint)
+
   }
   updateEconomyOptions()
   menu.hidden = false

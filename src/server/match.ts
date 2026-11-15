@@ -1,16 +1,17 @@
-import { TILE, ashford, distance, isMine, snapToCell } from '../shared/map.ts'
+import { TILE, ashford, distance, resourceAt, snapToCell } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
 import { MAX_SELECTION, factions, isUnitKind } from '../shared/protocol.ts'
-import type { Effect, Entity, EntityKind, Faction, Order, Point, Result, Snapshot, UnitKind } from '../shared/protocol.ts'
+import type { Effect, Entity, EntityKind, Faction, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
-import { GOLD_LOAD, MAX_BUILDINGS, MAX_MOBILE_UNITS, MINE_TICKS, STARTING_GOLD, TRAINING_QUEUE_LIMIT,
-  buildings as buildingRules, canTrain, training, validPlacement } from '../shared/economy.ts'
+import { BASE_POPULATION, FARM_POPULATION, GATHERING, MAX_BUILDINGS, MAX_POPULATION, STARTING_RESOURCES,
+  TRAINING_QUEUE_LIMIT, buildings as buildingRules, canAfford, spend, trainedAt, training, validPlacement } from '../shared/economy.ts'
 import { canStand, findPath } from './navigation.ts'
 
 export const TICK_HZ = 20
 const spacing = 30
+const isRanged = (kind: EntityKind) => kind === 'ranged' || kind === 'marksman'
 
-type WorkerJob = { kind: 'mine', mine: Point, workTicks: number } | { kind: 'construct', site: number }
+type WorkerJob = { kind: 'gather', at: Point, resource: ResourceKind, workTicks: number } | { kind: 'construct', site: number }
 type Obstacle = Point & { radius: number }
 
 type Unit = Entity & {
@@ -22,7 +23,7 @@ type Unit = Entity & {
   pursued: Point | null
   blockedTicks: number
   job: WorkerJob | null
-  cargo: boolean
+  cargo: ResourceKind | null
   queue: Array<{ kind: UnitKind, left: number }>
   buildTicks: number
   buildDuration: number
@@ -35,7 +36,9 @@ export class Match {
   readonly map: BattleMap
   tick = 0
   result: Result | null = null
-  private readonly gold: Record<Faction, number> = { human: STARTING_GOLD, orc: STARTING_GOLD }
+  private readonly resources: Record<Faction, Resources> = {
+    human: { ...STARTING_RESOURCES }, orc: { ...STARTING_RESOURCES }
+  }
   private sequence = 0
   private effects: Effect[] = []
   private missiles: Missile[] = []
@@ -48,7 +51,7 @@ export class Match {
       this.spawn(faction, 'headquarters', base)
       const ranks: Array<[EntityKind, number, number]> = [
         ['blade', 74, -31], ['blade', 74, 1], ['blade', 74, 33],
-        ['ranged', 40, -23], ['ranged', 40, 24], ['heavy', 109, 1]
+        ['ranged', 40, -23], ['ranged', 40, 24], ['polearm', 109, 1]
       ]
       for (const [kind, x, y] of ranks) {
         this.spawn(faction, kind, { x: base.x + x * direction, y: base.y + y * direction })
@@ -70,7 +73,7 @@ export class Match {
       ...position, faction, kind, id, hp: buildDuration ? Math.ceil(health * 0.2) : health,
       maxHp: health, moving: false, facing: faction === 'human' ? 1 : -1, order: null, assigned: null,
       path: [], nextPath: 0, nextStrike: 0, pursued: null, blockedTicks: 0,
-      job: null, cargo: false, queue: [], buildTicks: 0, buildDuration
+      job: null, cargo: null, queue: [], buildTicks: 0, buildDuration
     }
     this.units.set(id, unit)
     return unit
@@ -101,7 +104,7 @@ export class Match {
     const troops = order.kind === 'attack' ? units.filter(unit => unit.kind !== 'worker') : units
     if (!troops.length) return false
     const rowSize = Math.ceil(Math.sqrt(troops.length))
-    troops.sort((a, b) => (a.kind === 'ranged' ? 1 : 0) - (b.kind === 'ranged' ? 1 : 0) || a.y - b.y)
+    troops.sort((a, b) => Number(isRanged(a.kind)) - Number(isRanged(b.kind)) || a.y - b.y)
     troops.forEach((unit, i) => {
       this.resetOrders(unit)
       unit.order = order.kind === 'halt' ? null : order
@@ -132,22 +135,23 @@ export class Match {
   private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'resume-build' }>) {
     if (!workers.length) return false
     if (order.kind === 'gather') {
-      if (!isMine(this.map, order.mine)) return false
-      const mine = snapToCell(order.mine)
+      const resource = resourceAt(this.map, order.at)
+      if (!resource) return false
+      const at = snapToCell(order.at)
       for (const worker of workers) {
         this.resetOrders(worker)
-        worker.job = { kind: 'mine', mine, workTicks: 0 }
+        worker.job = { kind: 'gather', at, resource, workTicks: 0 }
       }
       return true
     }
-    const worker = workers.find(unit => !unit.job) ?? workers.find(unit => unit.job?.kind === 'mine') ?? workers[0]
+    const worker = workers.find(unit => !unit.job) ?? workers.find(unit => unit.job?.kind === 'gather') ?? workers[0]
     let site = order.kind === 'resume-build' ? this.units.get(order.target) : undefined
     if (order.kind === 'build') {
       const rule = buildingRules[order.building]
-      if (this.gold[faction] < rule.gold || !validPlacement(this.map, order.building, order.at, this.units.values())) return false
+      if (!canAfford(this.resources[faction], rule.cost) || !validPlacement(this.map, order.building, order.at, this.units.values())) return false
       const count = [...this.units.values()].filter(unit => unit.faction === faction && !isUnitKind(unit.kind)).length
       if (count >= MAX_BUILDINGS) return false
-      this.gold[faction] -= rule.gold
+      spend(this.resources[faction], rule.cost)
       site = this.spawn(faction, order.building, snapToCell(order.at), rule.ticks)
     }
     if (!site || site.faction !== faction || !site.buildDuration) return false
@@ -157,16 +161,30 @@ export class Match {
     return true
   }
 
+  private population(faction: Faction): Population {
+    let used = 0
+    let reserved = 0
+    let limit = 0
+    for (const unit of this.units.values()) {
+      if (unit.faction !== faction) continue
+      if (isUnitKind(unit.kind)) used += training[unit.kind].population
+      else if (!unit.buildDuration) {
+        if (unit.kind === 'headquarters') limit += BASE_POPULATION
+        if (unit.kind === 'farm') limit += FARM_POPULATION
+        for (const queued of unit.queue) reserved += training[queued.kind].population
+      }
+    }
+    return { used, reserved, limit: Math.min(limit, MAX_POPULATION) }
+  }
+
   private enqueue(building: Unit, kind: UnitKind) {
     const rule = training[kind]
-    if (building.buildDuration || !canTrain(building.kind, kind) ||
-        building.queue.length >= TRAINING_QUEUE_LIMIT || this.gold[building.faction] < rule.gold) return false
-    let committed = 0
-    for (const unit of this.units.values()) {
-      if (unit.faction === building.faction) committed += Number(isUnitKind(unit.kind)) + unit.queue.length
-    }
-    if (committed >= MAX_MOBILE_UNITS) return false
-    this.gold[building.faction] -= rule.gold
+    const stock = this.resources[building.faction]
+    if (building.buildDuration || !trainedAt(building.kind).includes(kind) ||
+        building.queue.length >= TRAINING_QUEUE_LIMIT || stock.gold < rule.gold) return false
+    const { used, reserved, limit } = this.population(building.faction)
+    if (used + reserved + rule.population > limit) return false
+    stock.gold -= rule.gold
     building.queue.push({ kind, left: rule.ticks })
     return true
   }
@@ -176,6 +194,8 @@ export class Match {
     if (!next) return
     if (next.left > 0) next.left--
     if (next.left > 0) return
+    const { used, limit } = this.population(building.faction)
+    if (used + training[next.kind].population > limit) return
     const radius = unitStats[building.faction][next.kind].radius
     const bounds = unitStats[building.faction][building.kind].radius + radius + 16
     const slots = [0, 0.65, -0.65, 1.3, -1.3, 2.0, -2.0, Math.PI]
@@ -218,15 +238,15 @@ export class Match {
       const base = [...this.units.values()].find(unit => unit.faction === worker.faction && unit.kind === 'headquarters')
       if (!base) return
       if (distance(worker, base) <= unitStats[base.faction].headquarters.radius + 26) {
-        this.gold[worker.faction] += GOLD_LOAD
-        worker.cargo = false
+        this.resources[worker.faction][worker.cargo] += GATHERING[worker.cargo].amount
+        worker.cargo = null
       } else this.approach(worker, base, obstacles, true)
-    } else if (distance(worker, job.mine) < 49) {
-      if (++job.workTicks >= MINE_TICKS) {
-        worker.cargo = true
+    } else if (distance(worker, job.at) < 49) {
+      if (++job.workTicks >= GATHERING[job.resource].ticks) {
+        worker.cargo = job.resource
         job.workTicks = 0
       }
-    } else this.approach(worker, job.mine, obstacles, true)
+    } else this.approach(worker, job.at, obstacles, true)
   }
 
   step() {
@@ -304,7 +324,7 @@ export class Match {
     if (unit.nextStrike > this.tick) return true
     unit.nextStrike = this.tick + stats.cooldown
     unit.facing = target.x < unit.x ? -1 : 1
-    if (unit.kind === 'ranged' || unit.kind === 'tower') {
+    if (isRanged(unit.kind) || unit.kind === 'tower') {
       const flight = Math.max(2, Math.ceil(distance(unit, target) / 24))
       this.missiles.push({ attacker: unit, targetId: target.id, arrives: this.tick + flight })
       this.effects.push({
@@ -387,14 +407,16 @@ export class Match {
     const effects = this.effects
     if (consumeEffects) this.effects = []
     return {
-      type: 'snapshot', tick: this.tick, effects: consumeEffects ? effects : [], gold: { ...this.gold },
+      type: 'snapshot', tick: this.tick, effects: consumeEffects ? effects : [],
+      resources: { human: { ...this.resources.human }, orc: { ...this.resources.orc } },
+      population: { human: this.population('human'), orc: this.population('orc') },
       entities: [...this.units.values()].map(unit => {
         const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
         const next = queue[0]
         return {
           id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving,
           construction: buildDuration ? buildTicks / buildDuration : undefined,
-          carryingGold: cargo || undefined,
+          carrying: cargo ?? undefined,
           training: next ? { kind: next.kind, progress: 1 - next.left / training[next.kind].ticks, remaining: queue.length } : undefined
         }
       })
