@@ -43,6 +43,16 @@ test('group movement crosses the river, separates troops and keeps advancing', (
   assert.ok(troops.every(unit => troops.every(other => unit === other || distance(unit, other) >= 12)))
 })
 
+test('troops can path to an attack position whose tile center is obstructed', () => {
+  const match = new Match()
+  const army = [2, 3, 4, 5, 6, 7]
+  const start = match.units.get(2)!.x
+  match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(40, 7) })
+  match.command('human', army, { kind: 'attack', target: 8 })
+  for (let i = 0; i < 120; i++) match.step()
+  assert.ok(army.every(id => (match.units.get(id)?.x ?? 0) > start + 45))
+})
+
 test('server resolves damage, projectiles, fatalities and headquarters victory deterministically', () => {
   const run = () => {
     const match = new Match()

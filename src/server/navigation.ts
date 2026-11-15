@@ -14,6 +14,15 @@ export function canStand(map: BattleMap, point: Point, obstacles: readonly Obsta
   return !obstacles.some(obstacle => distance(point, obstacle) < obstacle.radius + radius)
 }
 
+function clearSegment(map: BattleMap, from: Point, to: Point, obstacles: readonly Obstacle[], radius: number) {
+  const steps = Math.max(1, Math.ceil(distance(from, to) / 4))
+  for (let i = 1; i <= steps; i++) {
+    const point = { x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps }
+    if (!canStand(map, point, obstacles, radius)) return false
+  }
+  return true
+}
+
 export function findPath(map: BattleMap, start: Point, target: Point, obstacles: readonly Obstacle[], radius: number): Point[] {
   const cellId = (point: Point) => Math.floor(point.y / TILE) * map.width + Math.floor(point.x / TILE)
   const center = (id: number) => cellCenter(id % map.width, Math.floor(id / map.width))
@@ -28,11 +37,16 @@ export function findPath(map: BattleMap, start: Point, target: Point, obstacles:
     }
   }
   candidates.sort((a, b) => distance(a, target) - distance(b, target) || distance(a, start) - distance(b, start))
-  const exact = canStand(map, target, obstacles, radius)
-  const desired = exact ? target : candidates[0]
-  if (!desired) return []
-  const goal = cellId(desired)
-  if (source === goal) return [desired]
+  if (!candidates.length) return []
+  const approach = canStand(map, target, obstacles, radius)
+    ? candidates.find(point => clearSegment(map, point, target, obstacles, radius))
+    : undefined
+  const waypoint = approach ?? candidates[0]
+  const destination = approach ? target : waypoint
+  const goal = cellId(waypoint)
+  if (source === goal) {
+    return clearSegment(map, start, destination, obstacles, radius) ? [destination] : [waypoint, destination]
+  }
 
   const count = map.width * map.height
   const cost = new Float32Array(count).fill(Infinity)
@@ -45,14 +59,14 @@ export function findPath(map: BattleMap, start: Point, target: Point, obstacles:
     let current = -1
     let best = Infinity
     for (const id of open) {
-      const score = cost[id] + distance(center(id), desired) / TILE
+      const score = cost[id] + distance(center(id), waypoint) / TILE
       if (score < best) {
         best = score
         current = id
       }
     }
     if (current === goal) {
-      const path: Point[] = [desired]
+      const path: Point[] = distance(waypoint, destination) > 0.1 ? [destination] : []
       for (let id = current; id !== source; id = previous[id]) path.unshift(center(id))
       return path
     }
