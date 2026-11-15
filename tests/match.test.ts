@@ -4,6 +4,7 @@ import { TILE, ashford, cellCenter, distance, isWalkable, riverColumn, tileAt } 
 import { decodeFog } from '../src/shared/fog.ts'
 import { Match } from '../src/server/match.ts'
 import { canStand, findPath } from '../src/server/navigation.ts'
+import { unitStats } from '../src/shared/units.ts'
 import { parseMessage } from '../src/server/validate.ts'
 
 test('the map is rotationally symmetric and both armies start on walkable ground', () => {
@@ -45,16 +46,45 @@ test('orders require owned troops, valid destinations and enemy targets', () => 
   assert.equal(match.command('human', [2], { kind: 'attack', target: 8 }), false)
 })
 
-test('group movement crosses the river, separates troops and keeps advancing', () => {
+test('group movement crosses the river and spreads into formation on open ground', () => {
   const ids = [2, 3, 4, 5, 6, 7]
   const match = new Match()
-  assert.ok(match.command('human', ids, { kind: 'move', to: cellCenter(47, 11) }))
+  assert.ok(match.command('human', ids, { kind: 'move', to: cellCenter(49, 9) }))
   for (let i = 0; i < 520; i++) match.step()
   const troops = [...match.units.values()].filter(unit => ids.includes(unit.id))
   assert.equal(troops.length, 6)
-  assert.ok(troops.every(unit => unit.x > ashford.width / 2 * TILE && distance(unit, cellCenter(47, 11)) < 65),
+  assert.ok(troops.every(unit => unit.x > ashford.width / 2 * TILE && distance(unit, cellCenter(49, 9)) < 65),
     JSON.stringify(troops.map(({ id, x, y }) => ({ id, x, y }))))
   assert.ok(troops.every(unit => troops.every(other => unit === other || distance(unit, other) >= 12)))
+})
+
+test('units cross friendly buildings and either side’s units, but go around hostile buildings', () => {
+  const at = cellCenter(13, 13)
+  const start = cellCenter(10, 13)
+  const end = cellCenter(16, 13)
+  for (const faction of ['human', 'orc'] as const) {
+    const enemy = faction === 'human' ? 'orc' : 'human'
+    for (const kind of ['worker', 'barracks', 'wall'] as const) {
+      for (const owner of [faction, enemy]) {
+        const match = new Match()
+        const mover = match.units.get(faction === 'human' ? 15 : 18)!
+        const blocker = match.units.get(mover.id === 15 ? 18 : 15)!
+        for (const id of match.units.keys()) if (![1, 8, mover.id, blocker.id].includes(id)) match.units.delete(id)
+        Object.assign(mover, start)
+        Object.assign(blocker, at, { faction: owner, kind })
+        assert.ok(match.command(faction, [mover.id], { kind: 'move', to: end }))
+        let closest = Infinity
+        for (let tick = 0; tick < 115; tick++) {
+          match.step()
+          closest = Math.min(closest, distance(mover, at))
+        }
+        assert.ok(distance(mover, end) < 2, `${faction} failed to reach destination past ${owner} ${kind}`)
+        if (owner === enemy && kind !== 'worker') {
+          assert.ok(closest >= unitStats[owner][kind].radius + unitStats[faction].worker.radius)
+        } else assert.ok(closest < 3, `${faction} detoured around ${owner} ${kind}`)
+      }
+    }
+  }
 })
 
 test('troops can path to an attack position whose tile center is obstructed', () => {

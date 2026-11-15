@@ -26,6 +26,9 @@ export const buildings: Record<BuildingKind, { cost: Cost, ticks: number }> = {
   smithy: { cost: { wood: 105, stone: 65 }, ticks: 150 }
 }
 
+export const REPAIR = { health: 20, ticks: 10 }
+export const repairCost = (kind: EntityKind): Cost => kind === 'wall' ? { stone: 1 } : { wood: 1, stone: 1 }
+
 export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: number, bonus: number }> = {
   weapons: { name: 'Weapons +2 damage', cost: { gold: 170, wood: 45 }, ticks: 240, bonus: 2 },
   armor: { name: 'Armor +1 defense', cost: { gold: 130, stone: 60 }, ticks: 220, bonus: 1 }

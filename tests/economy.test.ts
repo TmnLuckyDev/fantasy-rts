@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ashford, cellCenter, distance, riverColumn, TILE } from '../src/shared/map.ts'
-import { GATHERING, STARTING_RESOURCES, buildings, training } from '../src/shared/economy.ts'
+import { GATHERING, REPAIR, STARTING_RESOURCES, buildings, training } from '../src/shared/economy.ts'
 import { Match } from '../src/server/match.ts'
 import { canStand, findPath } from '../src/server/navigation.ts'
 import { parseMessage } from '../src/server/validate.ts'
@@ -204,4 +204,81 @@ test('a completed blacksmith researches one upgrade at a time and improves curre
   copy.step()
   copy.step()
   assert.equal(grunt.hp, grunt.maxHp - 15)
+})
+
+
+test('a worker repairs only friendly damaged buildings and charges materials after doing the work', () => {
+  const match = new Match()
+  const hall = match.units.get(1)!
+  const worker = match.units.get(15)!
+  Object.assign(worker, { x: hall.x + 45, y: hall.y })
+  const order = { kind: 'repair', target: hall.id } as const
+  assert.equal(match.command('human', [worker.id], order), false)
+  hall.hp -= 25
+  assert.equal(match.command('orc', [18], order), false)
+  assert.equal(match.command('human', [2], order), false)
+  assert.equal(match.command('human', [worker.id], { kind: 'repair', target: 2 }), false)
+  assert.ok(match.command('human', [worker.id], order))
+  assert.equal(match.command('human', [16], order), false)
+  assert.equal(match.view('human').entities.find(unit => unit.id === hall.id)?.repairing, true)
+  advance(match, REPAIR.ticks - 1)
+  assert.equal(hall.hp, hall.maxHp - 25)
+  assert.deepEqual(match.view('human').resources, STARTING_RESOURCES)
+
+  const restored = Match.restore(structuredClone(match.checkpoint()))
+  advance(restored, REPAIR.ticks + 1)
+  const view = restored.view('human')
+  assert.equal(view.entities.find(unit => unit.id === hall.id)?.hp, hall.maxHp)
+  assert.equal(view.entities.find(unit => unit.id === hall.id)?.repairing, undefined)
+  assert.equal(view.entities.find(unit => unit.id === worker.id)?.idle, true)
+  assert.deepEqual(view.resources, { gold: 300, wood: 178, stone: 118 })
+})
+
+test('wall repairs use only stone and stop when stock runs out', () => {
+  const match = new Match()
+  assert.ok(match.command('human', [15], { kind: 'build', building: 'wall', at: cellCenter(10, 15) }))
+  const wall = [...match.units.values()].find(unit => unit.kind === 'wall')!
+  wall.hp--
+  assert.equal(match.command('human', [16], { kind: 'repair', target: wall.id }), false)
+  assert.equal(match.command('human', [wall.id], { kind: 'demolish' }), false)
+  advance(match, 200)
+  const saved = match.checkpoint()
+  saved.resources.human.wood = 0
+  saved.resources.human.stone = 1
+  wall.hp = wall.maxHp - 35
+  const restored = Match.restore(saved)
+  assert.ok(restored.command('human', [15], { kind: 'repair', target: wall.id }))
+  advance(restored, 100)
+  assert.equal(restored.units.get(wall.id)!.hp, wall.maxHp - 15)
+  assert.equal(restored.view('human').resources.stone, 0)
+  assert.equal(restored.view('human').entities.find(unit => unit.id === 15)?.idle, true)
+  assert.equal(restored.command('human', [15], { kind: 'repair', target: wall.id }), false)
+})
+
+test('demolition validates ownership, releases queued capacity and ends the match for headquarters', () => {
+  const match = new Match()
+  assert.ok(match.command('human', [15], { kind: 'build', building: 'barracks', at: cellCenter(10, 15) }))
+  advance(match, 220)
+  const barracks = [...match.units.values()].find(unit => unit.kind === 'barracks')!
+  const order = { kind: 'demolish' } as const
+  assert.ok(match.command('human', [barracks.id], { kind: 'train', unit: 'blade' }))
+  assert.equal(match.view('human').population.reserved, 1)
+  assert.equal(match.command('orc', [barracks.id], order), false)
+  assert.equal(match.command('human', [15], order), false)
+  const paid = match.view('human').resources
+  assert.ok(match.command('human', [barracks.id], order))
+  assert.equal(match.command('human', [barracks.id], order), false)
+  assert.equal(match.view('human').population.reserved, 0)
+  assert.deepEqual(match.view('human').resources, paid)
+  assert.ok(match.snapshot(true).effects.some(effect => effect.kind === 'fallen' && effect.entityKind === 'barracks'))
+  assert.ok(match.command('human', [1], order))
+  match.step()
+  assert.deepEqual(match.result, { winner: 'orc', reason: 'headquarters' })
+})
+
+test('building repair and demolition parse through the multiplayer protocol', () => {
+  const packet = (order: object) => parseMessage(JSON.stringify({ type: 'command', ids: [15], order }))
+  assert.deepEqual(packet({ kind: 'repair', target: 1 }), { type: 'command', ids: [15], order: { kind: 'repair', target: 1 } })
+  assert.equal(packet({ kind: 'repair', target: -1 }), null)
+  assert.deepEqual(packet({ kind: 'demolish', faction: 'orc' }), { type: 'command', ids: [15], order: { kind: 'demolish' } })
 })

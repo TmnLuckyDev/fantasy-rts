@@ -150,6 +150,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #idle-count { margin-left: 0.15rem; color: var(--gold); font-variant-numeric: tabular-nums; }
 .economy-menu button { display: flex; align-items: center; gap: 0.45rem; text-align: left; padding: 0.26rem 0.55rem; }
 .economy-menu button canvas { flex: 0 0 31px; width: 31px; height: 31px; image-rendering: pixelated; }
+.economy-menu button.demolish-action { color: #ffc6ac; border-color: #a25b48; }
 .economy-menu strong, .economy-menu small { display: block; }
 .economy-menu strong { font-size: 0.77rem; }
 .economy-menu small { font-size: 0.67rem; color: #ddd0ac; margin-top: 0.13rem; }
@@ -198,8 +199,6 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   }
   .orders button { flex-shrink: 0; }
 }
-
-.queue-controls input { width: 5rem; min-height: 44px; padding: 0.4rem; font-size: 16px; }
 
 .solo-difficulty { grid-column: 1 / -1; display: flex; gap: 0.55rem; align-items: center; font-size: 0.8rem; }
 .solo-difficulty select { min-height: 36px; font-size: 16px; }

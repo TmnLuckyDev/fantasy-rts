@@ -283,10 +283,7 @@ export class BattleScene extends Phaser.Scene {
       return
     }
     const picked = this.pick(point, touch)
-    if (touch && picked?.faction === this.faction && picked.construction !== undefined && this.workerIds().length) {
-      this.actions.order(this.workerIds(), { kind: 'resume-build', target: picked.id })
-      return
-    }
+    if (touch && this.workOnBuilding(this.workerIds(), picked)) return
     if (picked?.faction === this.faction) {
       if (!append) this.selected.clear()
       if (append && this.selected.has(picked.id)) this.selected.delete(picked.id)
@@ -368,12 +365,19 @@ export class BattleScene extends Phaser.Scene {
       this.actions.order(workers, { kind: 'gather', at: resource })
       return
     }
-    if (workers.length && picked?.faction === this.faction && picked.construction !== undefined) {
-      this.actions.order(workers, { kind: 'resume-build', target: picked.id })
-      return
-    }
+    if (this.workOnBuilding(workers, picked)) return
     if (picked && picked.faction !== this.faction) this.issue({ kind: 'attack', target: picked.id }, { x: picked.x, y: picked.y })
     else this.issue({ kind: this.advanceMode ? 'advance' : 'move', to: point }, point)
+  }
+
+  private workOnBuilding(workers: number[], target?: Entity) {
+    if (!workers.length || target?.faction !== this.faction || isUnitKind(target.kind)) return false
+    if (target.construction !== undefined) {
+      this.actions.order(workers, { kind: 'resume-build', target: target.id })
+    } else if (target.hp < target.maxHp && !target.repairing) {
+      this.actions.order(workers, { kind: 'repair', target: target.id })
+    } else return false
+    return true
   }
 
   private issue(order: Order, point?: Point) {

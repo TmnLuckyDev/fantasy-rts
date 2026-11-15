@@ -4,7 +4,7 @@ import { MAX_SELECTION, factions, isBuildingKind, isUnitKind, resourceKinds } fr
 import type { Effect, Entity, EntityKind, Faction, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING, STARTING_RESOURCES,
-  buildings as buildingRules, canAfford, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, findPath } from './navigation.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
@@ -18,6 +18,7 @@ const defenseDuration = 4 * TICK_HZ
 const isRanged = (kind: EntityKind) => kind === 'ranged' || kind === 'marksman'
 
 type WorkerJob = { kind: 'gather', at: Point, resource: ResourceKind, workTicks: number } | { kind: 'construct', site: number }
+  | { kind: 'repair', site: number, workTicks: number }
 type Defense = { targetId: number, at: Point, until: number }
 type Obstacle = Point & { radius: number }
 
@@ -152,7 +153,14 @@ export class Match {
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
     if (order.kind === 'cancel-build') return units.length === 1 && this.cancelConstruction(units[0])
-    if (order.kind === 'gather' || order.kind === 'build' || order.kind === 'wall-line' || order.kind === 'resume-build') {
+    if (order.kind === 'demolish') {
+      const [building] = units
+      if (units.length !== 1 || isUnitKind(building.kind) || building.buildDuration) return false
+      this.destroy(building)
+      return true
+    }
+    if (order.kind === 'gather' || order.kind === 'build' || order.kind === 'wall-line' ||
+        order.kind === 'resume-build' || order.kind === 'repair') {
       return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker'), order)
     }
     if (units.some(unit => !isUnitKind(unit.kind))) return false
@@ -203,7 +211,7 @@ export class Match {
     unit.assigned = null
   }
 
-  private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' }>) {
+  private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' | 'repair' }>) {
     if (!workers.length) return false
     if (order.kind === 'gather') {
       const resource = resourceAt(this.map, order.at)
@@ -213,6 +221,19 @@ export class Match {
         this.resetOrders(worker)
         worker.job = { kind: 'gather', at, resource, workTicks: 0 }
       }
+      return true
+    }
+    if (order.kind === 'repair') {
+      const site = this.units.get(order.target)
+      if (!site || site.faction !== faction || isUnitKind(site.kind) || site.buildDuration || site.hp >= site.maxHp ||
+          !canAfford(this.resources[faction], repairCost(site.kind))) return false
+      for (const unit of this.units.values()) {
+        if (unit.job?.kind === 'repair' && unit.job.site === site.id) return false
+      }
+      const worker = workers.reduce((nearest, candidate) =>
+        distance(candidate, site) < distance(nearest, site) ? candidate : nearest)
+      this.resetOrders(worker)
+      worker.job = { kind: 'repair', site: site.id, workTicks: 0 }
       return true
     }
     if (order.kind === 'resume-build') {
@@ -350,30 +371,55 @@ export class Match {
     const bounds = unitStats[building.faction][building.kind].radius + radius + 16
     const slots = [0, 0.65, -0.65, 1.3, -1.3, 2.0, -2.0, Math.PI]
     const direction = building.faction === 'human' ? 1 : -1
-    for (const angle of slots) {
+    let spawnPoint: Point | undefined
+    spawnSlots: for (const angle of slots) {
       const point = { x: building.x + direction * Math.cos(angle) * bounds, y: building.y + Math.sin(angle) * bounds }
       if (!canStand(this.map, point, obstacles, radius)) continue
-      let occupied = false
+      spawnPoint ??= point
       for (const unit of this.nearby.near(point, radius + maxRadius + 4)) {
         if (isUnitKind(unit.kind) && distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4) {
-          occupied = true
-          break
+          continue spawnSlots
         }
       }
-      if (occupied) continue
-      if ((next.count ?? 1) <= 1) building.queue.shift()
-      else {
-        next.count = next.count! - 1
-        next.left = training[next.kind].ticks
-      }
-      this.spawn(building.faction, next.kind, point)
-      return
+      spawnPoint = point
+      break
     }
+    if (!spawnPoint) return
+    if ((next.count ?? 1) <= 1) building.queue.shift()
+    else {
+      next.count = next.count! - 1
+      next.left = training[next.kind].ticks
+    }
+    this.spawn(building.faction, next.kind, spawnPoint)
   }
 
   private work(worker: Unit, obstacles: Obstacle[]) {
     const job = worker.job
     if (!job) return
+    if (job.kind === 'repair') {
+      const site = this.units.get(job.site)
+      if (!site || site.hp === site.maxHp) {
+        this.resetOrders(worker)
+        return
+      }
+      const stock = this.resources[worker.faction]
+      const cost = repairCost(site.kind)
+      if (!canAfford(stock, cost)) {
+        this.resetOrders(worker)
+        return
+      }
+      if (distance(worker, site) > unitStats[site.faction][site.kind].radius + 27) {
+        this.approach(worker, site, obstacles, true)
+        return
+      }
+      if (++job.workTicks >= REPAIR.ticks) {
+        job.workTicks = 0
+        spend(stock, cost)
+        site.hp = Math.min(site.maxHp, site.hp + REPAIR.health)
+        if (site.hp === site.maxHp) this.resetOrders(worker)
+      }
+      return
+    }
     if (job.kind === 'construct') {
       const site = this.units.get(job.site)
       if (!site || !site.buildDuration) {
@@ -419,12 +465,17 @@ export class Match {
       else incoming.push(missile)
     }
     this.missiles = incoming
-    const obstacles = [...this.units.values()].filter(unit => !isUnitKind(unit.kind))
-      .map(unit => ({ x: unit.x, y: unit.y, radius: unitStats[unit.faction][unit.kind].radius }))
+    const hostileBuildings: Record<Faction, Obstacle[]> = { human: [], orc: [] }
+    for (const building of this.units.values()) {
+      if (isUnitKind(building.kind)) continue
+      const opponent = building.faction === 'human' ? 'orc' : 'human'
+      hostileBuildings[opponent].push({ x: building.x, y: building.y, radius: unitStats[building.faction][building.kind].radius })
+    }
     for (const unit of this.units.values()) {
       unit.moving = false
       if (unit.buildDuration) continue
       const stats = unitStats[unit.faction][unit.kind]
+      const obstacles = hostileBuildings[unit.faction]
       if (!isUnitKind(unit.kind)) {
         this.train(unit, obstacles)
         this.research(unit)
@@ -545,11 +596,14 @@ export class Match {
       id: ++this.sequence, kind: 'hit', at, to: { x: attacker.x, y: attacker.y },
       faction: attacker.faction, entityKind: attacker.kind
     })
-    if (!target.hp) {
-      this.units.delete(target.id)
-      this.nearby.remove(target)
-      this.effects.push({ id: ++this.sequence, kind: 'fallen', at, faction: target.faction, entityKind: target.kind })
-    }
+    if (!target.hp) this.destroy(target)
+  }
+
+  private destroy(target: Unit) {
+    this.units.delete(target.id)
+    this.nearby.remove(target)
+    this.effects.push({ id: ++this.sequence, kind: 'fallen', at: { x: target.x, y: target.y },
+      faction: target.faction, entityKind: target.kind })
   }
 
   private walk(unit: Unit, obstacles: Obstacle[], pursuing: boolean) {
@@ -576,17 +630,6 @@ export class Match {
       const y = unit.y + (vx * Math.sin(angle) + vy * Math.cos(angle)) * step
       const test = { x, y }
       if (!canStand(this.map, test, obstacles, stats.radius)) continue
-      let collides = false
-      for (const other of this.nearby.near(test, stats.radius + maxRadius)) {
-        if (other === unit || !isUnitKind(other.kind)) continue
-        const minimum = (stats.radius + unitStats[other.faction][other.kind].radius) * 0.78
-        const gap = distance(test, other)
-        if (gap < minimum && gap <= distance(unit, other)) {
-          collides = true
-          break
-        }
-      }
-      if (collides) continue
       if (Math.abs(x - unit.x) > 0.8) unit.facing = x < unit.x ? -1 : 1
       unit.x = x
       unit.y = y
@@ -606,7 +649,7 @@ export class Match {
       entities: world.entities.flatMap(entity => {
         if (entity.faction === faction) return [entity]
         if (!visible(entity)) return []
-        const { idle: _idle, constructionStatus: _status, research: _research, training: _training, ...seen } = entity
+        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, ...seen } = entity
         return [seen]
       }),
       effects: world.effects.filter(effect => visible(effect.at) && (!effect.to || visible(effect.to)))
@@ -616,8 +659,13 @@ export class Match {
   snapshot(consumeEffects = false): WorldSnapshot {
     const effects = this.effects
     const construction = new Map<number, Entity['constructionStatus']>()
+    const repairs = new Set<number>()
     for (const unit of this.units.values()) {
       if (unit.job?.kind === 'construct') construction.set(unit.job.site, 'building')
+      if (unit.job?.kind === 'repair') {
+        repairs.add(unit.job.site)
+        repairs.add(unit.id)
+      }
       for (const id of unit.buildQueue ?? []) construction.set(id, 'queued')
     }
     if (consumeEffects) this.effects = []
@@ -634,6 +682,7 @@ export class Match {
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,
+          repairing: repairs.has(id) || undefined,
           carrying: cargo ?? undefined,
           idle: kind === 'worker' ? !unit.job && !unit.assigned : undefined,
           training: next ? { kind: next.kind, progress: 1 - next.left / training[next.kind].ticks, remaining: queue.reduce((total, entry) => total + (entry.count ?? 1), 0),

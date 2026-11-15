@@ -13,7 +13,7 @@ During a match:
 
 1. Select a worker or use **Idle worker** to cycle through workers without orders. Use **Mine gold**, **Chop wood** or **Quarry stone** to go to the closest explored source, or target a source directly. Workers carry each load back to their hall and repeat the trip.
 2. Select a worker, select **Build**, choose a building and place it on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
-3. Select a completed production building to see the available units and train them directly. Training costs gold and reserves population. Walls block ground movement. Completed towers fire at nearby enemies.
+3. Select a completed production building to see the available units and train them directly. Training costs gold and reserves population. Enemy walls and other enemy buildings block ground movement. Units can pass through one another and through their own buildings. Completed towers fire at nearby enemies.
 4. Scout across either four-tile-wide bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
 
 | Human structure | Orc structure | Training |
@@ -26,6 +26,8 @@ During a match:
 **Queues** lists construction, training and research progress. Blacksmiths and War Forges can research +2 troop damage and +1 troop armor for their faction.
 
 Nearby troops counterattack when an allied unit or building is hit. They break off if the attacker retreats beyond the defended area. An explicit move or attack order takes priority.
+
+Select a completed building and choose **Repair** to send the closest idle worker. You can also select workers and right-click or tap a damaged friendly building. Each repair step restores up to 20 HP for 1 wood and 1 stone. Walls use 1 stone per step. A worker stops when the building is fully repaired or materials run out. Choose **Demolish** to remove a completed building after confirming. Demolition has no refund. Demolishing your headquarters forfeits the match.
 
 The headquarters supports 10 population. A completed Farm or Boar Farm adds ten. Total population capacity grows with every farm. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
 
@@ -78,7 +80,7 @@ Upgrades and other maps are planned.
 
 ## Batch production and restart recovery
 
-Set a training quantity or use **+5** and **+10**, then choose a unit. The whole order reserves farm capacity and pays up front. **Cancel last** and **Cancel quantity** remove orders from the end and refund all unspawned units removed. If the building is destroyed, its reserved capacity is released and its gold is lost. Select an unfinished foundation to cancel it and recover the unbuilt fraction of its cost.
+Each tap on a unit adds one to its building’s training queue, pays its cost and reserves farm capacity. **Cancel last** removes the last unspawned unit and refunds its cost. If the building is destroyed, its reserved capacity is released and its gold is lost. Select an unfinished foundation to cancel it and recover the unbuilt fraction of its cost.
 
 For multiplayer saves, set `MATCH_SAVE_FILE` to a writable file on durable storage, owned by the game server. Create its parent directory before starting. The server writes a versioned checkpoint every five seconds and flushes on graceful shutdown. An abrupt interruption can roll the game back to the latest checkpoint. Seats reconnect with their original tokens. The default Render deployment does not configure durable storage.
 
