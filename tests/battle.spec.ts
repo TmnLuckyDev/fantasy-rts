@@ -32,6 +32,8 @@ async function panTo(page: Page, point: Point, touch: boolean) {
 }
 
 async function screenPoint(page: Page, point: Point, focused: Point) {
+  await expect.poll(() => page.locator('#battlefield canvas').evaluate((canvas: HTMLCanvasElement) =>
+    canvas.width === canvas.parentElement!.clientWidth && canvas.height === canvas.parentElement!.clientHeight)).toBe(true)
   const bounds = (await page.locator('#battlefield').boundingBox())!
   const zoom = bounds.width < 950 ? 0.88 : 1.06
   const clamp = (target: number, size: number, view: number) =>
@@ -299,8 +301,8 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(page.locator('#selection-name')).toHaveText('Peon')
     await page.getByRole('button', { name: 'Stone Rampart · 28 stone', exact: true }).tap()
     await page.getByRole('button', { name: 'Base', exact: true }).tap()
-    const start = await screenPoint(page, cellCenter(ashford.width - 11, ashford.height - 16), hall)
-    const end = await screenPoint(page, cellCenter(ashford.width - 13, ashford.height - 16), hall)
+    const start = await screenPoint(page, cellCenter(ashford.width - 14, ashford.height - 12), hall)
+    const end = await screenPoint(page, cellCenter(ashford.width - 16, ashford.height - 12), hall)
     if (mobileBrowser === chromium) {
       const session = await context.newCDPSession(page)
       await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] })

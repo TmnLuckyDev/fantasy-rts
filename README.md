@@ -82,4 +82,4 @@ Set a training quantity or use **+5** and **+10**, then choose a unit. The whole
 
 For multiplayer saves, set `MATCH_SAVE_FILE` to a writable file on durable storage, owned by the game server. Create its parent directory before starting. The server writes a versioned checkpoint every five seconds and flushes on graceful shutdown. An abrupt interruption can roll the game back to the latest checkpoint. Seats reconnect with their original tokens. The default Render deployment does not configure durable storage.
 
-Run `node scripts/benchmark.mjs` for the headless simulation load fixture and `node scripts/ai-league.mjs . 100 normal,normal` to compare computer opponents. The second argument accepts a checkout directory, so the same league can run against an earlier revision.
+Run `node scripts/benchmark.mjs` for the headless simulation load fixture and `node scripts/ai-league.mjs . 100 normal,normal` to compare computer opponents. The first positional argument accepts a checkout directory, so the same league can run against an earlier revision.

@@ -188,6 +188,15 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #production-count { color: var(--gold); }
 @media (max-height: 530px) and (orientation: landscape) {
   .production-panel { max-width: 80vw; }
+  .selection { flex: 0 1 10rem; }
+  .orders {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    justify-content: safe end;
+    overflow-x: auto;
+  }
+  .orders button { flex-shrink: 0; }
 }
 
 .queue-controls input { width: 5rem; min-height: 44px; padding: 0.4rem; font-size: 16px; }
