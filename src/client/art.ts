@@ -54,11 +54,13 @@ export function terrainTexture(startX: number, startY: number, width: number, he
             rect(d % 2 ? '#b98953' : '#cb9b64', x, y + d, TILE, 4)
             rect('#e0b481', x, y + d, TILE, 1)
           }
-          const topBank = tileAt(ashford, tx, ty - 1) !== 'bridge'
-          const railY = y + (topBank ? 3 : 28)
-          rect('#674a38', x, railY, TILE, 4)
-          rect('#d9a76d', x, railY, TILE, 1)
-          for (const dx of [3, 23]) block(['#e6af74', '#a37147', '#573e34'], x + dx, railY - 2, 4, 6, 2)
+          for (const [dy, offset] of [[-1, 3], [1, 28]]) {
+            if (tileAt(ashford, tx, ty + dy) === 'bridge') continue
+            const railY = y + offset
+            rect('#674a38', x, railY, TILE, 4)
+            rect('#d9a76d', x, railY, TILE, 1)
+            for (const dx of [3, 23]) block(['#e6af74', '#a37147', '#573e34'], x + dx, railY - 2, 4, 6, 2)
+          }
         }
         continue
       }

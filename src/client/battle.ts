@@ -120,13 +120,11 @@ export class BattleScene extends Phaser.Scene {
         this.scale.setParentSize(width, height)
       }
     })
-    const onResize = (_gameSize: Phaser.Structs.Size, _baseSize: Phaser.Structs.Size,
+    const onResize = (_gameSize: Phaser.Structs.Size, baseSize: Phaser.Structs.Size,
       _displaySize: Phaser.Structs.Size, oldWidth: number, oldHeight: number) => {
-      // Phaser adjusts the camera viewport before emitting RESIZE to the scene.
-      if (oldWidth > 0 && oldHeight > 0) {
-        camera.scrollX += (oldWidth - camera.width) / 2
-        camera.scrollY += (oldHeight - camera.height) / 2
-      }
+      camera.setSize(baseSize.width, baseSize.height)
+      camera.scrollX += (oldWidth - camera.width) / 2
+      camera.scrollY += (oldHeight - camera.height) / 2
       this.clampCamera()
     }
     this.scale.on(Phaser.Scale.Events.RESIZE, onResize)

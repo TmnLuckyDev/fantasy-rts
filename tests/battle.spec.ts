@@ -175,6 +175,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
 
     const barracks = cellCenter(11, 15)
     const barracksSpot = await screenPoint(human, barracks, ashford.bases.human)
+    await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
@@ -193,6 +194,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
 
     await human.getByRole('button', { name: 'Workers', exact: true }).click()
     const farm = await screenPoint(human, cellCenter(14, 15), ashford.bases.human)
+    await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Farm · 70 wood · 20 stone', exact: true }).click()
     await human.mouse.click(farm.x, farm.y)
     await human.getByRole('button', { name: 'Done', exact: true }).click()
@@ -204,6 +206,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
     const tower = cellCenter(ashford.width - 4, ashford.height - 13)
     await panTo(orc, tower, true)
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
+    await orc.getByRole('button', { name: 'Build', exact: true }).tap()
     await orc.getByRole('button', { name: 'Watch Tower · 55 wood · 85 stone', exact: true }).tap()
     const towerSpot = await screenPoint(orc, tower, tower)
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
@@ -275,7 +278,18 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(idle()).toHaveText(/3/)
     await idle().tap()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
-    await expect(page.getByRole('button', { name: 'Boar Farm · 70 wood · 20 stone', exact: true })).toBeVisible()
+    const gather = page.getByRole('group', { name: 'Gather resources' })
+    for (const name of ['Mine gold', 'Chop wood', 'Quarry stone']) {
+      await expect(gather.getByRole('button', { name, exact: true })).toBeVisible()
+    }
+    const build = page.getByRole('button', { name: 'Build', exact: true })
+    const farm = page.getByRole('button', { name: 'Boar Farm · 70 wood · 20 stone', exact: true })
+    await expect(farm).toBeHidden()
+    await build.tap()
+    await expect(farm).toBeVisible()
+    await build.tap()
+    await expect(farm).toBeHidden()
+    await expect(gather).toBeVisible()
     // After loading the game assets the browser can play solo without any connection.
     await context.setOffline(true)
     await page.getByRole('button', { name: 'Mine gold', exact: true }).tap()
@@ -293,6 +307,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(idle()).toHaveText(/2/)
     await idle().tap()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
+    await page.getByRole('button', { name: 'Build', exact: true }).tap()
     await page.getByRole('button', { name: 'Stone Rampart · 28 stone', exact: true }).tap()
     await page.getByRole('button', { name: 'Base', exact: true }).tap()
     const start = await screenPoint(page, cellCenter(ashford.width - 12, ashford.height - 15), hall)

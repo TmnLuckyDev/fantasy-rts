@@ -144,8 +144,8 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .hud { position: relative; }
 .economy-menu, .placement-tip { position: absolute; right: 0.6rem; bottom: calc(100% + 0.35rem); background: #1e2d31; border: 1px solid #aa8451; border-radius: 5px; box-shadow: 0 4px 16px #000a; padding: 0.4rem; max-width: min(90vw, 520px); }
 .economy-menu { display: flex; flex-wrap: wrap; gap: 0.35rem; max-height: min(46dvh, 15rem); overflow: auto; overscroll-behavior: contain; }
-.gather-choices { display: flex; flex: 0 0 100%; gap: 0.35rem; flex-wrap: wrap; }
-.economy-menu button.gather-choice { min-height: 40px; font-size: 0.75rem; }
+.economy-menu.worker-actions { left: 0.6rem; right: auto; max-width: calc(100% - 1.2rem); }
+.worker-actions button.gather-choice { min-height: 44px; font-size: 0.75rem; }
 #idle-count { margin-left: 0.15rem; color: var(--gold); font-variant-numeric: tabular-nums; }
 .economy-menu button { display: flex; align-items: center; gap: 0.45rem; text-align: left; padding: 0.26rem 0.55rem; }
 .economy-menu button canvas { flex: 0 0 31px; width: 31px; height: 31px; image-rendering: pixelated; }
@@ -172,7 +172,6 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 @media (max-height: 530px) and (orientation: landscape) {
   .economy-menu { left: 0.6rem; max-width: none; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
   .economy-menu button { flex: 0 0 auto; }
-  .gather-choices { flex: 0 0 auto; flex-wrap: nowrap; }
   .economy-hint { flex: 0 0 auto; align-self: center; }
 }
 

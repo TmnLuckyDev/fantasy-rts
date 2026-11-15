@@ -24,6 +24,7 @@ const lobbyMessage = element('lobby-message')
 const result = element<HTMLDialogElement>('result')
 const banner = element('banner')
 const menu = element('economy-menu')
+const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
 const productionPanel = element('production-panel')
 const productionToggle = button('production-toggle')
@@ -176,6 +177,7 @@ function showBattle() {
     placement: (kind, blocked, segmentCount) => {
       placing = Boolean(kind)
       placementTip.hidden = !kind
+      syncWorkerActions()
       if (!kind) return
       if (segmentCount !== undefined) {
         const price = buildings.wall.cost.stone!
@@ -250,8 +252,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   economyContext = nextContext
   economyAction.hidden = !nextContext
   economyAction.textContent = workers ? 'Build' : smithy ? 'Upgrade' : foundation ? 'Construction' : 'Train'
-  if (!nextContext) closeEconomyMenu()
-  else if (changed || interactive) openEconomyMenu(changed)
+  if (!nextContext || (workers && (changed || interactive))) closeEconomyMenu()
+  else if (!workers && (changed || interactive)) openEconomyMenu(changed)
   else if (!menu.hidden) updateEconomyOptions()
   const label = element('selection-name')
   const detail = element('selection-detail')
@@ -311,6 +313,11 @@ function gatherHint() {
 function closeEconomyMenu() {
   menu.hidden = true
   economyAction.setAttribute('aria-expanded', 'false')
+  syncWorkerActions()
+}
+
+function syncWorkerActions() {
+  workerActions.hidden = economyContext !== 'build' || placing || !menu.hidden || !productionPanel.hidden
 }
 
 function updateEconomyOptions() {
@@ -366,20 +373,18 @@ function gatherChoice(resource: ResourceKind, label: string) {
   icon.setAttribute('aria-hidden', 'true')
   choice.append(icon, label)
   choice.onclick = () => {
-    if (scene?.gatherNearest(resource)) closeEconomyMenu()
-    else receive({ type: 'error', message: 'Explore a source of ' + resource + ' first.' })
+    if (!scene?.gatherNearest(resource)) receive({ type: 'error', message: 'Explore a source of ' + resource + ' first.' })
   }
   return choice
 }
 
+workerActions.append(gatherChoice('gold', 'Mine gold'), gatherChoice('wood', 'Chop wood'), gatherChoice('stone', 'Quarry stone'))
+
 function buildChoices() {
-  const gathering = document.createElement('div')
-  gathering.className = 'gather-choices'
-  gathering.append(gatherChoice('gold', 'Mine gold'), gatherChoice('wood', 'Chop wood'), gatherChoice('stone', 'Quarry stone'))
-  return [gathering, ...buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
-    closeEconomyMenu()
+  return buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
     scene?.place(kind)
-  }))]
+    closeEconomyMenu()
+  }))
 }
 
 function actionButton(label: string, run: () => void) {
@@ -446,11 +451,12 @@ function openEconomyMenu(rebuild = false) {
   toggleProduction(false)
   menu.hidden = false
   economyAction.setAttribute('aria-expanded', 'true')
+  syncWorkerActions()
 }
 
 economyAction.onclick = () => {
   if (placing) scene?.place(null)
-  if (menu.hidden) openEconomyMenu()
+  if (menu.hidden) openEconomyMenu(economyContext === 'build')
   else closeEconomyMenu()
 }
 
@@ -481,6 +487,7 @@ function trainingSummary(training: NonNullable<Entity['training']>) {
 function toggleProduction(open: boolean) {
   productionPanel.hidden = !open
   productionToggle.setAttribute('aria-expanded', String(open))
+  syncWorkerActions()
   if (open) {
     closeEconomyMenu()
     drawProduction()
