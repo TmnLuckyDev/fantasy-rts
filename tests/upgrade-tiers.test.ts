@@ -18,6 +18,7 @@ test('ships charge both gold and wood, including queued refunds', () => {
   const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
   const port = { ...base, id: ++checkpoint.sequence, kind: 'port' as const, ...cellCenter(10, 15), hp: 750, maxHp: 750 }
   checkpoint.units.push(port)
+  checkpoint.units.push({ ...base, id: ++checkpoint.sequence, kind: 'farm' as const, ...cellCenter(12, 15), hp: 310, maxHp: 310 })
   checkpoint.resources.human = { gold: 500, wood: 400, stone: 500 }
   const game = Match.restore(checkpoint)
   assert.equal(game.command('human', [port.id], { kind: 'train', unit: 'transport' }), true)
@@ -79,6 +80,7 @@ test('hero experience levels up from combat hits without needing a killing blow'
     ...cellCenter(12, 15), hp: 1500, maxHp: 1500 }
   checkpoint.units.push(hero, target)
   const game = Match.restore(checkpoint)
+  advance(game, 1)
   assert.equal(game.command('human', [hero.id], { kind: 'attack', target: target.id }), true)
   advance(game, 100)
   assert.ok((game.units.get(hero.id)?.experience ?? 0) > 0)
