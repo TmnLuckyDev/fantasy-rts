@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { TILE, ashford, cellCenter, distance, isWalkable, riverColumn, tileAt } from '../src/shared/map.ts'
+import { TILE, ashford, ashfordClassic, cellCenter, distance, isWalkable, riverColumn, tileAt } from '../src/shared/map.ts'
 import { decodeFog } from '../src/shared/fog.ts'
 import { Match } from '../src/server/match.ts'
 import { canStand, findPath } from '../src/server/navigation.ts'
@@ -8,6 +8,8 @@ import { unitStats } from '../src/shared/units.ts'
 import { parseMessage } from '../src/server/validate.ts'
 
 test('the map is rotationally symmetric and both armies start on walkable ground', () => {
+  assert.equal(ashford.width, 2 * ashfordClassic.width)
+  assert.equal(ashford.height, 2 * ashfordClassic.height)
   assert.deepEqual([...ashford.tiles].reverse(), ashford.tiles)
   const match = new Match()
   for (const unit of match.snapshot().entities) {
@@ -15,16 +17,27 @@ test('the map is rotationally symmetric and both armies start on walkable ground
   }
 })
 
+test('legacy checkpoints retain their map and explored terrain', () => {
+  const original = new Match(ashfordClassic)
+  const checkpoint = structuredClone(original.checkpoint())
+  delete checkpoint.map
+  const restored = Match.restore(checkpoint)
+  assert.equal(restored.map.width, 88)
+  assert.equal(restored.map.height, 40)
+  assert.deepEqual(restored.view('orc'), original.view('orc'))
+  assert.equal(Match.restore(structuredClone(new Match().checkpoint())).map.width, 176)
+})
+
 test('A* finds a bridge and never steps onto a blocked tile', () => {
-  const path = findPath(ashford, cellCenter(16, 15), cellCenter(46, 15), [], 12)
+  const path = findPath(ashford, cellCenter(16, 15), cellCenter(riverColumn + 3, 15), [], 12)
   assert.ok(path.length > 10)
   assert.ok(path.some(point => tileAt(ashford, Math.floor(point.x / TILE), Math.floor(point.y / TILE)) === 'bridge'))
   assert.ok(path.every(point => isWalkable(tileAt(ashford, Math.floor(point.x / TILE), Math.floor(point.y / TILE)))))
-  assert.deepEqual(path.at(-1), cellCenter(46, 15))
+  assert.deepEqual(path.at(-1), cellCenter(riverColumn + 3, 15))
 })
 
-test('both bridges provide four unobstructed lanes on both banks', () => {
-  for (const startRow of [7, ashford.height - 11]) {
+test('all four bridges provide four unobstructed lanes on both banks', () => {
+  for (const startRow of [7, 27, 49, 69]) {
     for (let y = startRow; y < startRow + 4; y++) {
       for (const x of [riverColumn, riverColumn + 1]) assert.equal(tileAt(ashford, x, y), 'bridge')
       const start = cellCenter(riverColumn - 5, y)
@@ -49,11 +62,11 @@ test('orders require owned troops, valid destinations and enemy targets', () => 
 test('group movement crosses the river and spreads into formation on open ground', () => {
   const ids = [2, 3, 4, 5, 6, 7]
   const match = new Match()
-  assert.ok(match.command('human', ids, { kind: 'move', to: cellCenter(49, 9) }))
-  for (let i = 0; i < 520; i++) match.step()
+  assert.ok(match.command('human', ids, { kind: 'move', to: cellCenter(riverColumn + 6, 9) }))
+  for (let i = 0; i < 1050; i++) match.step()
   const troops = [...match.units.values()].filter(unit => ids.includes(unit.id))
   assert.equal(troops.length, 6)
-  assert.ok(troops.every(unit => unit.x > ashford.width / 2 * TILE && distance(unit, cellCenter(49, 9)) < 65),
+  assert.ok(troops.every(unit => unit.x > ashford.width / 2 * TILE && distance(unit, cellCenter(riverColumn + 6, 9)) < 65),
     JSON.stringify(troops.map(({ id, x, y }) => ({ id, x, y }))))
   assert.ok(troops.every(unit => troops.every(other => unit === other || distance(unit, other) >= 12)))
 })
@@ -90,9 +103,9 @@ test('units cross friendly buildings and either side’s units, but go around ho
 test('troops can path to an attack position whose tile center is obstructed', () => {
   const match = new Match()
   const army = [2, 3, 4, 5, 6, 7]
-  match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, 7) })
-  assert.ok(match.command('human', army, { kind: 'move', to: cellCenter(75, 24) }))
-  for (let i = 0; i < 850; i++) match.step()
+  match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, ashford.height - 32) })
+  assert.ok(match.command('human', army, { kind: 'move', to: cellCenter(ashford.width - 13, ashford.height - 16) }))
+  for (let i = 0; i < 1750; i++) match.step()
   const target = ashford.bases.orc
   const ranges = army.map(id => distance(match.units.get(id)!, target))
   assert.ok(match.command('human', army, { kind: 'attack', target: 8 }))
@@ -105,9 +118,9 @@ test('server resolves damage, projectiles, fatalities and headquarters victory d
   const run = () => {
     const match = new Match()
     const kinds = new Set<string>()
-    match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, 7) })
+    match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, ashford.height - 32) })
     assert.ok(match.command('human', [2, 3, 4, 5, 6, 7], { kind: 'advance', to: ashford.bases.orc }))
-    for (let i = 0; i < 1500 && !match.result; i++) {
+    for (let i = 0; i < 2500 && !match.result; i++) {
       match.step()
       for (const effect of match.snapshot(true).effects) kinds.add(effect.kind)
     }
@@ -163,9 +176,9 @@ test('scouting reveals enemy units and leaving preserves only explored terrain',
   assert.equal(match.command('human', [15], { kind: 'build', building: 'wall', at: cellCenter(81, 21) }), false)
   assert.equal(match.command('human', [15], { kind: 'gather', at: cellCenter(34, 33) }), false)
 
-  match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, 7) })
-  assert.ok(match.command('human', [scout.id], { kind: 'move', to: cellCenter(76, 26) }))
-  for (let i = 0; i < 1000 && !spotted(); i++) match.step()
+  match.command('orc', [9, 10, 11, 12, 13, 14], { kind: 'move', to: cellCenter(ashford.width - 8, ashford.height - 32) })
+  assert.ok(match.command('human', [scout.id], { kind: 'move', to: cellCenter(ashford.width - 12, ashford.height - 14) }))
+  for (let i = 0; i < 1900 && !spotted(); i++) match.step()
   assert.equal(vision(), 2)
   assert.equal(spotted(), true)
   assert.ok(match.command('human', [2], { kind: 'attack', target: opponent.id }))
@@ -249,7 +262,7 @@ test('Orc combat units have no more health or raw damage than equivalent Human u
 
 test('A* consistently finds paths with nearby building obstacles', () => {
   const start = cellCenter(16, 15)
-  const goal = cellCenter(46, 15)
+  const goal = cellCenter(riverColumn + 3, 15)
   const obstacles = [{ ...cellCenter(22, 15), radius: 18 }, { ...cellCenter(23, 16), radius: 18 }]
   const first = findPath(ashford, start, goal, obstacles, 9)
   assert.ok(first.length > 0)

@@ -1,5 +1,5 @@
-import { TILE, ashford, tileAt } from '../shared/map.ts'
-import type { Tile } from '../shared/map.ts'
+import { TILE, tileAt } from '../shared/map.ts'
+import type { BattleMap, Tile } from '../shared/map.ts'
 import { brush, canvas } from './voxel.ts'
 import type { Faces } from './voxel.ts'
 
@@ -28,23 +28,23 @@ export function randomAt(seed: number) {
   }
 }
 
-export function terrainTexture(startX: number, startY: number, width: number, height: number) {
+export function terrainTexture(map: BattleMap, startX: number, startY: number, width: number, height: number) {
   const surface = canvas(width * TILE, height * TILE)
   const { rect, block } = brush(surface)
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       const tx = startX + col
       const ty = startY + row
-      const tile = tileAt(ashford, tx, ty)!
+      const tile = tileAt(map, tx, ty)!
       const x = col * TILE
       const y = row * TILE
-      const rand = randomAt((ty * ashford.width + tx) * 311 + 1049)
+      const rand = randomAt((ty * map.width + tx) * 311 + 1049)
       if (tile === 'water' || tile === 'bridge') {
         rect('#236480', x, y, TILE, TILE)
         for (let j = 0; j < 10; j++) {
           rect(j % 3 ? '#317992' : '#3b8e9c', x + Math.floor(rand() * 26), y + Math.floor(rand() * 30), 3 + j % 4, 2)
         }
-        const bank = tileAt(ashford, tx - 1, ty) === 'water' ? x + TILE - 4 : x
+        const bank = tileAt(map, tx - 1, ty) === 'water' ? x + TILE - 4 : x
         if (tile === 'water') {
           rect('#426e63', bank, y, 4, TILE)
           rect('#6aa393', bank + 1, y, 2, TILE)
@@ -55,7 +55,7 @@ export function terrainTexture(startX: number, startY: number, width: number, he
             rect('#e0b481', x, y + d, TILE, 1)
           }
           for (const [dy, offset] of [[-1, 3], [1, 28]]) {
-            if (tileAt(ashford, tx, ty + dy) === 'bridge') continue
+            if (tileAt(map, tx, ty + dy) === 'bridge') continue
             const railY = y + offset
             rect('#674a38', x, railY, TILE, 4)
             rect('#d9a76d', x, railY, TILE, 1)
@@ -68,8 +68,8 @@ export function terrainTexture(startX: number, startY: number, width: number, he
       const meadow = Math.floor((Math.sin(tx * 0.46 + ty * 0.11) + Math.cos(ty * 0.41) + 2) * 1.18)
       rect(tile === 'grass' ? grass[meadow] : terrainColor[tile], x, y, TILE, TILE)
       if (tile === 'road') {
-        const north = tileAt(ashford, tx, ty - 1) === 'road'
-        const south = tileAt(ashford, tx, ty + 1) === 'road'
+        const north = tileAt(map, tx, ty - 1) === 'road'
+        const south = tileAt(map, tx, ty + 1) === 'road'
         const top = north ? 0 : 3
         const bottom = south ? 0 : 3
         rect(grass[meadow], x, y, TILE, TILE)

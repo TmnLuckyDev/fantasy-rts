@@ -41,7 +41,7 @@ try {
   for (const peer of peers) {
     const ids = peer.latest.entities.filter(unit => unit.faction === peer.faction && unit.kind !== 'headquarters').map(unit => unit.id)
     if (ids.length !== 500 || new Set(ids).size !== 500) throw Error('Invalid initial army')
-    peer.socket.send(JSON.stringify({ type: 'command', ids, order: { kind: 'advance', to: { x: peer.faction === 'human' ? 1810 : 1050, y: 335 } } }))
+    peer.socket.send(JSON.stringify({ type: 'command', ids, order: { kind: 'advance', to: { x: room.worldWidth / 2 + (peer.faction === 'human' ? 402 : -358), y: 335 } } }))
   }
   await until(() => peers.every(peer => peer.frames >= target), 'battle snapshots')
   console.log(JSON.stringify(peers.map(({ faction, bytes, frames, latest, gaps, start, last, shots }) => {

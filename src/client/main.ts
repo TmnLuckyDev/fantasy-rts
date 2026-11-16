@@ -3,7 +3,7 @@ import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnit
 import type { Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
-import { distance } from '../shared/map.ts'
+import { ashfordMap, distance } from '../shared/map.ts'
 import { hasHero, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
@@ -172,7 +172,7 @@ function showBattle() {
   match.hidden = false
   match.dataset.faction = faction
   button('advance').setAttribute('aria-pressed', 'false')
-  scene = new BattleScene(faction, battlefield, minimap, {
+  scene = new BattleScene(faction, ashfordMap(room?.map), battlefield, minimap, {
     order: issueOrder,
     selection: drawSelection,
     placement: (kind, blocked, segmentCount) => {
@@ -446,10 +446,10 @@ function buildingActions(site: Entity) {
   repair.dataset.repair = ''
   const materials = site.kind === 'wall' ? '1 stone' : '1 wood + 1 stone'
   repair.setAttribute('aria-label', `Repair · ${materials} per ${REPAIR.health} HP`)
+  if (site.kind === 'headquarters') return [repair]
   const demolish = actionButton('Demolish', () => {
     const name = entityNames[site.faction][site.kind]
-    const warning = site.kind === 'headquarters' ? ' This ends the match.' : ' No resources are refunded.'
-    if (window.confirm('Demolish ' + name + '?' + warning)) issueOrder([site.id], { kind: 'demolish' })
+    if (window.confirm('Demolish ' + name + '? No resources are refunded.')) issueOrder([site.id], { kind: 'demolish' })
   })
   demolish.classList.add('demolish-action')
   return [repair, demolish]

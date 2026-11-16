@@ -1,6 +1,6 @@
 # Ash & Iron
 
-A browser RTS for solo skirmishes or 1v1 multiplayer with the blue Human Kingdoms and the red Orcish Horde. Both players start with six combat units, three workers, 300 gold, 180 wood, 120 stone and a headquarters on Ashford Crossing, an 88 × 40 map mirrored by rotation. Destroy the opposing headquarters to win.
+A browser RTS for solo skirmishes or 1v1 multiplayer with the blue Human Kingdoms and the red Orcish Horde. Both players start with six combat units, three workers, 300 gold, 180 wood, 120 stone and a headquarters on Ashford Crossing, a 176 × 80 map mirrored by rotation. Destroy the opposing headquarters to win. New matches use the expanded map. Saved matches on the original 88 × 40 map continue there.
 
 ## Play
 
@@ -14,7 +14,7 @@ During a match:
 1. Select a worker or use **Idle worker** to cycle through workers without orders. Use **Mine gold**, **Chop wood** or **Quarry stone** to go to the closest explored source, or target a source directly. Workers carry each load back to their hall and repeat the trip.
 2. Select a worker, select **Build**, choose a building and place it on visible, open ground. Buildings use wood and stone, and walls use stone. The worker walks to the site and constructs it. If the builder leaves, assign a worker to the unfinished site to resume.
 3. Select a completed production building to see the available units and train them directly. Training costs gold and reserves population. Enemy walls and other enemy buildings block ground movement. Units can pass through one another and through their own buildings. Completed towers fire at nearby enemies.
-4. Scout across either four-tile-wide bridge to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
+4. Scout across one of four bridges to find the enemy headquarters and destroy it. Terrain stays on the map after exploration. Enemy troops and buildings disappear when they leave your sight.
 
 | Human structure | Orc structure | Training |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ During a match:
 
 Nearby troops counterattack when an allied unit or building is hit. They break off if the attacker retreats beyond the defended area. An explicit move or attack order takes priority.
 
-Select a completed building and choose **Repair** to send the closest idle worker. You can also select workers and right-click or tap a damaged friendly building. Each repair step restores up to 20 HP for 1 wood and 1 stone. Walls use 1 stone per step. A worker stops when the building is fully repaired or materials run out. Choose **Demolish** to remove a completed building after confirming. Demolition has no refund. Demolishing your headquarters forfeits the match.
+Select a completed building and choose **Repair** to send the closest idle worker. You can also select workers and right-click or tap a damaged friendly building. Each repair step restores up to 20 HP for 1 wood and 1 stone. Walls use 1 stone per step. A worker stops when the building is fully repaired or materials run out. Choose **Demolish** to remove another completed building after confirming. Demolition has no refund. Your headquarters is protected from demolition.
 
 ## Heroes
 
