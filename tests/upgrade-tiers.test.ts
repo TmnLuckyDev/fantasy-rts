@@ -76,13 +76,13 @@ test('hero experience levels up from combat hits without needing a killing blow'
   const checkpoint = match.checkpoint()
   const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
   const hero = { ...base, id: ++checkpoint.sequence, kind: 'vanguard' as const, ...cellCenter(11, 15), hp: 360, maxHp: 360, experience: 0 }
-  const target = { ...base, id: ++checkpoint.sequence, faction: 'orc' as const, kind: 'headquarters' as const,
-    ...cellCenter(12, 15), hp: 1500, maxHp: 1500 }
+  const target = { ...base, id: ++checkpoint.sequence, faction: 'orc' as const, kind: 'heavy' as const,
+    ...cellCenter(12, 15), hp: 240, maxHp: 240 }
   checkpoint.units.push(hero, target)
   const game = Match.restore(checkpoint)
   advance(game, 1)
   assert.equal(game.command('human', [hero.id], { kind: 'attack', target: target.id }), true)
-  advance(game, 100)
+  advance(game, 45)
   assert.ok((game.units.get(hero.id)?.experience ?? 0) > 0)
   assert.ok(heroLevel(game.units.get(hero.id)?.experience ?? 0) >= 1)
 })
