@@ -16,6 +16,7 @@ export const entityKinds = [...unitKinds, 'headquarters', ...buildingKinds] as c
 export type UnitKind = typeof unitKinds[number]
 export type BuildingKind = typeof buildingKinds[number]
 export type EntityKind = typeof entityKinds[number]
+export const isShipKind = (kind: unknown): kind is 'transport' | 'warship' => kind === 'transport' || kind === 'warship'
 export const isUnitKind = (kind: unknown): kind is UnitKind => unitKinds.some(value => value === kind)
 export const isBuildingKind = (kind: unknown): kind is BuildingKind => buildingKinds.some(value => value === kind)
 export const troopGroups = ['all', ...combatKinds, 'scout', 'transport', 'warship', 'heroes'] as const
