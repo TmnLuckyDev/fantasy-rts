@@ -103,7 +103,7 @@ test('five ranged reach levels extend tower, warship and archer attacks, but not
   checkpoint.units.push(smith, tower, warship, archer, blade)
   checkpoint.resources.human = { gold: 10000, wood: 10000, stone: 10000 }
   const game = Match.restore(checkpoint)
-  const rangeOf = (unit: typeof tower) => (game as unknown as { attackRange(unit: typeof tower): number }).attackRange(unit)
+  const rangeOf = (unit: { id: number }) => (game as unknown as { attackRange(unit: unknown): number }).attackRange(unit)
   const before = [tower, warship, archer, blade].map(rangeOf)
   for (let i = 0; i < 5; i++) {
     assert.equal(game.command('human', [smith.id], { kind: 'upgrade', upgrade: 'range' }), true)
