@@ -682,7 +682,7 @@ export class Match {
       const stats = unitStats[unit.faction][unit.kind]
       const obstacles = hostileBuildings[unit.faction]
       if (unit.kind === 'scout' && unit.order?.kind === 'explore' &&
-          (!unit.assigned || squaredDistance(unit, unit.assigned) < (TILE * 1.5) ** 2 || this.tick % 80 === 0)) {
+          (!unit.assigned || squaredDistance(unit, unit.assigned) < (TILE * 1.5) ** 2 || this.tick % 80 === unit.id % 80)) {
         const destination = this.scoutDestination(unit)
         if (destination) unit.assigned = destination
         else { this.resetOrders(unit) }
