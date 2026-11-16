@@ -1,9 +1,10 @@
 import Phaser from 'phaser'
-import { TILE, ashford, cellCenter, distance, resourceAt, riverColumn, snapToCell, wallLine } from '../shared/map.ts'
-import { MAX_SELECTION, entityKinds, isUnitKind } from '../shared/protocol.ts'
+import { TILE, ashford, cellCenter, distance, isWalkable, resourceAt, riverColumn, snapToCell, tileAt, wallLine } from '../shared/map.ts'
+import { MAX_SELECTION, entityKinds, isHeroKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement } from '../shared/economy.ts'
 import type { BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
+import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
 import { entityTexture } from './sprites.ts'
@@ -13,7 +14,7 @@ import type { SelectionRect } from './input.ts'
 
 const mapWidth = ashford.width * TILE
 const mapHeight = ashford.height * TILE
-type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number, ring?: Phaser.GameObjects.Image }
+type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number, offsetX: number, offsetY: number, ring?: Phaser.GameObjects.Image }
 type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObjects.Image }
 type BattleActions = {
   order: (ids: number[], order: Order) => void
@@ -172,10 +173,11 @@ export class BattleScene extends Phaser.Scene {
       } else {
         const sprite = this.add.image(entity.x, entity.y, entity.faction + entity.kind + '0')
           .setOrigin(0.5, 0.83)
-          .setScale(isUnitKind(entity.kind) ? 1.21 : entity.kind === 'headquarters' ? 1.55 : 1.4)
-        this.visuals.set(entity.id, { entity, sprite, lastHp: entity.hp })
+          .setScale(isHeroKind(entity.kind) ? 1.52 : isUnitKind(entity.kind) ? 1.21 : entity.kind === 'headquarters' ? 1.55 : 1.4)
+        this.visuals.set(entity.id, { entity, sprite, lastHp: entity.hp, offsetX: 0, offsetY: 0 })
       }
     }
+    this.spreadCrowds()
     for (const effect of snapshot.effects) {
       let sprite: Phaser.GameObjects.Image | undefined
       if (effect.kind === 'fallen' && isUnitKind(effect.entityKind)) {
@@ -189,6 +191,46 @@ export class BattleScene extends Phaser.Scene {
     this.hasSnapshot = true
     this.minimapDirty = true
     this.selectionChanged()
+  }
+
+  private spreadCrowds() {
+    const groups = new Map<number, Visual[]>()
+    for (const visual of this.visuals.values()) {
+      const { entity } = visual
+      if (!isUnitKind(entity.kind)) continue
+      visual.offsetX = visual.offsetY = 0
+      const key = Math.floor(entity.x / 14) + Math.floor(entity.y / 14) * 65536
+      const group = groups.get(key)
+      if (group) group.push(visual)
+      else groups.set(key, [visual])
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      // Move only the rendered sprites. Spacing remains small and stable within a crowd.
+      for (let i = 0; i < group.length; i++) {
+        const visual = group[i]
+        const angle = i * 2.399963
+        const radius = Math.min(15, 5 * Math.sqrt(i + 1))
+        const dx = radius * Math.cos(angle)
+        const dy = radius * Math.sin(angle) * 0.68
+        const tx = Math.floor((visual.entity.x + dx) / TILE)
+        const ty = Math.floor((visual.entity.y + dy) / TILE)
+        if (!isWalkable(tileAt(ashford, tx, ty))) continue
+        visual.offsetX = dx
+        visual.offsetY = dy
+      }
+    }
+  }
+
+  selectHero() {
+    for (const { entity } of this.visuals.values()) {
+      if (entity.faction !== this.faction || !isHeroKind(entity.kind)) continue
+      this.selected = new Set([entity.id])
+      this.place(null)
+      this.focus(entity)
+      this.selectionChanged(true)
+      return
+    }
   }
 
   private ringTexture(width: number, height: number) {
@@ -493,8 +535,8 @@ export class BattleScene extends Phaser.Scene {
         continue
       }
       const building = !isUnitKind(entity.kind)
-      sprite.x += (entity.x - sprite.x) * blend
-      sprite.y += (entity.y - sprite.y) * blend
+      sprite.x += (entity.x + visual.offsetX - sprite.x) * blend
+      sprite.y += (entity.y + visual.offsetY - sprite.y) * blend
       const depth = Math.round(sprite.y)
       if (sprite.depth !== depth) sprite.setDepth(depth)
       if (!building) {
@@ -538,6 +580,12 @@ export class BattleScene extends Phaser.Scene {
         this.graphics.fillStyle(color, 1).fillRect(x, y, hp, 3)
         this.graphics.fillStyle(0xfff5df, 0.38).fillRect(x, y, hp, 1)
         if (entity.construction !== undefined) this.graphics.fillStyle(0xf8c972, 1).fillRect(x, y + 6, w * entity.construction, 2)
+      }
+      if (entity.experience !== undefined) {
+        const level = heroLevel(entity.experience)
+        const y = sprite.y - 54
+        this.graphics.fillStyle(0x382611, 1).fillRect(sprite.x - 8, y, 16, 5)
+        this.graphics.fillStyle(0xffd575, 1).fillRect(sprite.x - 7, y + 1, level * 2.8, 3)
       }
       if (building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
       if (entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)

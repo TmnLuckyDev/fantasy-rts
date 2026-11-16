@@ -29,6 +29,12 @@ Nearby troops counterattack when an allied unit or building is hit. They break o
 
 Select a completed building and choose **Repair** to send the closest idle worker. You can also select workers and right-click or tap a damaged friendly building. Each repair step restores up to 20 HP for 1 wood and 1 stone. Walls use 1 stone per step. A worker stops when the building is fully repaired or materials run out. Choose **Demolish** to remove a completed building after confirming. Demolition has no refund. Demolishing your headquarters forfeits the match.
 
+## Heroes
+
+The Town Hall recruits Aldren the Warden or Nera the Pathfinder. The Great Hall recruits Gorak Ironhand or Vesha Emberbow. Each side can field or train one hero at a time. The vanguard defends at melee range, while the pathfinder scouts and attacks at range. Either costs 225 gold and one population slot.
+
+Your hero gains XP from nearby enemy defeats, including allied kills. Select your hero to see XP and combat stats. **Find hero** in the headquarters menu centers the camera on your hero. Heroes can reach level 5, with 14 more max HP and 2 more damage per level. Recruiting the same hero again retains its match XP. Solo checkpoints and multiplayer reconnect preserve XP within the match.
+
 The headquarters supports 10 population. A completed Farm or Boar Farm adds ten. Total population capacity grows with every farm. Workers and most troops use one slot. Knights and Ogres use two. If a farm is destroyed, fielded units stay in play and production waits for enough capacity.
 
 | Action | Desktop | Touch |

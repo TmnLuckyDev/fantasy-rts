@@ -1,9 +1,10 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, isFaction, isUnitKind, opposite, resourceKinds, upgradeKinds } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, upgradeKinds } from '../shared/protocol.ts'
 import type { Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { distance } from '../shared/map.ts'
+import { hasHero, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
 import { BattleScene } from './battle.ts'
@@ -43,7 +44,7 @@ let resources: Resources = { gold: 0, wood: 0, stone: 0 }
 let ownEntities: Entity[] = []
 let researched: UpgradeKind[] = []
 let population: Population = { used: 0, reserved: 0, limit: 0 }
-const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind }>()
+const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind, hero?: boolean }>()
 let selection: Entity[] = []
 let placing = false
 let economyContext = ''
@@ -328,6 +329,7 @@ function syncWorkerActions() {
 function updateEconomyOptions() {
   const available = population.limit - population.used - population.reserved
   let needsFarm = false
+  let heroTaken: boolean | undefined
   for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
     const rule = choiceRules.get(choice)
     if (!rule) continue
@@ -335,7 +337,10 @@ function updateEconomyOptions() {
     needsFarm ||= needsSpace
     const unavailable = rule.upgrade && (researched.includes(rule.upgrade) ||
       Boolean(selection[0]?.research) || ownEntities.some(entity => entity.research?.kind === rule.upgrade))
-    choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, rule.cost)
+    if (rule.hero) heroTaken ??= hasHero(ownEntities)
+    choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, rule.cost) ||
+      Boolean(rule.hero && heroTaken)
+    if (rule.hero) choice.title = heroTaken ? 'You already have a hero or one is in training.' : 'One hero per faction.'
     if (rule.upgrade) choice.title = researched.includes(rule.upgrade) ? 'Researched' : ''
   }
   const repair = menu.querySelector<HTMLButtonElement>('[data-repair]')
@@ -348,6 +353,8 @@ function updateEconomyOptions() {
     repair.title = reason
     repair.textContent = site.repairing ? 'Repairing…' : repair.getAttribute('aria-label')
   }
+  const findHero = menu.querySelector<HTMLButtonElement>('[data-find-hero]')
+  if (findHero) findHero.hidden = !ownEntities.some(unit => isHeroKind(unit.kind))
   const hint = menu.querySelector<HTMLElement>('.economy-hint')
   if (hint) hint.hidden = !needsFarm
 }
@@ -406,9 +413,21 @@ function actionButton(label: string, run: () => void) {
 }
 
 function productionChoices(building: Entity) {
-  const choices = trainedAt(building.kind).map(kind =>
-    economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
-      issueOrder([building.id], { kind: 'train', unit: kind })))
+  const choices = trainedAt(building.kind).map(kind => {
+    const choice = economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
+      issueOrder([building.id], { kind: 'train', unit: kind }))
+    if (isHeroKind(kind)) {
+      choiceRules.get(choice)!.hero = true
+      const price = choice.querySelector('small')!
+      price.textContent += ' · ' + heroRoles[kind]
+    }
+    return choice
+  })
+  if (building.kind === 'headquarters') {
+    const findHero = actionButton('Find hero', () => scene?.selectHero())
+    findHero.dataset.findHero = ''
+    choices.push(findHero)
+  }
   const cancelLast = actionButton('Cancel last', () =>
     issueOrder([building.id], { kind: 'cancel-train', count: 1 }))
   const hint = document.createElement('small')

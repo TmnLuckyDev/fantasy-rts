@@ -1,7 +1,8 @@
 import { TILE, ashford, distance, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { MAX_SELECTION, factions, isBuildingKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
-import type { Effect, Entity, EntityKind, Faction, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
+import { MAX_SELECTION, factions, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
+import type { Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
+import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING, STARTING_RESOURCES,
   buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
@@ -20,7 +21,7 @@ const routesPerTick = 48
 const squaredDistance = (a: Point, b: Point) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
 const steering = [0, 0.54, -0.54, 1.05, -1.05, 1.4, -1.4]
   .map(angle => ({ sin: Math.sin(angle), cos: Math.cos(angle), direct: angle === 0 }))
-const isRanged = (kind: EntityKind) => kind === 'ranged' || kind === 'marksman'
+const isRanged = (kind: EntityKind) => kind === 'ranged' || kind === 'marksman' || kind === 'pathfinder'
 
 type WorkerJob = { kind: 'gather', at: Point, resource: ResourceKind, workTicks: number } | { kind: 'construct', site: number }
   | { kind: 'repair', site: number, workTicks: number }
@@ -60,12 +61,15 @@ export type MatchCheckpoint = {
   missiles: Missile[]
   fog: Record<Faction, string>
   upgrades?: Record<Faction, UpgradeKind[]>
+  heroExperience?: Record<Faction, Partial<Record<HeroKind, number>>>
 }
 
 export class Match {
   readonly units = new Map<number, Unit>()
   readonly map: BattleMap
   private readonly nearby = { human: new SpatialIndex<Unit>(), orc: new SpatialIndex<Unit>() }
+  private readonly activeHeroes: Partial<Record<Faction, Unit>> = {}
+  private readonly heroExperience: Record<Faction, Partial<Record<HeroKind, number>>> = { human: {}, orc: {} }
   private readonly routes = new Map<Unit, Point>()
   private readonly navigation: Partial<Record<Faction, { key: string, grid: NavigationGrid }>> = {}
   tick = 0
@@ -111,9 +115,16 @@ export class Match {
     match.sequence = checkpoint.sequence
     Object.assign(match.resources, checkpoint.resources)
     Object.assign(match.upgrades, checkpoint.upgrades)
+    Object.assign(match.heroExperience, checkpoint.heroExperience)
     // Normalize max health when resuming a save made before a balance update.
     for (const unit of checkpoint.units) {
-      const maxHp = unitStats[unit.faction][unit.kind].health
+      let maxHp = unitStats[unit.faction][unit.kind].health
+      if (isHeroKind(unit.kind)) {
+        unit.experience = match.heroExperience[unit.faction][unit.kind] ?? unit.experience ?? 0
+        match.heroExperience[unit.faction][unit.kind] = unit.experience
+        maxHp += (heroLevel(unit.experience) - 1) * heroHealthPerLevel
+        match.activeHeroes[unit.faction] = unit
+      }
       unit.hp = Math.min(maxHp, Math.max(1, Math.ceil(unit.hp * maxHp / unit.maxHp)))
       unit.maxHp = maxHp
     }
@@ -129,20 +140,23 @@ export class Match {
     return {
       tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
       units: [...this.units.values()], missiles: this.missiles, upgrades: this.upgrades,
+      heroExperience: this.heroExperience,
       fog: { human: this.visibility.mask('human'), orc: this.visibility.mask('orc') }
     }
   }
 
   private spawn(faction: Faction, kind: EntityKind, position: Point, buildDuration = 0) {
-    const health = unitStats[faction][kind].health
+    const experience = isHeroKind(kind) ? this.heroExperience[faction][kind] ?? 0 : undefined
+    const health = unitStats[faction][kind].health + (experience ? (heroLevel(experience) - 1) * heroHealthPerLevel : 0)
     const id = ++this.sequence
     const unit: Unit = {
-      ...position, faction, kind, id, hp: buildDuration ? Math.ceil(health * 0.2) : health,
+      ...position, faction, kind, id, experience, hp: buildDuration ? Math.ceil(health * 0.2) : health,
       maxHp: health, moving: false, facing: faction === 'human' ? 1 : -1, order: null, assigned: null,
       path: [], nextPath: 0, nextStrike: 0, pursued: null, lastTarget: null, defense: null, blockedTicks: 0,
       job: null, cargo: null, queue: [], buildTicks: 0, buildDuration
     }
     this.units.set(id, unit)
+    if (isHeroKind(kind)) this.activeHeroes[faction] = unit
     this.nearby[unit.faction].update(unit)
     return unit
   }
@@ -331,6 +345,8 @@ export class Match {
 
   private enqueue(building: Unit, kind: UnitKind, count: number) {
     if (building.buildDuration || !trainedAt(building.kind).includes(kind) || !Number.isSafeInteger(count) || count < 1) return false
+    if (isHeroKind(kind) && (count !== 1 || this.activeHeroes[building.faction] ||
+        building.queue.some(entry => isHeroKind(entry.kind)))) return false
     const rule = training[kind]
     const stock = this.resources[building.faction]
     const { used, reserved, limit } = this.population(building.faction)
@@ -636,7 +652,9 @@ export class Match {
     if (!target) return
     const attackBonus = isUnitKind(attacker.kind) && this.upgrades[attacker.faction].includes('weapons') ? upgrades.weapons.bonus : 0
     const armorBonus = isUnitKind(target.kind) && target.kind !== 'worker' && this.upgrades[target.faction].includes('armor') ? upgrades.armor.bonus : 0
-    const damage = Math.max(1, unitStats[attacker.faction][attacker.kind].damage + attackBonus -
+    const heroBonus = attacker.experience === undefined ? 0 :
+      (heroLevel(attacker.experience) - 1) * heroDamagePerLevel
+    const damage = Math.max(1, unitStats[attacker.faction][attacker.kind].damage + attackBonus + heroBonus -
       unitStats[target.faction][target.kind].armor - armorBonus)
     target.hp = Math.max(0, target.hp - damage)
     this.callDefenders(target, attacker)
@@ -645,11 +663,29 @@ export class Match {
       id: ++this.sequence, kind: 'hit', at, to: { x: attacker.x, y: attacker.y },
       faction: attacker.faction, entityKind: attacker.kind
     })
-    if (!target.hp) this.destroy(target)
+    if (!target.hp) {
+      this.awardHeroExperience(attacker.faction, target)
+      this.destroy(target)
+    }
+  }
+
+  private awardHeroExperience(faction: Faction, defeated: Unit) {
+    const hero = this.activeHeroes[faction]
+    if (!hero || !isHeroKind(hero.kind) || squaredDistance(hero, defeated) > 224 ** 2) return
+    const previous = hero.experience ?? 0
+    const reward = defeated.kind === 'worker' ? 10 : isUnitKind(defeated.kind) ? 24 : 36
+    const gained = Math.min(heroMaxExperience, previous + reward)
+    if (gained === previous) return
+    hero.experience = gained
+    this.heroExperience[faction][hero.kind] = gained
+    const health = (heroLevel(gained) - heroLevel(previous)) * heroHealthPerLevel
+    hero.maxHp += health
+    hero.hp += health
   }
 
   private destroy(target: Unit) {
     this.units.delete(target.id)
+    if (this.activeHeroes[target.faction] === target) delete this.activeHeroes[target.faction]
     this.nearby[target.faction].remove(target)
     this.routes.delete(target)
     this.effects.push({ id: ++this.sequence, kind: 'fallen', at: { x: target.x, y: target.y },
@@ -727,7 +763,7 @@ export class Match {
         const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
         const next = queue[0]
         return {
-          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving,
+          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, experience: unit.experience,
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,

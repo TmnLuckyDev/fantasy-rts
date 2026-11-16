@@ -1,6 +1,6 @@
 import { TILE, distance, snapToCell, tileAt } from './map.ts'
 import type { BattleMap } from './map.ts'
-import { isUnitKind, resourceKinds } from './protocol.ts'
+import { heroKinds, isUnitKind, resourceKinds } from './protocol.ts'
 import type { BuildingKind, Entity, EntityKind, Point, ResourceKind, Resources, UnitKind, UpgradeKind } from './protocol.ts'
 import { unitStats } from './units.ts'
 
@@ -40,11 +40,13 @@ export const training: Record<UnitKind, { gold: number, ticks: number, populatio
   polearm: { gold: 105, ticks: 120, population: 1 },
   ranged: { gold: 90, ticks: 120, population: 1 },
   marksman: { gold: 135, ticks: 145, population: 1 },
-  heavy: { gold: 220, ticks: 180, population: 2 }
+  heavy: { gold: 220, ticks: 180, population: 2 },
+  vanguard: { gold: 225, ticks: 190, population: 1 },
+  pathfinder: { gold: 225, ticks: 190, population: 1 }
 }
 
 const production: Partial<Record<EntityKind, readonly UnitKind[]>> = {
-  headquarters: ['worker'],
+  headquarters: ['worker', ...heroKinds],
   barracks: ['blade', 'polearm'],
   range: ['ranged', 'marksman'],
   elite: ['heavy']

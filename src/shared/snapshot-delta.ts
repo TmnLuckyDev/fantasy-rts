@@ -21,7 +21,7 @@ function sameTraining(a: Entity['training'], b: Entity['training']) {
 function sameDetails(a: Entity, b: Entity) {
   return a.kind === b.kind && a.faction === b.faction && a.maxHp === b.maxHp &&
     a.construction === b.construction && a.constructionStatus === b.constructionStatus &&
-    a.repairing === b.repairing && a.carrying === b.carrying && a.idle === b.idle &&
+    a.experience === b.experience && a.repairing === b.repairing && a.carrying === b.carrying && a.idle === b.idle &&
     a.research?.kind === b.research?.kind && a.research?.progress === b.research?.progress &&
     sameTraining(a.training, b.training)
 }
