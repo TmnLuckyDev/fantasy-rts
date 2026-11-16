@@ -5,7 +5,7 @@ import { parseMessage } from '../src/server/validate.ts'
 import { defaultMatchSettings, parseMatchSettings } from '../src/shared/match-settings.ts'
 import { cellCenter } from '../src/shared/map.ts'
 import { applyDelta, makeDelta } from '../src/shared/snapshot-delta.ts'
-import { GATHERING } from '../src/shared/economy.ts'
+import { GATHERING, training } from '../src/shared/economy.ts'
 
 test('match settings validate per-player population cap and support older saved settings', () => {
   const settings = defaultMatchSettings()
@@ -73,4 +73,23 @@ test('resource inspection reveals only currently visible deposits, tracks deplet
   assert.equal(after.deposits?.find(deposit => deposit.index === index)?.remaining, 0)
   const delta = makeDelta(before, after)
   assert.equal(applyDelta(before, delta)?.deposits?.find(deposit => deposit.index === index)?.remaining, 0)
+})
+
+test('transport consumes one population and warship two', () => {
+  assert.equal(training.transport.population, 1)
+  assert.equal(training.warship.population, 2)
+})
+
+test('woodcutters automatically move to another tree when the current one is exhausted', () => {
+  const settings = defaultMatchSettings()
+  settings.sources.wood.stock = GATHERING.wood.amount
+  const game = Match.configured(settings)
+  const first = cellCenter(6, 7)
+  const worker = game.units.get(15)!
+  assert.ok(game.command('human', [worker.id], { kind: 'gather', at: first }))
+  for (let i = 0; i < 1200 && game.view('human').depleted?.length !== 1; i++) game.step()
+  assert.equal(game.view('human').depleted?.length, 1)
+  for (let i = 0; i < 250 && worker.job?.kind === 'gather' && worker.job.at.x === first.x && worker.job.at.y === first.y; i++) game.step()
+  assert.equal(worker.job?.kind, 'gather')
+  if (worker.job?.kind === 'gather') assert.notDeepEqual(worker.job.at, first)
 })
