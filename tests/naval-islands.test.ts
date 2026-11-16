@@ -39,7 +39,7 @@ test('transport capacity is exactly 30 population and unloading restores passeng
   const match = new Match(map, defaultMatchSettings('shattered-isles'))
   const checkpoint = match.checkpoint()
   const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
-  const shipX = 56, shipY = 56
+  const shipX = 54, shipY = 56
   assert.ok(isWater(tileAt(map, shipX, shipY)))
   const ship = { ...base, id: ++checkpoint.sequence, kind: 'transport' as const,
     ...cellCenter(shipX, shipY), hp: 550, maxHp: 550, passengers: [] as number[] }
