@@ -28,6 +28,11 @@ export const buildings: Record<BuildingKind, { cost: Cost, ticks: number }> = {
   port: { cost: { wood: 145, stone: 80 }, ticks: 170 }
 }
 
+// A 20% convenience surcharge for upgrading every eligible fortification at once.
+export const bulkStructureCost = (kind: 'wall' | 'tower', level: number): Cost =>
+  Object.fromEntries(Object.entries(structureUpgrade(kind, level).cost).map(([resource, amount]) =>
+    [resource, Math.ceil(amount * 1.2)])) as Cost
+
 export const REPAIR = { health: 20, ticks: 10 }
 export const repairCost = (kind: EntityKind): Cost => kind === 'wall' ? { stone: 1 } : { wood: 1, stone: 1 }
 
