@@ -864,6 +864,7 @@ export class Match {
       if (!candidates.length) return
       destination = candidates[0]
     }
+    if (distance(unit, destination) < TILE * .5) { unit.path = []; return }
     const goal = Math.floor(destination.y / TILE) * this.map.width + Math.floor(destination.x / TILE)
     if (unit.lastTarget?.x !== goal || !unit.path.length) {
       unit.lastTarget = { x: goal, y: 0 }
@@ -988,7 +989,7 @@ export class Match {
 
   private hit(attacker: Unit, targetId: number) {
     const target = this.units.get(targetId)
-    if (!target) return
+    if (!target || target.embarkedOn) return
     const attackBonus = isUnitKind(attacker.kind) && this.upgrades[attacker.faction].includes('weapons') ? upgrades.weapons.bonus : 0
     const armorBonus = isUnitKind(target.kind) && target.kind !== 'worker' && this.upgrades[target.faction].includes('armor') ? upgrades.armor.bonus : 0
     const heroBonus = attacker.experience === undefined ? 0 :
