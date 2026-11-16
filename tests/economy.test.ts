@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ashford, cellCenter, distance, riverColumn, TILE } from '../src/shared/map.ts'
-import { GATHERING, REPAIR, STARTING_RESOURCES, buildings, training } from '../src/shared/economy.ts'
+import { GATHERING, REPAIR, STARTING_RESOURCES, buildings, training, upgrades } from '../src/shared/economy.ts'
 import { Match } from '../src/server/match.ts'
 import { canStand, findPath } from '../src/server/navigation.ts'
 import { parseMessage } from '../src/server/validate.ts'
+import { unitStats } from '../src/shared/units.ts'
 
 function advance(match: Match, ticks: number) {
   for (let i = 0; i < ticks; i++) match.step()
@@ -203,7 +204,8 @@ test('a completed blacksmith researches one upgrade at a time and improves curre
   Object.assign(grunt, { x: 877, y: 312 })
   copy.step()
   copy.step()
-  assert.equal(grunt.hp, grunt.maxHp - 15)
+  const upgradedDamage = unitStats.human.blade.damage + upgrades.weapons.bonus - unitStats.orc.blade.armor
+  assert.equal(grunt.hp, grunt.maxHp - upgradedDamage)
 })
 
 
