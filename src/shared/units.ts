@@ -25,7 +25,7 @@ const economyStats = {
 
 export const unitStats: Record<Faction, Record<EntityKind, UnitStats>> = {
   human: {
-    blade: { health: 94, damage: 15, armor: 3, range: 23, speed: 77, cooldown: 12, radius: 9 },
+    blade: { health: 96, damage: 15, armor: 3, range: 24, speed: 77, cooldown: 12, radius: 9 },
     ranged: { health: 66, damage: 13, armor: 1, range: 127, speed: 73, cooldown: 17, radius: 9 },
     polearm: { health: 120, damage: 19, armor: 4, range: 34, speed: 76, cooldown: 15, radius: 10 },
     marksman: { health: 82, damage: 24, armor: 2, range: 151, speed: 64, cooldown: 24, radius: 10 },
