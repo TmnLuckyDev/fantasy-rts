@@ -1,8 +1,8 @@
-import { trainedAt, training } from '../shared/economy.ts'
+import { trainedAt, trainingRule } from '../shared/economy.ts'
 import { hasHero } from '../shared/heroes.ts'
 import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
 import { entityNames, isHeroKind, unitKinds } from '../shared/protocol.ts'
-import type { Entity, Faction, Population, Resources, UnitKind } from '../shared/protocol.ts'
+import type { Entity, Race, Population, Resources, UnitKind } from '../shared/protocol.ts'
 import { trainingTimeline } from '../shared/production.ts'
 
 export class GlobalProduction {
@@ -12,7 +12,7 @@ export class GlobalProduction {
   private readonly total = document.createElement('strong')
 
   constructor(panel: HTMLElement, order: (unit: UnitKind, count: number) => void,
-    private paint: (canvas: HTMLCanvasElement, faction: Faction, kind: UnitKind) => void) {
+    private paint: (canvas: HTMLCanvasElement, faction: Race, kind: UnitKind) => void) {
     this.status.setAttribute('role', 'status')
     this.status.className = 'training-feedback'
     panel.append(this.total, this.status)
@@ -44,18 +44,18 @@ export class GlobalProduction {
 
   message(text: string) { if (this.status.textContent !== text) this.status.textContent = text }
 
-  update(faction: Faction, entities: readonly Entity[], resources: Resources, population: Population) {
+  update(faction: Race, entities: readonly Entity[], resources: Resources, population: Population) {
     const ready = new Map<UnitKind, number>()
     const queued = new Map<UnitKind, { count: number, end: number }>()
     let total = 0
     let end = 0
     for (const building of entities) {
       if (building.construction !== undefined) continue
-      for (const kind of trainedAt(building.kind)) ready.set(kind, (ready.get(kind) ?? 0) + 1)
+      for (const kind of trainedAt(building.kind, faction)) ready.set(kind, (ready.get(kind) ?? 0) + 1)
       const active = building.training
       if (!active?.queue?.length) continue
-      const first = Math.round((1 - active.progress) * training[active.kind].ticks)
-      const timeline = trainingTimeline(active.queue, first)
+      const first = Math.round((1 - active.progress) * trainingRule(active.kind, faction).ticks)
+      const timeline = trainingTimeline(active.queue, first, faction)
       end = Math.max(end, timeline.ticks)
       for (const run of timeline.runs) {
         const summary = queued.get(run.kind) ?? { count: 0, end: 0 }
@@ -74,7 +74,7 @@ export class GlobalProduction {
       const buildings = ready.get(kind) ?? 0
       ui.row.hidden = !buildings
       if (!buildings) continue
-      const rule = training[kind]
+      const rule = trainingRule(kind, faction)
       const name = entityNames[faction][kind]
       if (ui.label.textContent !== name) ui.label.textContent = name
       this.paint(ui.portrait, faction, kind)

@@ -1,6 +1,6 @@
 import type { MatchSettings } from '../shared/match-settings.ts'
 import { isFaction } from '../shared/protocol.ts'
-import type { Difficulty, Faction, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, Race, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
 import type { SoloInput, SoloOutput, SoloSave } from './solo.worker.ts'
 
 const key = 'ash-and-iron-solo'
@@ -38,7 +38,7 @@ export class SoloClient {
     try { return this.saved && sessionStorage.getItem(activeKey) === '1' } catch { return false }
   }
 
-  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings) {
+  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race) {
     if (this.worker) return
     const save = resume ? readSlot()?.save ?? null : null
     this.worker = new Worker(new URL('./solo.worker.ts', import.meta.url), { type: 'module' })
@@ -60,7 +60,7 @@ export class SoloClient {
     this.owner = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')
     this.storageAvailable = this.write(save)
     try { sessionStorage.setItem(activeKey, '1') } catch { /* Storage may be restricted. */ }
-    this.post({ type: 'start', faction, save, difficulty, settings, paused: document.hidden })
+    this.post({ type: 'start', faction, save, difficulty, settings, race, opponentRace, paused: document.hidden })
     if (!this.storageAvailable) this.storageError()
   }
 

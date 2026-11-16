@@ -1,5 +1,5 @@
 import { parseMatchSettings } from '../shared/match-settings.ts'
-import { MAX_SELECTION, formations, isArmyOrder, isBuildingKind, isFaction, isUnitKind, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import { MAX_SELECTION, formations, isArmyOrder, isBuildingKind, isFaction, isRace, isUnitKind, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -20,10 +20,12 @@ export function parseMessage(raw: string): ClientMessage | null {
   switch (type) {
     case 'create':
     case 'solo': {
-      if (!isFaction(faction)) return null
-      if (value.settings === undefined) return { type, faction }
+      const choice = isRace(value.race) ? { race: value.race } : isFaction(faction) && value.race === undefined ? { faction } : null
+      if (!choice || (value.opponentRace !== undefined && (type !== 'solo' || !isRace(value.opponentRace)))) return null
+      const player = { ...choice, ...(isRace(value.opponentRace) ? { opponentRace: value.opponentRace } : {}) }
+      if (value.settings === undefined) return { type, ...player }
       const settings = parseMatchSettings(value.settings)
-      return settings ? { type, faction, settings } : null
+      return settings ? { type, ...player, settings } : null
     }
     case 'settings': {
       const settings = parseMatchSettings(value.settings)
@@ -31,8 +33,12 @@ export function parseMessage(raw: string): ClientMessage | null {
     }
     case 'faction':
       return isFaction(faction) ? { type, faction } : null
+    case 'race':
+      return isRace(value.race) ? { type, race: value.race } : null
     case 'join':
-      return validCode(code) && isFaction(faction) ? { type, code, faction } : null
+      if (!validCode(code)) return null
+      if (isRace(value.race)) return { type, code, race: value.race }
+      return value.race === undefined && isFaction(faction) ? { type, code, faction } : null
     case 'resume':
       return validCode(code) && typeof token === 'string' && /^[a-f0-9]{64}$/.test(token) ? { type, code, token } : null
     case 'ready':
@@ -57,10 +63,13 @@ export function parseMessage(raw: string): ClientMessage | null {
 }
 
 function parseOrder(order: Record<string, unknown>): Order | null {
-  if (order.kind === 'halt' || order.kind === 'explore' || order.kind === 'hero-ability' || order.kind === 'unload' || order.kind === 'structure-upgrade' || order.kind === 'dismiss') return { kind: order.kind }
+  if (order.kind === 'halt' || order.kind === 'explore' || order.kind === 'unit-ability' || order.kind === 'hero-ability' || order.kind === 'unload' || order.kind === 'structure-upgrade' || order.kind === 'dismiss') return { kind: order.kind }
   const formation = formations.find(kind => kind === order.formation)
   if (order.formation !== undefined && !formation) return null
   const options = formation ? { formation } : {}
+  if (order.kind === 'rally' && object(order.to) && coordinate(order.to.x) && coordinate(order.to.y)) {
+    return { kind: 'rally', to: { x: order.to.x, y: order.to.y } }
+  }
   if (order.kind === 'board' && validId(order.transport)) return { kind: 'board', transport: order.transport }
   if (order.kind === 'attack' && validId(order.target)) return { kind: 'attack', target: order.target, ...options }
   if ((order.kind === 'move' || order.kind === 'advance') && object(order.to) &&

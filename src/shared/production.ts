@@ -1,14 +1,14 @@
-import { training } from './economy.ts'
-import type { UnitKind } from './protocol.ts'
+import { trainingRule } from './economy.ts'
+import type { Race, UnitKind } from './protocol.ts'
 
 export type TrainingRun = { kind: UnitKind, count?: number }
 export const runCount = (run: TrainingRun) => run.count ?? 1
 
-export function trainingTimeline(queue: readonly TrainingRun[], headTicks: number) {
+export function trainingTimeline(queue: readonly TrainingRun[], headTicks: number, race?: Race) {
   let ticks = 0
   const runs = queue.map((run, index) => {
     const count = runCount(run)
-    const duration = training[run.kind].ticks
+    const duration = trainingRule(run.kind, race).ticks
     ticks += index ? count * duration : headTicks + (count - 1) * duration
     return { kind: run.kind, count, end: ticks }
   })

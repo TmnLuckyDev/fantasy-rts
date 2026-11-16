@@ -5,11 +5,11 @@ import type { ComputerCheckpoint } from '../server/computer.ts'
 import { Match, TICK_HZ } from '../server/match.ts'
 import type { MatchCheckpoint } from '../server/match.ts'
 import { opposite } from '../shared/protocol.ts'
-import type { Difficulty, Faction, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, Race, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
 
 export type SoloSave = { faction: Faction, match: MatchCheckpoint, computer: ComputerCheckpoint }
 export type SoloInput =
-  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, paused: boolean }
+  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, paused: boolean }
   | { type: 'pause', paused: boolean }
   | GroupCommand
   | GlobalTrainCommand
@@ -31,7 +31,7 @@ function announce() {
   const { faction, match, computer } = game
   send({ type: 'room', faction, room: {
     code: '', map: match.map.id, mapSeed: match.map.seed, settings: match.settings, report: match.result ? match.report() : undefined, mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
-    players: [faction, computer.faction].map(side => ({ faction: side, ready: true, connected: true }))
+    players: [faction, computer.faction].map(side => ({ faction: side, race: match.races[side], ready: true, connected: true }))
   } })
 }
 
@@ -39,8 +39,11 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
   const message = event.data
   if (message.type === 'start') {
     try {
-      const match = message.save ? Match.restore(message.save.match) : Match.start(message.settings ?? defaultMatchSettings())
       const faction = message.save?.faction ?? message.faction
+      const match = message.save ? Match.restore(message.save.match) : Match.start(message.settings ?? defaultMatchSettings(), {
+        human: faction === 'human' ? message.race ?? faction : message.opponentRace ?? 'human',
+        orc: faction === 'orc' ? message.race ?? faction : message.opponentRace ?? 'orc'
+      })
       const computer = new ComputerOpponent(opposite(faction), match.map, message.save?.computer.difficulty ?? message.difficulty, message.save?.computer.strategy)
       if (message.save) computer.restore(message.save.computer)
       game = { faction, match, computer }

@@ -1,3 +1,4 @@
+import { raceOf } from '../shared/protocol.ts'
 import { TILE } from '../shared/map.ts'
 import type { Entity, Formation, Point } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
@@ -27,7 +28,7 @@ export function formationSlots<T extends Entity>(troops: readonly T[], target: P
   const melee: T[] = []
   const ranged: T[] = []
   for (const unit of troops) {
-    const stats = unitStats[unit.faction][unit.kind]
+    const stats = unitStats[raceOf(unit)][unit.kind]
     const rank = stats.damage && stats.range <= 2 * TILE ? melee : ranged
     rank.push(unit)
   }

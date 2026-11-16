@@ -11,6 +11,7 @@ const { ashford, cellCenter } = await load('src/shared/map.ts')
 const counts = (process.env.BENCH_COUNTS ?? '200,500,1000,1500,2000').split(',').map(Number)
 const cases = (process.env.BENCH_CASES ?? 'idle,move,combat,bridge,ai,churn').split(',')
 const formation = process.env.BENCH_FORMATION
+const [human, orc] = (process.env.BENCH_RACES ?? 'human,orc').split(',')
 const ticks = Number(process.env.BENCH_TICKS ?? 120)
 const clearMap = { name: 'Load test', width: 88, height: 40, tiles: Array(88 * 40).fill('grass'), bases: { human: { x: 208, y: 368 }, orc: { x: 2608, y: 912 } } }
 let timings
@@ -32,7 +33,7 @@ for (const [prototype, methods] of [[Match.prototype, ['approach', 'walk', 'figh
 }
 function setup(scenario, count) {
   const bridge = scenario === 'bridge'
-  const match = new Match(bridge ? ashford : clearMap)
+  const match = new Match(bridge ? ashford : clearMap, undefined, { human, orc })
   if (scenario !== 'ai' && scenario !== 'churn') {
     for (const [id, unit] of match.units) if (unit.kind !== 'headquarters') match.units.delete(id)
   }

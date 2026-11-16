@@ -1,10 +1,10 @@
 import Phaser from 'phaser'
 import { TILE, cellCenter, distance, isWalkable, resourceAt, snapToCell, tileAt, wallLine } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isShipKind, isUnitKind } from '../shared/protocol.ts'
+import { raceOf, MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isShipKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement, buildingFootprint } from '../shared/economy.ts'
-import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
+import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, PlayerRaces, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
@@ -16,6 +16,8 @@ import type { ArmyIndex } from './troop-groups.ts'
 import type { SelectionRect } from './input.ts'
 
 const terrainChunkTiles = 24
+const largeBattleCount = 220
+const effectBudget: Record<Effect['kind'], number> = { shot: 24, hit: 16, fallen: 12 }
 type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number, offsetX: number, offsetY: number, ring?: Phaser.GameObjects.Image }
 type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObjects.Image }
 type BattleActions = {
@@ -50,6 +52,7 @@ export class BattleScene extends Phaser.Scene {
   private fog: Uint8Array
   private terrainChunks = new Map<string, Phaser.GameObjects.Image>()
   private terrainWindow = ''
+  private readonly terrainProps = new Map<number, Phaser.GameObjects.Image>()
   private readonly resourceProps = new Map<number, Phaser.GameObjects.Image>()
   private readonly depleted = new Set<number>()
   private lastDepletion?: number[]
@@ -64,11 +67,13 @@ export class BattleScene extends Phaser.Scene {
   private lastMiniDraw = 0
   advanceMode = false
   formation: Formation = 'line'
+  private rallyTarget: number | null = null
   private placing: BuildingKind | null = null
   private pointer: Point | null = null
 
   constructor(
     readonly faction: Faction,
+    private readonly races: PlayerRaces,
     private readonly map: BattleMap,
     private host: HTMLElement,
     private minimap: HTMLCanvasElement,
@@ -86,8 +91,8 @@ export class BattleScene extends Phaser.Scene {
     }
     for (const faction of ['human', 'orc'] as const) {
       for (const kind of entityKinds) {
-        this.textures.addCanvas(faction + kind + '0', entityTexture(faction, kind))
-        if (isUnitKind(kind)) this.textures.addCanvas(faction + kind + '1', entityTexture(faction, kind, 1))
+        this.textures.addCanvas(faction + kind + '0', entityTexture(this.races[faction], kind))
+        if (isUnitKind(kind)) this.textures.addCanvas(faction + kind + '1', entityTexture(this.races[faction], kind, 1))
       }
     }
     this.map.tiles.forEach((tile, i) => {
@@ -96,13 +101,14 @@ export class BattleScene extends Phaser.Scene {
       const rand = randomAt(Math.imul(i + 1, 0x9e3779b9))
       const variant = tile === 'forest' || tile === 'rock' ? Math.floor(rand() * 3) : 0
       const sprite = this.add.image(point.x + (rand() - 0.5) * 8, point.y + (rand() - 0.5) * 4, tile + variant)
+      this.terrainProps.set(i, sprite)
       if (tile !== 'rock') this.resourceProps.set(i, sprite)
       sprite.setScale(tile === 'forest' ? 1.06 : 0.96).setOrigin(0.5, 40 / 48).setDepth(point.y - 1)
     })
     this.textures.addCanvas('selection-unit', this.ringTexture(27, 12))
     for (const kind of entityKinds) {
       if (!isUnitKind(kind)) {
-        this.textures.addCanvas('selection-' + kind, this.ringTexture(unitStats[this.faction][kind].radius * 2.1, 22))
+        this.textures.addCanvas('selection-' + kind, this.ringTexture(unitStats[this.races[this.faction]][kind].radius * 2.1, 22))
       }
     }
     this.graphics = this.add.graphics().setDepth(this.mapHeight + 2)
@@ -189,6 +195,7 @@ export class BattleScene extends Phaser.Scene {
           // Finite timber is actually felled. Remove the tree rather than tinting it.
           prop?.destroy()
           this.resourceProps.delete(index)
+          this.terrainProps.delete(index)
           const x = index % this.map.width, y = Math.floor(index / this.map.width)
           const tw = this.miniTerrain.width / this.map.width
           const th = this.miniTerrain.height / this.map.height
@@ -196,7 +203,7 @@ export class BattleScene extends Phaser.Scene {
           mini.fillStyle = terrainColor.grass
           mini.fillRect(x * tw, y * th, Math.ceil(tw), Math.ceil(th))
         } else {
-          prop?.setTint(0x777777)
+          prop?.setTint(0x777777).setAlpha(0.72)
         }
       }
     }
@@ -224,15 +231,23 @@ export class BattleScene extends Phaser.Scene {
       }
     }
     this.spreadCrowds()
+    const crowded = this.visuals.size >= largeBattleCount
+    const counts = { shot: 0, hit: 0, fallen: 0 }
+    if (crowded) for (const item of this.effects) counts[item.effect.kind]++
+    const center = this.cameraCenter()
+    const camera = this.cameras.main
+    const effectRadius = Math.hypot(camera.width, camera.height) / camera.zoom / 2 + 160
     for (const effect of snapshot.effects) {
+      const nearby = distance(effect.at, center) < effectRadius
+      if (crowded && (!nearby || counts[effect.kind] >= effectBudget[effect.kind])) continue
+      counts[effect.kind]++
       let sprite: Phaser.GameObjects.Image | undefined
       if (effect.kind === 'fallen' && isUnitKind(effect.entityKind)) {
         sprite = this.add.image(effect.at.x, effect.at.y, effect.faction + effect.entityKind + '0')
           .setOrigin(0.5, 0.83).setScale(1.21).setDepth(effect.at.y - 1)
       }
       this.effects.push({ effect, born: this.time.now, sprite })
-      const camera = this.cameras.main
-      if (distance(effect.at, this.cameraCenter()) < Math.max(camera.width, camera.height) / camera.zoom) this.actions.effect(effect.kind)
+      if (nearby) this.actions.effect(effect.kind)
     }
     this.hasSnapshot = true
     this.minimapDirty = true
@@ -405,7 +420,19 @@ export class BattleScene extends Phaser.Scene {
 
   private ownUnit(entity: Entity) { return entity.faction === this.faction && isUnitKind(entity.kind) }
 
+  setRallyTarget(id: number) { this.rallyTarget = id }
+
+  private placeRally(screen: Point) {
+    if (this.rallyTarget === null) return false
+    const at = this.world(screen)
+    this.actions.order([this.rallyTarget], { kind: 'rally', to: at })
+    this.rallyTarget = null
+    this.markers.push({ point: at, color: 0xffdc82, born: this.time.now })
+    return true
+  }
+
   private click(screen: Point, append: boolean, touch: boolean) {
+    if (this.placeRally(screen)) return
     const point = this.world(screen)
     if (this.placing) {
       const ids = this.workerIds()
@@ -465,7 +492,7 @@ export class BattleScene extends Phaser.Scene {
         const dx = Math.abs(point.x - sprite.x)
         const dy = sprite.y - point.y
         if (isUnitKind(entity.kind)) return dx < (isShipKind(entity.kind) ? 30 : touch ? 21 : 14) && dy > -12 && dy < 35
-        const radius = unitStats[entity.faction][entity.kind].radius
+        const radius = unitStats[raceOf(entity)][entity.kind].radius
         const height = entity.kind === 'headquarters' ? 76 : entity.kind === 'tower' ? 61 : 35
         return dx < radius + 10 && dy > -14 && dy < height
       })
@@ -520,6 +547,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private orderAt(screen: Point) {
+    if (this.placeRally(screen)) return
     if (this.placing) {
       this.place(null)
       return
@@ -622,6 +650,11 @@ export class BattleScene extends Phaser.Scene {
     const window = [left, top, right, bottom].join(',')
     if (this.terrainWindow === window) return
     this.terrainWindow = window
+    for (const [index, prop] of this.terrainProps) {
+      const col = Math.floor(index % this.map.width / terrainChunkTiles)
+      const row = Math.floor(Math.floor(index / this.map.width) / terrainChunkTiles)
+      prop.setVisible(col >= left && col <= right && row >= top && row <= bottom)
+    }
     const visible = new Set<string>()
     for (let row = top; row <= bottom; row++) {
       for (let column = left; column <= right; column++) {
@@ -659,11 +692,17 @@ export class BattleScene extends Phaser.Scene {
       this.water.fillStyle(0x72cbd1, glint).fillRect(x + 4, y + 2, 8 + i % 5, 1)
     }
     this.graphics.clear()
+    const crowded = this.visuals.size >= largeBattleCount
     const blend = Math.min(1, delta / 70)
     const camera = this.cameras.main
     const center = this.cameraCenter()
     const halfWidth = camera.width / camera.zoom / 2 + 96
     const halfHeight = camera.height / camera.zoom / 2 + 96
+    for (const corpse of this.newest?.corpses ?? []) {
+      if (Math.abs(corpse.x - center.x) >= halfWidth || Math.abs(corpse.y - center.y) >= halfHeight) continue
+      this.graphics.fillStyle(0xe9d7c0, 0.65).fillRect(corpse.x - 4, corpse.y - 2, 8, 3)
+      if (!crowded) this.graphics.fillStyle(0xa087af, 0.5).fillEllipse(corpse.x, corpse.y + 2, 13, 4)
+    }
     this.updateTerrain(center, halfWidth, halfHeight)
     const walkFrame = Math.floor(time / 125) % 2
     for (const visual of this.visuals.values()) {
@@ -687,8 +726,9 @@ export class BattleScene extends Phaser.Scene {
       }
       const alpha = entity.construction === undefined ? 1 :
         entity.constructionStatus === 'queued' ? 0.25 : 0.4 + entity.construction * 0.55
-      if (sprite.alpha !== alpha) sprite.setAlpha(alpha)
-      const radius = unitStats[entity.faction][entity.kind].radius
+      const visibilityAlpha = entity.concealed ? alpha * 0.62 : alpha
+      if (sprite.alpha !== visibilityAlpha) sprite.setAlpha(visibilityAlpha)
+      const radius = unitStats[raceOf(entity)][entity.kind].radius
       if (entity.construction !== undefined && (!entity.constructionStatus || entity.constructionStatus === 'building')) {
         this.graphics.fillStyle(0x3d332d, 0.8).fillRect(sprite.x - radius, sprite.y + 1, radius * 2, 4)
         for (const side of [-1, 1]) {
@@ -711,15 +751,18 @@ export class BattleScene extends Phaser.Scene {
         }
         visual.ring.setPosition(sprite.x, sprite.y + 2)
       } else this.releaseRing(visual)
-      if (selected || entity.hp < entity.maxHp || entity.kind === 'headquarters' || entity.construction !== undefined) {
+      const fullDetail = !crowded || building || isHeroKind(entity.kind)
+      if (entity.hp < entity.maxHp || entity.kind === 'headquarters' || entity.construction !== undefined || (selected && fullDetail)) {
         const w = building ? radius * 1.8 : 22
         const x = sprite.x - w / 2
         const y = sprite.y - (entity.kind === 'headquarters' ? 85 : entity.kind === 'tower' ? 65 : entity.kind === 'wall' ? 31 : building ? 46 : 37)
-        this.graphics.fillStyle(0x1a252c, 0.95).fillRect(x - 2, y - 2, w + 4, 7)
-        this.graphics.fillStyle(0x3f3e43, 1).fillRect(x, y, w, 3)
         const hp = w * entity.hp / entity.maxHp
-        this.graphics.fillStyle(color, 1).fillRect(x, y, hp, 3)
-        this.graphics.fillStyle(0xfff5df, 0.38).fillRect(x, y, hp, 1)
+        if (fullDetail) {
+          this.graphics.fillStyle(0x1a252c, 0.95).fillRect(x - 2, y - 2, w + 4, 7)
+          this.graphics.fillStyle(0x3f3e43, 1).fillRect(x, y, w, 3)
+          this.graphics.fillStyle(0xfff5df, 0.38).fillRect(x, y - 1, hp, 1)
+        }
+        this.graphics.fillStyle(color, 1).fillRect(x, y, hp, fullDetail ? 3 : 2)
         if (entity.construction !== undefined) this.graphics.fillStyle(0xf8c972, 1).fillRect(x, y + 6, w * entity.construction, 2)
       }
       if (entity.kind === 'tower' || entity.kind === 'wall') {
@@ -734,7 +777,7 @@ export class BattleScene extends Phaser.Scene {
           this.graphics.fillStyle(0x74d9a1, 1).fillRect(sprite.x - 14, y - 6, 30 * entity.upgradeProgress, 3)
         }
       }
-      if (isUnitKind(entity.kind) && entity.kind !== 'worker' && entity.kind !== 'scout' && !isHeroKind(entity.kind)) {
+      if ((!crowded || (selected && this.selected.size === 1)) && !building && entity.kind !== 'worker' && entity.kind !== 'scout' && !isHeroKind(entity.kind)) {
         const weapons = entity.weaponLevel ?? 0
         const armor = entity.armorLevel ?? 0
         const precision = entity.precisionLevel ?? 0
@@ -765,7 +808,7 @@ export class BattleScene extends Phaser.Scene {
       if (building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
       if (entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
-    this.paintEffects(time, center, halfWidth, halfHeight)
+    this.paintEffects(time, center, halfWidth, halfHeight, crowded)
     this.ui.clear()
     this.markers = this.markers.filter(mark => {
       const t = (time - mark.born) / 410
@@ -801,7 +844,7 @@ export class BattleScene extends Phaser.Scene {
       this.ui.fillStyle(0xe2ce87, 0.15).fillRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y))
       this.ui.lineStyle(1, 0xe2ce87, 0.9).strokeRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y))
     }
-    if (this.hasSnapshot && this.minimapDirty && time - this.lastMiniDraw > 60) {
+    if (this.hasSnapshot && this.minimapDirty && time - this.lastMiniDraw > (crowded ? 170 : 60)) {
       this.drawMinimap()
       this.minimapDirty = false
       this.lastMiniDraw = time
@@ -816,7 +859,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private paintEffects(time: number, center: Point, halfWidth: number, halfHeight: number) {
+  private paintEffects(time: number, center: Point, halfWidth: number, halfHeight: number, crowded: boolean) {
     this.effects = this.effects.filter(({ effect, born, sprite }) => {
       const age = time - born
       const { x, y } = effect.at
@@ -836,14 +879,14 @@ export class BattleScene extends Phaser.Scene {
         const tipY = y + dy * t - 15 - arc
         const tailX = x + dx * start
         const tailY = y + dy * start - 15 - Math.sin(start * Math.PI) * 17
-        this.graphics.lineStyle(3, 0x322d34, 0.78).lineBetween(tailX, tailY, tipX, tipY)
+        if (!crowded) this.graphics.lineStyle(3, 0x322d34, 0.78).lineBetween(tailX, tailY, tipX, tipY)
         this.graphics.lineStyle(1.5, 0xfce0a2, 0.95).lineBetween(tailX, tailY, tipX, tipY)
-        this.graphics.fillStyle(0xfff4d5, 1).fillRect(tipX - 1, tipY - 1, 3, 3)
+        if (!crowded) this.graphics.fillStyle(0xfff4d5, 1).fillRect(tipX - 1, tipY - 1, 3, 3)
       } else if (effect.kind === 'hit') {
         if (age > 230) return false
         if (!inView) return true
         const t = age / 230
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < (crowded ? 1 : 5); i++) {
           this.graphics.fillStyle(i % 2 ? 0xeb8c43 : 0xffdf96, 1 - t)
             .fillRect(x + Math.cos(i * 1.25) * 15 * t, y - 14 + Math.sin(i * 1.25) * 15 * t, 3, 3)
         }
