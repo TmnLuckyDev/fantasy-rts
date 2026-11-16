@@ -693,14 +693,22 @@ export class BattleScene extends Phaser.Scene {
       if (isUnitKind(entity.kind) && entity.kind !== 'worker' && entity.kind !== 'scout' && !isHeroKind(entity.kind)) {
         const weapons = entity.weaponLevel ?? 0
         const armor = entity.armorLevel ?? 0
-        const y = sprite.y - 42
-        if (weapons || armor) {
-          this.graphics.fillStyle(0x2c3035, 0.9).fillRect(sprite.x - 13, y, 26, 7)
+        const precision = entity.precisionLevel ?? 0
+        const vitality = entity.vitalityLevel ?? 0
+        const y = sprite.y - 47
+        if (weapons || armor || precision || vitality) {
+          this.graphics.fillStyle(0x2c3035, 0.9).fillRect(sprite.x - 13, y, 26, 12)
           for (let i = 0; i < Math.min(5, weapons); i++) {
             this.graphics.fillStyle(0xe5a456, 1).fillRect(sprite.x - 12 + i * 3, y + 1, 2, 2)
           }
           for (let i = 0; i < Math.min(5, armor); i++) {
             this.graphics.fillStyle(0x86c7f0, 1).fillRect(sprite.x - 12 + i * 3, y + 4, 2, 2)
+          }
+          for (let i = 0; i < Math.min(5, precision); i++) {
+            this.graphics.fillStyle(0xe6d477, 1).fillRect(sprite.x - 12 + i * 3, y + 7, 2, 2)
+          }
+          for (let i = 0; i < Math.min(5, vitality); i++) {
+            this.graphics.fillStyle(0x86e6a3, 1).fillRect(sprite.x - 12 + i * 3, y + 10, 2, 2)
           }
         }
       }
