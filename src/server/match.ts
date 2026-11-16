@@ -268,10 +268,10 @@ export class Match {
       if (!passengers.length) return false
       const x = Math.floor(ship.x / TILE), y = Math.floor(ship.y / TILE)
       const sites: Point[] = []
-      for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) {
+      for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
         if (!isWalkable(tileAt(this.map, x + dx, y + dy))) continue
         const at = cellCenter(x + dx, y + dy)
-        if (distance(ship, at) <= 5 * TILE) sites.push(at)
+        if (distance(ship, at) <= 7 * TILE) sites.push(at)
       }
       sites.sort((a, b) => distance(ship, a) - distance(ship, b))
       if (sites.length < passengers.length) return false
