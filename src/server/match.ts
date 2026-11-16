@@ -1,7 +1,7 @@
 import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
-import { MAX_SELECTION, factions, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
-import type { Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
+import { MAX_SELECTION, factions, inTroopGroup, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
+import type { ArmyOrder, TroopGroup, Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
@@ -199,6 +199,16 @@ export class Match {
       if (!unit || unit.faction !== faction) return false
       units.push(unit)
     }
+    return this.issue(faction, units, order)
+  }
+
+  commandGroup(faction: Faction, group: TroopGroup, order: ArmyOrder) {
+    if (this.result) return false
+    const units = [...this.units.values()].filter(unit => unit.faction === faction && inTroopGroup(unit.kind, group))
+    return units.length > 0 && this.issue(faction, units, order)
+  }
+
+  private issue(faction: Faction, units: Unit[], order: Order) {
     if (order.kind === 'upgrade') return units.length === 1 && this.startUpgrade(units[0], order.upgrade)
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)

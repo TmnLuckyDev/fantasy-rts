@@ -1,22 +1,26 @@
 import Phaser from 'phaser'
 import { TILE, cellCenter, distance, isWalkable, resourceAt, snapToCell, tileAt, wallLine } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { MAX_SELECTION, entityKinds, isHeroKind, isUnitKind } from '../shared/protocol.ts'
+import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement } from '../shared/economy.ts'
-import type { BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
+import type { ArmyOrder, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
 import { entityTexture } from './sprites.ts'
 import { canvas } from './voxel.ts'
 import { BattlefieldInput } from './input.ts'
+import { indexArmy } from './troop-groups.ts'
+import type { ArmyIndex } from './troop-groups.ts'
 import type { SelectionRect } from './input.ts'
 
 const terrainChunkTiles = 24
 type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number, offsetX: number, offsetY: number, ring?: Phaser.GameObjects.Image }
 type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObjects.Image }
 type BattleActions = {
+  groupOrder: (group: TroopGroup, order: ArmyOrder) => void
+  groups: (army: ArmyIndex, selected: TroopGroup | null) => void
   order: (ids: number[], order: Order) => void
   selection: (entities: Entity[], interactive: boolean) => void
   placement: (kind: BuildingKind | null, blocked?: boolean, segmentCount?: number) => void
@@ -27,6 +31,8 @@ export class BattleScene extends Phaser.Scene {
   private visuals = new Map<number, Visual>()
   private ringPool: Phaser.GameObjects.Image[] = []
   private selected = new Set<number>()
+  private selectedGroup: TroopGroup | null = null
+  private army: ArmyIndex = new Map()
   private lastIdleWorker = 0
   private effects: AnimatedEffect[] = []
   private newest: Snapshot | null = null
@@ -166,6 +172,7 @@ export class BattleScene extends Phaser.Scene {
         this.resourceProps.get(index)?.setTint(0x777777)
       }
     }
+    this.army = indexArmy(snapshot.entities, this.faction)
     const present = new Set(snapshot.entities.map(entity => entity.id))
     for (const [id, visual] of this.visuals) {
       if (!present.has(id)) {
@@ -201,6 +208,10 @@ export class BattleScene extends Phaser.Scene {
     }
     this.hasSnapshot = true
     this.minimapDirty = true
+    if (this.selectedGroup) {
+      this.selected = new Set(this.army.get(this.selectedGroup)?.map(entity => entity.id))
+      if (!this.selected.size) this.selectedGroup = null
+    }
     this.selectionChanged()
   }
 
@@ -233,16 +244,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  selectHero() {
-    for (const { entity } of this.visuals.values()) {
-      if (entity.faction !== this.faction || !isHeroKind(entity.kind)) continue
-      this.selected = new Set([entity.id])
-      this.place(null)
-      this.focus(entity)
-      this.selectionChanged(true)
-      return
-    }
-  }
+  selectHero() { this.selectGroup('heroes', true) }
 
   private ringTexture(width: number, height: number) {
     const surface = canvas(Math.ceil(width) + 6, height + 6)
@@ -284,11 +286,28 @@ export class BattleScene extends Phaser.Scene {
     return this.fog[y * this.map.width + x]
   }
 
-  selectAll() {
-    this.selectKind(false)
+  selectAll() { this.selectGroup('all') }
+
+  selectGroup(group: TroopGroup, center = this.selectedGroup === group) {
+    const members = this.army.get(group)
+    if (!members?.length) return
+    this.place(null)
+    this.selectedGroup = group
+    this.selected = new Set(members.map(entity => entity.id))
+    if (center) {
+      const sum = members.reduce((sum, unit) => ({ x: sum.x + unit.x, y: sum.y + unit.y }), { x: 0, y: 0 })
+      this.focus({ x: sum.x / members.length, y: sum.y / members.length })
+    }
+    this.selectionChanged(true)
   }
 
-  selectWorkers() { this.selectKind(true) }
+  selectWorkers() {
+    this.selectedGroup = null
+    this.place(null)
+    this.selected = new Set([...this.visuals.values()].filter(({ entity }) =>
+      this.ownUnit(entity) && entity.kind === 'worker').slice(0, MAX_SELECTION).map(({ entity }) => entity.id))
+    this.selectionChanged(true)
+  }
 
   selectIdleWorker() {
     const idle = [...this.visuals.values()].map(({ entity }) => entity)
@@ -298,6 +317,7 @@ export class BattleScene extends Phaser.Scene {
     if (!next) return
     this.lastIdleWorker = next.id
     this.place(null)
+    this.selectedGroup = null
     this.selected = new Set([next.id])
     this.focus(next)
     this.selectionChanged(true)
@@ -324,20 +344,12 @@ export class BattleScene extends Phaser.Scene {
     return true
   }
 
-  private selectKind(workers: boolean) {
-    this.placing = null
-    this.actions.placement(null)
-    this.selected = new Set([...this.visuals.values()].filter(({ entity }) =>
-      this.ownUnit(entity) && (entity.kind === 'worker') === workers).slice(0, MAX_SELECTION).map(({ entity }) => entity.id))
-    this.selectionChanged(true)
-  }
-
   place(kind: BuildingKind | null) {
     this.placing = kind
     this.actions.placement(kind)
   }
 
-  private workerIds() { return [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
+  private workerIds() { return this.selectedGroup ? [] : [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
 
   halt() { this.issue({ kind: 'halt' }) }
   home() { if (this.initialized) this.focus(this.map.bases[this.faction]) }
@@ -360,19 +372,21 @@ export class BattleScene extends Phaser.Scene {
       this.orderAt(screen)
       return
     }
-    if (this.advanceMode && this.mobileUnits().length) {
+    if (this.advanceMode && (this.selectedGroup || this.mobileUnits().length)) {
       this.orderAt(screen)
       return
     }
     const picked = this.pick(point, touch)
     if (touch && this.workOnBuilding(this.workerIds(), picked)) return
     if (picked?.faction === this.faction) {
+      this.selectedGroup = null
       if (!append) this.selected.clear()
       if (append && this.selected.has(picked.id)) this.selected.delete(picked.id)
       else if (this.selected.size < MAX_SELECTION) this.selected.add(picked.id)
       this.selectionChanged(true)
-    } else if (touch && this.mobileUnits().length) this.orderAt(screen)
+    } else if (touch && (this.selectedGroup || this.mobileUnits().length)) this.orderAt(screen)
     else if (!append) {
+      this.selectedGroup = null
       this.selected.clear()
       this.selectionChanged(true)
     }
@@ -402,6 +416,7 @@ export class BattleScene extends Phaser.Scene {
       }
       return
     }
+    this.selectedGroup = null
     if (!append) this.selected.clear()
     for (const { entity, sprite } of this.visuals.values()) {
       if (this.selected.size < MAX_SELECTION && this.ownUnit(entity) && sprite.x >= Math.min(a.x, b.x) && sprite.x <= Math.max(a.x, b.x) &&
@@ -416,6 +431,7 @@ export class BattleScene extends Phaser.Scene {
       return entry ? [entry.entity] : []
     })
     if (this.placing && !entities.some(entity => entity.kind === 'worker')) this.place(null)
+    this.actions.groups(this.army, this.selectedGroup)
     this.actions.selection(entities, interactive)
   }
 
@@ -466,10 +482,13 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private issue(order: Order, point?: Point) {
-    const ids = this.mobileUnits()
-    if (!ids.length) return
+    if (!this.selected.size) return
     if (point) this.markers.push({ point, color: order.kind === 'move' ? 0xadd995 : 0xffa36b, born: this.time.now })
-    this.actions.order(ids, order)
+    if (this.selectedGroup && isArmyOrder(order)) this.actions.groupOrder(this.selectedGroup, order)
+    else {
+      const ids = this.mobileUnits()
+      if (ids.length) this.actions.order(ids, order)
+    }
   }
 
   private world(point: Point): Point {

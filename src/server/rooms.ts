@@ -115,14 +115,15 @@ export class Rooms {
       this.disconnect(peer, true, now)
       return
     }
-    if (message.type === 'command') {
+    if (message.type === 'command' || message.type === 'group-command') {
       if (this.paused(room)) {
         send(peer, { type: 'error', message: 'The match is paused until everyone reconnects.' })
         return
       }
-      if (room.match && !room.match.command(seat.faction, message.ids, message.order)) {
-        send(peer, { type: 'error', message: 'That order cannot be issued.' })
-      }
+      if (!room.match) return
+      const accepted = message.type === 'group-command' ? room.match.commandGroup(seat.faction, message.group, message.order)
+        : room.match.command(seat.faction, message.ids, message.order)
+      if (!accepted) send(peer, { type: 'error', message: 'That order cannot be issued.' })
       return
     }
     if (room.match) return

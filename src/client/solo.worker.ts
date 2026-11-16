@@ -5,12 +5,13 @@ import type { ComputerCheckpoint } from '../server/computer.ts'
 import { Match, TICK_HZ } from '../server/match.ts'
 import type { MatchCheckpoint } from '../server/match.ts'
 import { opposite } from '../shared/protocol.ts'
-import type { Difficulty, Faction, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
 
 export type SoloSave = { faction: Faction, match: MatchCheckpoint, computer: ComputerCheckpoint }
 export type SoloInput =
   | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, paused: boolean }
   | { type: 'pause', paused: boolean }
+  | GroupCommand
   | { type: 'command', ids: number[], order: Order }
 export type SoloOutput = ServerMessage | { type: 'save', save: SoloSave }
 
@@ -53,7 +54,9 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
     paused = message.paused
     if (paused) save()
   } else if (game && !paused) {
-    if (game.match.command(game.faction, message.ids, message.order)) save()
+    const accepted = message.type === 'group-command' ? game.match.commandGroup(game.faction, message.group, message.order)
+      : game.match.command(game.faction, message.ids, message.order)
+    if (accepted) save()
     else send({ type: 'error', message: 'That order cannot be issued.' })
   }
 })

@@ -3,9 +3,10 @@ import type { Page } from '@playwright/test'
 import { startArmyRoom } from '../scripts/army-room.ts'
 import { applyDelta } from '../src/shared/snapshot-delta.ts'
 import type { SnapshotDelta } from '../src/shared/snapshot-delta.ts'
+import { inTroopGroup } from '../src/shared/protocol.ts'
 import type { ClientMessage, Snapshot } from '../src/shared/protocol.ts'
 
-function observe(page: Page) {
+function observe(page: Page, faction: 'human' | 'orc') {
   let snapshot: Snapshot | undefined
   let ordered = 0
   let shots = 0
@@ -14,6 +15,9 @@ function observe(page: Page) {
     socket.on('framesent', ({ payload }) => {
       const message = JSON.parse(String(payload)) as ClientMessage
       if (message.type === 'command') ordered = message.ids.length
+      if (message.type === 'group-command' && message.group === 'all') {
+        ordered = snapshot?.entities.filter(entity => entity.faction === faction && inTroopGroup(entity.kind, message.group)).length ?? 0
+      }
     })
     socket.on('framereceived', ({ payload }) => {
       const packet = JSON.parse(String(payload)) as Snapshot | SnapshotDelta
@@ -58,7 +62,7 @@ test('two browser players issue orders to 500 troops each and receive authoritat
   const guest = await engine.newContext({ ...phone, viewport: { width: phone.viewport.height, height: phone.viewport.width } })
   try {
     const clients = await Promise.all([host.newPage(), guest.newPage()])
-    const state = clients.map(observe)
+    const state = clients.map((page, i) => observe(page, fixture.seats[i].faction))
     await Promise.all(clients.map(async (page, i) => {
       await page.addInitScript(seat => sessionStorage.setItem('ash-and-iron-seat', JSON.stringify(seat)),
         { ...fixture.seats[i], code: fixture.code })

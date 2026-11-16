@@ -1,5 +1,5 @@
 import { parseMatchSettings } from '../shared/match-settings.ts'
-import { MAX_SELECTION, isBuildingKind, isFaction, isUnitKind, upgradeKinds } from '../shared/protocol.ts'
+import { MAX_SELECTION, isArmyOrder, isBuildingKind, isFaction, isUnitKind, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -39,6 +39,11 @@ export function parseMessage(raw: string): ClientMessage | null {
       return typeof ready === 'boolean' ? { type, ready } : null
     case 'leave':
       return { type }
+    case 'group-command': {
+      const group = troopGroups.find(group => group === value.group)
+      const parsed = object(order) && parseOrder(order)
+      return group && parsed && isArmyOrder(parsed) ? { type, group, order: parsed } : null
+    }
     case 'command': {
       if (!Array.isArray(ids) || !ids.length || ids.length > MAX_SELECTION || !ids.every(validId) || !object(order)) return null
       const parsed = parseOrder(order)

@@ -79,7 +79,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .lobby-foot { color: #e0cfb0; text-shadow: 0 1px 6px #000; font-size: 0.7rem; margin-top: 1rem; display: flex; gap: 0.45rem 0.85rem; flex-wrap: wrap; justify-content: center; }
 .lobby-foot span + span::before { content: "·"; color: var(--gold); margin-right: 0.85rem; }
 
-.match { position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); background: #181811; }
+.match { position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; overflow: hidden; padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); background: #181811; }
 .match { --team: #7ac6f2; }
 .match[data-faction="orc"] { --team: #f18c72; }
 .match-head, .hud { display: flex; align-items: center; gap: 0.65rem; background: repeating-linear-gradient(0deg, #fff1d005 0 1px, transparent 1px 5px), linear-gradient(#26363a, #1b2629); z-index: 1; }
@@ -236,3 +236,25 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #match-stats td { text-align: center; font-variant-numeric: tabular-nums; }
 #match-stats thead :nth-child(2) { color: #a3d6ff; }
 #match-stats thead :nth-child(3) { color: #ff9575; }
+
+#troop-groups {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: #1b2629;
+}
+#troop-groups button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  flex: 0 0 auto;
+  padding: 0.15rem 0.48rem;
+  min-height: 36px;
+  font-size: 0.76rem;
+}
+#troop-groups button[aria-pressed="true"] { border-color: var(--team); background: #3c4b45; }
+#troop-groups canvas { width: 26px; height: 26px; image-rendering: pixelated; }
+.troop-count { color: var(--gold); font-variant-numeric: tabular-nums; }

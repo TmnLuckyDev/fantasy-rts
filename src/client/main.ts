@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, upgradeKinds } from '../shared/protocol.ts'
-import type { Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import type { ArmyOrder, GroupCommand, TroopGroup, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
@@ -13,6 +13,7 @@ import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
 import { entityTexture } from './sprites.ts'
+import type { ArmyIndex } from './troop-groups.ts'
 import './style.css'
 
 const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
@@ -20,6 +21,24 @@ const button = (id: string) => element<HTMLButtonElement>(id)
 const lobby = element('lobby')
 const match = element('match')
 const battlefield = element('battlefield')
+const groupBar = element('troop-groups')
+const groupButtons = new Map<TroopGroup, { button: HTMLButtonElement, icon: HTMLCanvasElement, label: HTMLElement, count: HTMLElement }>()
+for (const group of troopGroups) {
+  const item = document.createElement('button')
+  item.type = 'button'
+  item.title = 'Tap again to center the camera'
+  item.onclick = () => scene?.selectGroup(group)
+  const icon = document.createElement('canvas')
+  icon.width = icon.height = 28
+  icon.setAttribute('aria-hidden', 'true')
+  const label = document.createElement('span')
+  const count = document.createElement('span')
+  count.className = 'troop-count'
+  count.setAttribute('aria-hidden', 'true')
+  item.append(icon, label, count)
+  groupBar.append(item)
+  groupButtons.set(group, { button: item, icon, label, count })
+}
 const portrait = element<HTMLCanvasElement>('selection-portrait')
 const minimap = element<HTMLCanvasElement>('minimap')
 const joinCode = element<HTMLInputElement>('join-code')
@@ -189,6 +208,8 @@ function showBattle() {
   button('advance').setAttribute('aria-pressed', 'false')
   scene = new BattleScene(faction, room?.settings ? mapForSettings(room.settings) : ashfordMap(room?.map), battlefield, minimap, {
     order: issueOrder,
+    groupOrder: issueGroupOrder,
+    groups: drawTroopGroups,
     selection: drawSelection,
     placement: (kind, blocked, segmentCount) => {
       placing = Boolean(kind)
@@ -219,6 +240,7 @@ function showBattle() {
   placementTip.hidden = true
   placing = false
   closeEconomyMenu()
+  drawTroopGroups(new Map(), null)
   drawSelection([])
   game = new Phaser.Game({
     type: Phaser.AUTO,
@@ -246,6 +268,33 @@ function paintPortrait(target: HTMLCanvasElement, side: Faction, kind: EntityKin
   ctx.clearRect(0, 0, target.width, target.height)
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(sprite, Math.floor((target.width - width) / 2), Math.floor((target.height - height) / 2), width, height)
+}
+
+function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
+  groupBar.hidden = !army.size
+  for (const [group, ui] of groupButtons) {
+    const members = army.get(group)
+    ui.button.hidden = !members?.length
+    if (!members?.length) continue
+    const kind = group === 'all' ? 'blade' : members[0].kind
+    const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Heroes' : entityNames[faction][kind]
+    if (ui.label.textContent !== label) ui.label.textContent = label
+    const count = String(members.length)
+    if (ui.count.textContent !== count) {
+      ui.count.textContent = count
+      ui.button.setAttribute('aria-description', count + ' living · Tap again to center camera')
+    }
+    const pressed = String(group === selected)
+    if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
+    paintPortrait(ui.icon, faction, kind)
+  }
+}
+
+function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
+  const message: GroupCommand = { type: 'group-command', group, order }
+  if (solo.active) solo.group(message)
+  else client.send(message)
+  audio.play('order')
 }
 
 function issueOrder(ids: number[], order: Order) {
@@ -645,7 +694,6 @@ button('exit').onclick = () => {
   const prompt = room?.mode === 'solo' ? 'End this solo match?' : 'Leave the battle and forfeit?'
   if (room?.phase === 'finished' || window.confirm(prompt)) leave()
 }
-button('all').onclick = () => scene?.selectAll()
 button('advance').onclick = toggleAdvance
 button('halt').onclick = () => scene?.halt()
 button('home').onclick = () => scene?.home()
