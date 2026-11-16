@@ -172,7 +172,20 @@ export class BattleScene extends Phaser.Scene {
       for (const index of snapshot.depleted ?? []) {
         if (this.depleted.has(index)) continue
         this.depleted.add(index)
-        this.resourceProps.get(index)?.setTint(0x777777)
+        const prop = this.resourceProps.get(index)
+        if (this.map.tiles[index] === 'forest') {
+          // Finite timber is actually felled. Remove the tree rather than tinting it.
+          prop?.destroy()
+          this.resourceProps.delete(index)
+          const x = index % this.map.width, y = Math.floor(index / this.map.width)
+          const tw = this.miniTerrain.width / this.map.width
+          const th = this.miniTerrain.height / this.map.height
+          const mini = this.miniTerrain.getContext('2d')!
+          mini.fillStyle = terrainColor.grass
+          mini.fillRect(x * tw, y * th, Math.ceil(tw), Math.ceil(th))
+        } else {
+          prop?.setTint(0x777777)
+        }
       }
     }
     this.army = indexArmy(snapshot.entities, this.faction)

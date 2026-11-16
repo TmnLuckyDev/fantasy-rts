@@ -8,13 +8,13 @@ import { unitStats } from '../src/shared/units.ts'
 
 test('Shattered Isles has separate large landmasses, islands and sea lanes', () => {
   const map = ashfordMap('shattered-isles')
-  assert.equal(map.width, 160)
-  assert.equal(map.height, 96)
-  assert.ok(isWalkable(tileAt(map, 24, 48)))
-  assert.ok(isWalkable(tileAt(map, 135, 47)))
-  assert.ok(isWater(tileAt(map, 80, 30)))
-  assert.ok(isWalkable(tileAt(map, 80, 48)))
-  assert.ok(isWater(tileAt(map, 80, 65)))
+  assert.equal(map.width, 192)
+  assert.equal(map.height, 112)
+  assert.ok(isWalkable(tileAt(map, 30, 56)))
+  assert.ok(isWalkable(tileAt(map, 161, 55)))
+  assert.ok(isWater(tileAt(map, 96, 36)))
+  assert.ok(isWalkable(tileAt(map, 96, 56)))
+  assert.ok(isWater(tileAt(map, 96, 77)))
   const configured = mapForSettings(defaultMatchSettings('shattered-isles'), 2)
   assert.equal(configured.id, 'shattered-isles')
   assert.ok(isWalkable(tileAt(configured, Math.floor(configured.bases.human.x / 32), Math.floor(configured.bases.human.y / 32))))
@@ -26,9 +26,9 @@ test('ports require a coastline and can train both naval units', () => {
   assert.deepEqual(trainedAt('port'), ['transport', 'warship'])
   assert.equal(training.transport.population, 3)
   assert.ok(unitStats.human.warship.damage > 0)
-  assert.equal(validPlacement(map, 'port', cellCenter(24, 48), []), false)
+  assert.equal(validPlacement(map, 'port', cellCenter(30, 56), []), false)
   let coast = false
-  for (let y = 15; y < 80; y++) for (let x = 40; x < 57; x++) {
+  for (let y = 20; y < 92; y++) for (let x = 47; x < 64; x++) {
     if (validPlacement(map, 'port', cellCenter(x, y), [])) coast = true
   }
   assert.ok(coast, 'at least one coastal port site should be buildable')
@@ -39,7 +39,7 @@ test('transport capacity is exactly 30 population and unloading restores passeng
   const match = new Match(map, defaultMatchSettings('shattered-isles'))
   const checkpoint = match.checkpoint()
   const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
-  const shipX = 52, shipY = 48
+  const shipX = 54, shipY = 56
   assert.ok(isWater(tileAt(map, shipX, shipY)))
   const ship = { ...base, id: ++checkpoint.sequence, kind: 'transport' as const,
     ...cellCenter(shipX, shipY), hp: 550, maxHp: 550, passengers: [] as number[] }
@@ -47,7 +47,7 @@ test('transport capacity is exactly 30 population and unloading restores passeng
   const passengers: number[] = []
   for (let i = 0; i < 31; i++) {
     const unit = { ...base, id: ++checkpoint.sequence, kind: 'blade' as const,
-      ...cellCenter(49, 45 + i % 7), hp: 96, maxHp: 96 }
+      ...cellCenter(52, 56), hp: 96, maxHp: 96 }
     checkpoint.units.push(unit)
     passengers.push(unit.id)
   }
