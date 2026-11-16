@@ -285,7 +285,8 @@ export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {
   return map.tiles[y * map.width + x]
 }
 
-export const isWater = (tile: Tile | undefined) => tile === 'water'\nexport const isWalkable = (tile: Tile | undefined) => tile === 'grass' || tile === 'road' || tile === 'bridge'
+export const isWater = (tile: Tile | undefined) => tile === 'water'
+export const isWalkable = (tile: Tile | undefined) => tile === 'grass' || tile === 'road' || tile === 'bridge'
 export const cellCenter = (x: number, y: number): Point => ({ x: (x + 0.5) * TILE, y: (y + 0.5) * TILE })
 export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 
