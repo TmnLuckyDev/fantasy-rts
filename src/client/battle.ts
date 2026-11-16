@@ -486,7 +486,7 @@ export class BattleScene extends Phaser.Scene {
     }
     if (this.workOnBuilding(workers, picked)) return
     if (picked?.kind === 'transport' && picked.faction === this.faction && this.mobileUnits().some(id => !isShipKind(this.visuals.get(id)?.entity.kind))) {
-      this.actions.order(this.mobileUnits(), { kind: 'board', transport: picked.id })
+      this.actions.order(this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind)), { kind: 'board', transport: picked.id })
     } else if (picked && picked.faction !== this.faction) this.issue({ kind: 'attack', target: picked.id }, { x: picked.x, y: picked.y })
     else this.issue({ kind: this.advanceMode ? 'advance' : 'move', to: point }, point)
   }
