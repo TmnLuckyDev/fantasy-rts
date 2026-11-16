@@ -13,7 +13,7 @@ import type { SelectionRect } from './input.ts'
 
 const mapWidth = ashford.width * TILE
 const mapHeight = ashford.height * TILE
-type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number }
+type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number, ring?: Phaser.GameObjects.Image }
 type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObjects.Image }
 type BattleActions = {
   order: (ids: number[], order: Order) => void
@@ -24,6 +24,7 @@ type BattleActions = {
 
 export class BattleScene extends Phaser.Scene {
   private visuals = new Map<number, Visual>()
+  private ringPool: Phaser.GameObjects.Image[] = []
   private selected = new Set<number>()
   private lastIdleWorker = 0
   private effects: AnimatedEffect[] = []
@@ -83,6 +84,12 @@ export class BattleScene extends Phaser.Scene {
       const sprite = this.add.image(point.x + (rand() - 0.5) * 8, point.y + (rand() - 0.5) * 4, tile + variant)
       sprite.setScale(tile === 'forest' ? 1.06 : 0.96).setOrigin(0.5, 40 / 48).setDepth(point.y - 1)
     })
+    this.textures.addCanvas('selection-unit', this.ringTexture(27, 12))
+    for (const kind of entityKinds) {
+      if (!isUnitKind(kind)) {
+        this.textures.addCanvas('selection-' + kind, this.ringTexture(unitStats[this.faction][kind].radius * 2.1, 22))
+      }
+    }
     this.graphics = this.add.graphics().setDepth(mapHeight + 2)
     this.fogTexture = this.textures.createCanvas('fog', ashford.width, ashford.height)!
     this.fogTexture.setFilter(Phaser.Textures.FilterMode.NEAREST)
@@ -151,6 +158,7 @@ export class BattleScene extends Phaser.Scene {
     for (const [id, visual] of this.visuals) {
       if (!present.has(id)) {
         visual.sprite.destroy()
+        this.releaseRing(visual)
         this.visuals.delete(id)
         this.selected.delete(id)
       }
@@ -158,6 +166,7 @@ export class BattleScene extends Phaser.Scene {
     for (const entity of snapshot.entities) {
       const visual = this.visuals.get(entity.id)
       if (visual) {
+        if (visual.entity === entity) continue
         visual.lastHp = visual.entity.hp
         visual.entity = entity
       } else {
@@ -180,6 +189,26 @@ export class BattleScene extends Phaser.Scene {
     this.hasSnapshot = true
     this.minimapDirty = true
     this.selectionChanged()
+  }
+
+  private ringTexture(width: number, height: number) {
+    const surface = canvas(Math.ceil(width) + 6, height + 6)
+    const context = surface.getContext('2d')!
+    context.beginPath()
+    context.ellipse(surface.width / 2, surface.height / 2, width / 2, height / 2, 0, 0, Math.PI * 2)
+    context.strokeStyle = 'rgba(24,44,38,0.8)'
+    context.lineWidth = 3.5
+    context.stroke()
+    context.strokeStyle = '#ffe89e'
+    context.lineWidth = 1.5
+    context.stroke()
+    return surface
+  }
+
+  private releaseRing(visual: Visual) {
+    if (!visual.ring) return
+    this.ringPool.push(visual.ring.setVisible(false))
+    visual.ring = undefined
   }
 
   private paintFog() {
@@ -453,23 +482,29 @@ export class BattleScene extends Phaser.Scene {
     const center = this.cameraCenter()
     const halfWidth = camera.width / camera.zoom / 2 + 96
     const halfHeight = camera.height / camera.zoom / 2 + 96
-    for (const { entity, sprite, lastHp } of this.visuals.values()) {
+    const walkFrame = Math.floor(time / 125) % 2
+    for (const visual of this.visuals.values()) {
+      const { entity, sprite, lastHp } = visual
       const visible = Math.abs(entity.x - center.x) < halfWidth && Math.abs(entity.y - center.y) < halfHeight
-      sprite.setVisible(visible)
+      if (sprite.visible !== visible) sprite.setVisible(visible)
       if (!visible) {
-        sprite.setPosition(entity.x, entity.y)
+        if (sprite.x !== entity.x || sprite.y !== entity.y) sprite.setPosition(entity.x, entity.y)
+        this.releaseRing(visual)
         continue
       }
       const building = !isUnitKind(entity.kind)
       sprite.x += (entity.x - sprite.x) * blend
       sprite.y += (entity.y - sprite.y) * blend
-      sprite.setDepth(sprite.y)
+      const depth = Math.round(sprite.y)
+      if (sprite.depth !== depth) sprite.setDepth(depth)
       if (!building) {
-        const frame = entity.moving ? Math.floor(time / 125) % 2 : 0
-        sprite.setTexture(entity.faction + entity.kind + frame).setFlipX(entity.facing < 0)
+        const texture = entity.faction + entity.kind + (entity.moving ? walkFrame : 0)
+        if (sprite.texture.key !== texture) sprite.setTexture(texture)
+        if (sprite.flipX !== (entity.facing < 0)) sprite.setFlipX(entity.facing < 0)
       }
-      sprite.setAlpha(entity.construction === undefined ? 1 :
-        entity.constructionStatus === 'queued' ? 0.25 : 0.4 + entity.construction * 0.55)
+      const alpha = entity.construction === undefined ? 1 :
+        entity.constructionStatus === 'queued' ? 0.25 : 0.4 + entity.construction * 0.55
+      if (sprite.alpha !== alpha) sprite.setAlpha(alpha)
       const radius = unitStats[entity.faction][entity.kind].radius
       if (entity.construction !== undefined && (!entity.constructionStatus || entity.constructionStatus === 'building')) {
         this.graphics.fillStyle(0x3d332d, 0.8).fillRect(sprite.x - radius, sprite.y + 1, radius * 2, 4)
@@ -486,15 +521,18 @@ export class BattleScene extends Phaser.Scene {
       const selected = this.selected.has(entity.id)
       const color = factionColor[entity.faction]
       if (selected) {
-        const width = building ? radius * 2.1 : 27
-        this.graphics.lineStyle(3.5, 0x182c26, 0.8).strokeEllipse(sprite.x, sprite.y + 2, width, building ? 22 : 12)
-        this.graphics.lineStyle(1.5, 0xffe89e, 1).strokeEllipse(sprite.x, sprite.y + 2, width, building ? 22 : 12)
-      }
+        if (!visual.ring) {
+          const texture = 'selection-' + (building ? entity.kind : 'unit')
+          visual.ring = this.ringPool.pop()?.setTexture(texture).setVisible(true) ??
+            this.add.image(sprite.x, sprite.y, texture).setDepth(mapHeight + 1)
+        }
+        visual.ring.setPosition(sprite.x, sprite.y + 2)
+      } else this.releaseRing(visual)
       if (selected || entity.hp < entity.maxHp || entity.kind === 'headquarters' || entity.construction !== undefined) {
         const w = building ? radius * 1.8 : 22
         const x = sprite.x - w / 2
         const y = sprite.y - (entity.kind === 'headquarters' ? 85 : entity.kind === 'tower' ? 65 : entity.kind === 'wall' ? 31 : building ? 46 : 37)
-        this.graphics.fillStyle(0x1a252c, 0.95).fillRoundedRect(x - 2, y - 2, w + 4, 7, 2)
+        this.graphics.fillStyle(0x1a252c, 0.95).fillRect(x - 2, y - 2, w + 4, 7)
         this.graphics.fillStyle(0x3f3e43, 1).fillRect(x, y, w, 3)
         const hp = w * entity.hp / entity.maxHp
         this.graphics.fillStyle(color, 1).fillRect(x, y, hp, 3)
@@ -504,7 +542,7 @@ export class BattleScene extends Phaser.Scene {
       if (building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
       if (entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
-    this.paintEffects(time)
+    this.paintEffects(time, center, halfWidth, halfHeight)
     this.ui.clear()
     this.markers = this.markers.filter(mark => {
       const t = (time - mark.born) / 410
@@ -555,14 +593,18 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private paintEffects(time: number) {
+  private paintEffects(time: number, center: Point, halfWidth: number, halfHeight: number) {
     this.effects = this.effects.filter(({ effect, born, sprite }) => {
       const age = time - born
       const { x, y } = effect.at
+      const to = effect.to ?? effect.at
+      const inView = Math.max(x, to.x) >= center.x - halfWidth && Math.min(x, to.x) <= center.x + halfWidth &&
+        Math.max(y, to.y) >= center.y - halfHeight && Math.min(y, to.y) <= center.y + halfHeight
       if (effect.kind === 'shot' && effect.to) {
         const duration = Math.max(100, Math.ceil(distance(effect.at, effect.to) / 24) * 50)
         const t = age / duration
         if (t > 1) return false
+        if (!inView) return true
         const dx = effect.to.x - x
         const dy = effect.to.y - y
         const start = Math.max(0, t - 0.09)
@@ -576,6 +618,7 @@ export class BattleScene extends Phaser.Scene {
         this.graphics.fillStyle(0xfff4d5, 1).fillRect(tipX - 1, tipY - 1, 3, 3)
       } else if (effect.kind === 'hit') {
         if (age > 230) return false
+        if (!inView) return true
         const t = age / 230
         for (let i = 0; i < 5; i++) {
           this.graphics.fillStyle(i % 2 ? 0xeb8c43 : 0xffdf96, 1 - t)
@@ -586,6 +629,8 @@ export class BattleScene extends Phaser.Scene {
           sprite?.destroy()
           return false
         }
+        if (sprite && sprite.visible !== inView) sprite.setVisible(inView)
+        if (!inView) return true
         if (sprite) sprite.setRotation(Math.min(1.4, age / 130)).setAlpha(1 - age / 950)
         else {
           for (let i = 0; i < 3; i++) this.paintFire(x + (i - 1) * 22, y - i * 10, time)

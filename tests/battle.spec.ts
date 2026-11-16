@@ -1,6 +1,8 @@
 import { chromium, devices, expect, test, webkit } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { TILE, ashford, cellCenter, distance } from '../src/shared/map.ts'
+import { applyDelta } from '../src/shared/snapshot-delta.ts'
+import type { SnapshotDelta } from '../src/shared/snapshot-delta.ts'
 import { decodeFog } from '../src/shared/fog.ts'
 import { isUnitKind } from '../src/shared/protocol.ts'
 import type { Faction, Point, ServerMessage, Snapshot } from '../src/shared/protocol.ts'
@@ -12,9 +14,13 @@ function observe(page: Page) {
   const history = new Map<number, Snapshot>()
   page.on('websocket', socket => {
     if (!socket.url().endsWith('/socket')) return
+    let base: Snapshot | undefined
     socket.on('framereceived', ({ payload }) => {
-      const message = JSON.parse(String(payload)) as ServerMessage
-      if (message.type === 'snapshot') history.set(message.tick, message)
+      const message = JSON.parse(String(payload)) as ServerMessage | SnapshotDelta
+      if (message.type === 'snapshot') base = message
+      else if (message.type === 'delta') base = applyDelta(base, message)
+      else return
+      if (base) history.set(base.tick, base)
     })
   })
   return history

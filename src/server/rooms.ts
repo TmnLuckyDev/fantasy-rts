@@ -1,7 +1,8 @@
 import { randomBytes, randomInt } from 'node:crypto'
 import { WebSocket } from 'ws'
 import { opposite } from '../shared/protocol.ts'
-import type { ClientMessage, Faction, RoomState, ServerMessage } from '../shared/protocol.ts'
+import type { ClientMessage, Faction, RoomState, ServerMessage, Snapshot } from '../shared/protocol.ts'
+import { deltaProtocol, makeDelta } from '../shared/snapshot-delta.ts'
 import { Match } from './match.ts'
 import type { MatchCheckpoint } from './match.ts'
 import { ComputerOpponent } from './computer.ts'
@@ -44,6 +45,7 @@ const send = (peer: WebSocket | null, message: ServerMessage) => {
 export class Rooms {
   private rooms = new Map<string, Room>()
   private sessions = new Map<WebSocket, Session>()
+  private snapshots = new WeakMap<WebSocket, Snapshot>()
 
   checkpoint(): SavedRoom[] {
     return [...this.rooms.values()].flatMap(room => room.match ? [{
@@ -163,13 +165,15 @@ export class Rooms {
     this.sessions.set(peer, { room, seat })
     send(peer, { type: 'session', code: room.code, token: seat.token, faction: seat.faction })
     this.broadcastRoom(room)
-    if (room.match) send(peer, room.match.view(seat.faction))
+    this.snapshots.delete(peer)
+    if (room.match) this.sendSnapshot(peer, room.match.view(seat.faction))
   }
 
   disconnect(peer: WebSocket, explicit = false, now = Date.now()) {
     const session = this.sessions.get(peer)
     if (!session) return
     this.sessions.delete(peer)
+    this.snapshots.delete(peer)
     const { room, seat } = session
     seat.peer = null
     seat.disconnectedAt = now
@@ -220,18 +224,29 @@ export class Rooms {
   private broadcastSnapshot(room: Room) {
     if (!room.match) return
     const snapshot = room.match.snapshot(true)
-    // Encode each faction view at most once, even when seats share a faction.
-    const payloads = new Map<Faction, string>()
+    const views = new Map<Faction, Snapshot>()
     for (const seat of room.seats) {
       const peer = seat.peer
       if (!peer || peer.readyState !== WebSocket.OPEN || peer.bufferedAmount >= 256_000) continue
-      let payload = payloads.get(seat.faction)
-      if (!payload) {
-        payload = JSON.stringify(room.match.view(seat.faction, snapshot))
-        payloads.set(seat.faction, payload)
+      let view = views.get(seat.faction)
+      if (!view) {
+        view = room.match.view(seat.faction, snapshot)
+        views.set(seat.faction, view)
       }
-      peer.send(payload)
+      this.sendSnapshot(peer, view)
     }
+  }
+
+  private sendSnapshot(peer: WebSocket, view: Snapshot) {
+    if (peer.readyState !== WebSocket.OPEN || peer.bufferedAmount >= 256_000) return
+    if (peer.protocol !== deltaProtocol) {
+      peer.send(JSON.stringify(view))
+      return
+    }
+    const previous = this.snapshots.get(peer)
+    peer.send(JSON.stringify(previous && previous.tick < view.tick ? makeDelta(previous, view) : view))
+    // Skipping a backpressured send above leaves the base at the last sent snapshot.
+    this.snapshots.set(peer, view)
   }
 
   private broadcastRoom(room: Room) {
