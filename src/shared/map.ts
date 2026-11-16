@@ -140,26 +140,26 @@ function mirroredBases(width: number, height: number, x: number, y: number): Bat
 }
 
 function createIslands(): BattleMap {
-  const width = 160, height = 96
+  const width = 192, height = 112
   const tiles: Tile[] = Array(width * height).fill('water')
   const ellipse = (x: number, y: number, cx: number, cy: number, rx: number, ry: number) =>
     ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 < 1
   for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
     const jitter = Math.sin(x * .31 + y * .13) * 1.5 + Math.cos(y * .37 - x * .19)
-    const left = ellipse(x, y, 26, 48, 25 + jitter, 41 + jitter)
-    const right = ellipse(x, y, 133, 47, 25 + jitter, 41 + jitter)
-    const north = ellipse(x, y, 80, 13, 18 + jitter, 10 + jitter)
-    const south = ellipse(x, y, 80, 82, 19 + jitter, 11 + jitter)
-    const middle = ellipse(x, y, 80, 48, 12 + jitter, 10 + jitter)
+    const left = ellipse(x, y, 31, 56, 23 + jitter, 37 + jitter)
+    const right = ellipse(x, y, 160, 55, 23 + jitter, 37 + jitter)
+    const north = ellipse(x, y, 96, 16, 17 + jitter, 10 + jitter)
+    const south = ellipse(x, y, 96, 95, 18 + jitter, 11 + jitter)
+    const middle = ellipse(x, y, 96, 56, 11 + jitter, 10 + jitter)
     if (!left && !right && !north && !south && !middle) continue
     let tile: Tile = 'grass'
     const noise = (Math.imul(x + 11, 73856093) ^ Math.imul(y + 17, 19349663)) >>> 0
-    if (noise % 37 < 3 && x > 13 && x < 147) tile = 'forest'
+    if (noise % 37 < 3 && x > 13 && x < 179) tile = 'forest'
     if (noise % 131 === 4) tile = 'rock'
     tiles[y * width + x] = tile
   }
   // Safe starting zones and mirrored resource deposits on both large islands.
-  for (const [cx, cy] of [[24, 48], [135, 47]]) {
+  for (const [cx, cy] of [[30, 56], [161, 55]]) {
     for (let y = cy - 6; y <= cy + 6; y++) for (let x = cx - 7; x <= cx + 7; x++) tiles[y * width + x] = 'grass'
     for (const [dx, dy, tile] of [[-6, 2, 'mine'], [-6, -2, 'quarry'], [1, -5, 'forest']] as const) {
       tiles[(cy + dy) * width + cx + dx] = tile
@@ -170,7 +170,7 @@ function createIslands(): BattleMap {
     tiles[(height - 1 - y) * width + (width - 1 - x)] = tiles[y * width + x]
   }
   return { id: 'shattered-isles', name: 'Shattered Isles', width, height, tiles,
-    bases: mirroredBases(width, height, 24, 48) }
+    bases: mirroredBases(width, height, 30, 56) }
 }
 
 const battlefields = {
