@@ -48,6 +48,7 @@ const lobbyMessage = element('lobby-message')
 const result = element<HTMLDialogElement>('result')
 const banner = element('banner')
 const attackAlerts = element('attack-alerts')
+const minimapPings = element('minimap-pings')
 let shownAlerts: readonly AttackAlert[] = []
 const menu = element('economy-menu')
 const workerActions = element('worker-actions')
@@ -322,15 +323,29 @@ function drawAttackAlerts(alerts: readonly AttackAlert[]) {
   attackAlerts.hidden = !alerts.length
   const labels = { base: 'Base under attack', building: 'Building under attack',
     workers: 'Workers under attack', army: 'Army under attack' }
-  attackAlerts.replaceChildren(...alerts.map(alert => {
+  const notices: HTMLButtonElement[] = []
+  const pings: HTMLButtonElement[] = []
+  for (const alert of alerts) {
     const item = document.createElement('button')
     item.type = 'button'
     item.dataset.severity = alert.kind
     item.textContent = labels[alert.kind]
     item.title = 'Center camera on attack'
     item.onclick = () => scene?.focusAlert(alert.at)
-    return item
-  }))
+    notices.push(item)
+    const position = scene?.minimapPosition(alert.at)
+    if (!position) continue
+    const ping = document.createElement('button')
+    ping.type = 'button'
+    ping.dataset.severity = alert.kind
+    ping.setAttribute('aria-label', 'Minimap ping · ' + labels[alert.kind])
+    ping.style.left = position.x * 100 + '%'
+    ping.style.top = position.y * 100 + '%'
+    ping.onclick = item.onclick
+    pings.push(ping)
+  }
+  attackAlerts.replaceChildren(...notices)
+  minimapPings.replaceChildren(...pings)
 }
 
 function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
@@ -800,7 +815,7 @@ button('map-button').addEventListener('pointerdown', event => {
   const bounds = minimap.getBoundingClientRect()
   const clamp = (value: number) => Math.min(1, Math.max(0, value))
   scene?.minimapFocus(clamp((event.clientX - bounds.left) / bounds.width),
-    clamp((event.clientY - bounds.top) / bounds.height), bounds.width, bounds.height)
+    clamp((event.clientY - bounds.top) / bounds.height))
 })
 button('map-button').addEventListener('click', event => {
   if (event.detail === 0) scene?.minimapFocus(0.5, 0.5)

@@ -91,6 +91,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #battlefield { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #101711; touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 #battlefield canvas { display: block; image-rendering: pixelated; touch-action: none; }
 .hud { min-height: 76px; padding: 0.35rem 0.65rem max(0.35rem, env(safe-area-inset-bottom)); border-top: 2px solid #a78758; box-shadow: 0 -2px #122326a6; }
+.minimap-control { position: relative; flex: 0 0 auto; }
 #map-button { background: #0e251f; padding: 3px; min-width: 100px; display: grid; place-items: center; touch-action: none; }
 #minimap { width: 132px; height: 60px; display: block; }
 #selection-portrait { flex: 0 0 auto; width: 43px; height: 43px; border: 1px solid var(--team);
@@ -335,3 +336,36 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 }
 #formation-options button { min-height: 39px; }
 #formation-options button[aria-pressed="true"] { background: #415244; border-color: var(--team); }
+
+#minimap-pings { position: absolute; inset: 4px; pointer-events: none; }
+#minimap-pings button {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  pointer-events: auto;
+}
+#minimap-pings button::before { content: ''; width: 6px; height: 6px; background: #ff9464; border-radius: 50%; }
+#minimap-pings button[data-severity="base"]::before { background: #fff7ad; }
+#minimap-pings button::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 2px solid #ff8258;
+  border-radius: 50%;
+  animation: attack-ping 900ms ease-out infinite;
+}
+@keyframes attack-ping {
+  from { transform: scale(0.65); opacity: 1; }
+  to { transform: scale(1.45); opacity: 0.3; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #minimap-pings button::after { animation: none; }
+}

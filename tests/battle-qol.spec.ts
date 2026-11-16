@@ -31,24 +31,23 @@ test('landscape player recruits from two buildings, gets a base ping and finds g
       await page.goto(fixture.url)
       await expect(page.locator('#battlefield canvas')).toBeVisible()
     }))
-    const baseAlert = human.getByRole('button', { name: 'Base under attack' })
+    const baseAlert = human.getByRole('button', { name: 'Base under attack', exact: true })
     await expect(baseAlert).toBeVisible()
-    await expect(orc.getByRole('button', { name: 'Base under attack' })).toHaveCount(0)
+    await expect(orc.getByRole('button', { name: 'Base under attack', exact: true })).toHaveCount(0)
+    const ping = human.getByRole('button', { name: 'Minimap ping · Base under attack', exact: true })
+    await expect(ping).toBeVisible()
     const minimap = human.locator('#minimap')
-    const at = { x: hall.x / fixture.worldWidth, y: hall.y / fixture.worldHeight }
-    await expect.poll(async () => {
-      expect(pageErrors).toEqual([])
-      return minimap.evaluate((canvas: HTMLCanvasElement, at) => {
-      const ctx = canvas.getContext('2d')!
-      return [...ctx.getImageData(Math.floor(at.x * canvas.width), Math.floor(at.y * canvas.height), 1, 1).data]
-      }, at)
-    }).toEqual([255, 247, 173, 255])
-    expect(pageErrors).toEqual([])
     const map = (await minimap.boundingBox())!
+    const mapButton = (await human.getByRole('button', { name: 'Minimap', exact: true }).boundingBox())!
     expect(map.x).toBeGreaterThanOrEqual(0)
+    expect(map.x + map.width).toBeLessThanOrEqual(mapButton.x + mapButton.width)
     expect(map.x + map.width).toBeLessThanOrEqual(phone.viewport.height)
-    const target = { x: map.x + hall.x / fixture.worldWidth * map.width, y: map.y + hall.y / fixture.worldHeight * map.height }
-    await human.touchscreen.tap(target.x, target.y)
+    const box = (await ping.boundingBox())!
+    const expectedX = map.x + hall.x / fixture.worldWidth * map.width
+    const expectedY = map.y + hall.y / fixture.worldHeight * map.height
+    expect(Math.abs(box.x + box.width / 2 - expectedX)).toBeLessThan(2)
+    expect(Math.abs(box.y + box.height / 2 - expectedY)).toBeLessThan(2)
+    await ping.tap()
     await baseAlert.tap()
     const footmen = human.getByRole('button', { name: 'Footman', exact: true })
     await footmen.tap()
@@ -80,6 +79,7 @@ test('landscape player recruits from two buildings, gets a base ping and finds g
     await expect.poll(living).toBeGreaterThanOrEqual(5)
     await expect(human.getByRole('button', { name: 'All troops', exact: true })).toBeVisible()
     await expect(human.getByRole('button', { name: 'Heroes', exact: true })).toHaveCount(0)
+    expect(pageErrors).toEqual([])
   } finally {
     await Promise.all([host.close(), mobile.close()])
     if (engine !== browser) await engine.close()

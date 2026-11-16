@@ -117,7 +117,10 @@
       </div>
       <nav id="troop-groups" aria-label="Troop groups" hidden></nav>
       <footer class="hud">
-        <button id="map-button" type="button" title="Tap or click to pan the camera" aria-label="Minimap"><canvas id="minimap" width="176" height="80"></canvas></button>
+        <div class="minimap-control">
+          <button id="map-button" type="button" title="Tap or click to pan the camera" aria-label="Minimap"><canvas id="minimap" width="176" height="80"></canvas></button>
+          <div id="minimap-pings" aria-label="Minimap attack pings"></div>
+        </div>
         <canvas id="selection-portrait" width="42" height="42" aria-hidden="true" hidden></canvas>
         <div class="selection">
           <strong id="selection-name">No units selected</strong>

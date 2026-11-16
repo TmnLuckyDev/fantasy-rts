@@ -356,18 +356,8 @@ export class BattleScene extends Phaser.Scene {
   home() { if (this.initialized) this.focus(this.map.bases[this.faction]) }
   focusAlert(point: Point) { if (this.initialized) this.focus(point) }
 
-  minimapFocus(x: number, y: number, width = 0, height = 0) {
-    if (!this.initialized) return
-    if (width && height) {
-      const near = this.newest?.alerts?.find(({ at }) =>
-        Math.hypot((at.x / this.mapWidth - x) * width, (at.y / this.mapHeight - y) * height) <= 10)
-      if (near) {
-        this.focus(near.at)
-        return
-      }
-    }
-    this.focus({ x: x * this.mapWidth, y: y * this.mapHeight })
-  }
+  minimapPosition(point: Point) { return { x: point.x / this.mapWidth, y: point.y / this.mapHeight } }
+  minimapFocus(x: number, y: number) { if (this.initialized) this.focus({ x: x * this.mapWidth, y: y * this.mapHeight }) }
 
   private ownUnit(entity: Entity) { return entity.faction === this.faction && isUnitKind(entity.kind) }
 
@@ -712,7 +702,7 @@ export class BattleScene extends Phaser.Scene {
       this.ui.fillStyle(0xe2ce87, 0.15).fillRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y))
       this.ui.lineStyle(1, 0xe2ce87, 0.9).strokeRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y))
     }
-    if (this.hasSnapshot && (this.minimapDirty || this.newest?.alerts?.length) && time - this.lastMiniDraw > 60) {
+    if (this.hasSnapshot && this.minimapDirty && time - this.lastMiniDraw > 60) {
       this.drawMinimap()
       this.minimapDirty = false
       this.lastMiniDraw = time
@@ -792,20 +782,5 @@ export class BattleScene extends Phaser.Scene {
     ctx.strokeStyle = '#ffdf98'
     ctx.strokeRect(start.x / this.mapWidth * w, start.y / this.mapHeight * h,
       camera.width / camera.zoom / this.mapWidth * w, camera.height / camera.zoom / this.mapHeight * h)
-    for (const alert of this.newest?.alerts ?? []) {
-      const phase = (this.time.now % 800) / 800
-      const x = alert.at.x / this.mapWidth * w
-      const y = alert.at.y / this.mapHeight * h
-      ctx.fillStyle = alert.kind === 'base' ? '#fff7ad' : '#ff8e61'
-      ctx.fillRect(x - 2, y - 2, 4, 4)
-      ctx.globalAlpha = 1 - phase * 0.7
-      ctx.strokeStyle = '#ff8258'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(x, y, 4 + phase * 5, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.lineWidth = 1
-      ctx.globalAlpha = 1
-    }
   }
 }
