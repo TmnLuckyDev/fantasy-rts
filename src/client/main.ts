@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
-import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
+import { buildings, bulkStructureCost, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { hasHero, heroAbilities, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
@@ -54,6 +54,7 @@ let shownAlerts: readonly AttackAlert[] = []
 const menu = element('economy-menu')
 const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
+const globalUpgradeToggle = button('global-upgrade-toggle')
 const productionPanel = element('production-panel')
 const productionToggle = button('production-toggle')
 const globalTrainPanel = element('global-train-panel')
@@ -138,6 +139,7 @@ const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: num
 let selection: Entity[] = []
 let placing = false
 let economyContext = ''
+let globalUpgradeOpen = false
 
 const invite = new URLSearchParams(location.search).get('room')
 if (invite && /^[A-Z2-9]{5}$/i.test(invite)) joinCode.value = invite.toUpperCase()
@@ -445,15 +447,15 @@ function drawSelection(entities: Entity[], interactive = false) {
   const smithy = entities.length === 1 && selected?.kind === 'smithy' && selected.construction === undefined
   const building = entities.length === 1 && selected && !isUnitKind(selected.kind) ? selected : undefined
   const foundation = building?.construction !== undefined
-  const nextContext = workers ? 'build' : (building && !foundation && (building.kind === 'tower' || building.kind === 'wall')) ? 'fortify:' + building.id : trainer ? 'train:' + trainer.id :
+  const nextContext = globalUpgradeOpen ? 'global-upgrades' : workers ? 'build' : (building && !foundation && (building.kind === 'tower' || building.kind === 'wall')) ? 'fortify:' + building.id : trainer ? 'train:' + trainer.id :
     smithy ? 'research:' + selected.id : foundation ? 'cancel:' + building.id :
     building ? 'manage:' + building.id : ''
   const changed = nextContext !== economyContext
   economyContext = nextContext
-  economyAction.hidden = !nextContext
+  economyAction.hidden = globalUpgradeOpen || !nextContext
   economyAction.textContent = workers ? 'Build' : smithy ? 'Upgrade' : (building && (building.kind === 'tower' || building.kind === 'wall')) ? 'Upgrade' : foundation ? 'Construction' : trainer ? 'Train' : 'Manage'
-  if (!nextContext || (workers && (changed || interactive))) closeEconomyMenu()
-  else if (!workers && (changed || interactive)) openEconomyMenu(changed)
+  if (!nextContext || (!globalUpgradeOpen && workers && (changed || interactive))) closeEconomyMenu()
+  else if ((!workers || globalUpgradeOpen) && (changed || interactive)) openEconomyMenu(changed)
   else if (!menu.hidden) updateEconomyOptions()
   const label = element('selection-name')
   const detail = element('selection-detail')
@@ -501,7 +503,7 @@ function drawSelection(entities: Entity[], interactive = false) {
       detail.textContent = selected.carrying ? `Carrying ${selected.carrying}` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
     } else if (selected.kind === 'transport') detail.textContent = `${hp}/${totalHp} HP · ${selected.passengerPop ?? 0}/30 population aboard`
     else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP` + (raceOf(selected) === 'dwarf' ? ' · Stone drop-off' : '')
-    else detail.textContent = (selected.level ? `Level ${selected.level}/${MAX_UPGRADE_LEVEL} · ` : '') + (stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`) + (selected.upgradeProgress !== undefined ? ` · Upgrading ${percentage(selected.upgradeProgress)}` : '')
+    else detail.textContent = (selected.level ? `Level ${selected.level}/${MAX_UPGRADE_LEVEL} · ` : '') + (stats.damage ? `${hp}/${totalHp} HP · ${stats.damage + (selected.weaponLevel ?? 0) * upgrades.weapons.bonus + ((selected.kind === 'ranged' || selected.kind === 'marksman' || selected.kind === 'pathfinder' || selected.kind === 'warship') ? (selected.precisionLevel ?? 0) * upgrades.precision.bonus : 0)} damage` : `${hp}/${totalHp} HP`) + (selected.upgradeProgress !== undefined ? ` · Upgrading ${percentage(selected.upgradeProgress)}` : '')
   } else {
     const onlyWorkers = entities.every(entity => entity.kind === 'worker')
     label.textContent = `${entities.length} ${onlyWorkers ? 'workers' : 'troops'} selected`
@@ -532,6 +534,7 @@ function gatherHint() {
 function closeEconomyMenu() {
   menu.hidden = true
   economyAction.setAttribute('aria-expanded', 'false')
+  globalUpgradeToggle.setAttribute('aria-expanded', 'false')
   syncWorkerActions()
 }
 
@@ -561,6 +564,20 @@ function updateEconomyOptions() {
     const site = selection[0]
     fortify.disabled = (site.level ?? 1) >= MAX_UPGRADE_LEVEL || site.upgradeProgress !== undefined ||
       !canAfford(resources, structureUpgrade(site.kind as 'tower' | 'wall', (site.level ?? 1) + 1).cost)
+  }
+  for (const choice of menu.querySelectorAll<HTMLButtonElement>('[data-bulk-fortify]')) {
+    const kind = choice.dataset.bulkFortify as 'wall' | 'tower'
+    const eligible = ownEntities.filter(entity => entity.kind === kind && entity.construction === undefined &&
+      entity.upgradeProgress === undefined && (entity.level ?? 1) < MAX_UPGRADE_LEVEL)
+    const total: Resources = { gold: 0, wood: 0, stone: 0 }
+    for (const entity of eligible) {
+      const cost = bulkStructureCost(kind, (entity.level ?? 1) + 1)
+      for (const resource of resourceKinds) total[resource] += cost[resource] ?? 0
+    }
+    choice.disabled = !eligible.length || !canAfford(resources, total)
+    choice.textContent = `Upgrade all ${kind === 'wall' ? 'walls' : 'towers'} (${eligible.length}) · ` +
+      resourceKinds.filter(resource => total[resource]).map(resource => `${total[resource]} ${resource}`).join(' · ')
+    if (!eligible.length) choice.textContent = `Upgrade all ${kind === 'wall' ? 'walls' : 'towers'} (none eligible)`
   }
   const repair = menu.querySelector<HTMLButtonElement>('[data-repair]')
   if (repair) {
@@ -684,7 +701,26 @@ function openEconomyMenu(rebuild = false) {
   toggleGlobalTrain(false)
   if (!economyContext || placing) return
   if (rebuild) {
-    if (economyContext === 'build') menu.replaceChildren(...buildChoices())
+    if (economyContext === 'global-upgrades') {
+      const smith = ownEntities.find(entity => entity.kind === 'smithy' && entity.construction === undefined)
+      const choices = upgradeKinds.filter(kind => kind !== 'fortress').map(kind => {
+        const choice = economyChoice('smithy', upgrades[kind].cost, 0, () => {
+          const available = ownEntities.find(entity => entity.kind === 'smithy' && entity.construction === undefined && !entity.research)
+          if (available) issueOrder([available.id], { kind: 'upgrade', upgrade: kind })
+        }, kind)
+        if (!smith) choice.disabled = true
+        return choice
+      })
+      for (const kind of ['wall', 'tower'] as const) {
+        const choice = actionButton('', () => {
+          const id = ownEntities[0]?.id
+          if (id) issueOrder([id], { kind: 'bulk-structure-upgrade', building: kind })
+        })
+        choice.dataset.bulkFortify = kind
+        choices.push(choice)
+      }
+      menu.replaceChildren(...choices)
+    } else if (economyContext === 'build') menu.replaceChildren(...buildChoices())
     else if (economyContext.startsWith('cancel:')) {
       const site = selection[0]
       menu.replaceChildren(actionButton('Cancel construction', () => issueOrder([site.id], { kind: 'cancel-build' })))
@@ -717,6 +753,18 @@ function openEconomyMenu(rebuild = false) {
   menu.hidden = false
   economyAction.setAttribute('aria-expanded', 'true')
   syncWorkerActions()
+}
+
+globalUpgradeToggle.onclick = () => {
+  globalUpgradeOpen = !globalUpgradeOpen
+  if (globalUpgradeOpen) {
+    economyContext = 'global-upgrades'
+    openEconomyMenu(true)
+    globalUpgradeToggle.setAttribute('aria-expanded', 'true')
+  } else {
+    closeEconomyMenu()
+    drawSelection(selection, true)
+  }
 }
 
 economyAction.onclick = () => {
