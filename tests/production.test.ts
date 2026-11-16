@@ -6,7 +6,7 @@ import { training } from '../src/shared/economy.ts'
 function stocked() {
   const state = new Match().checkpoint()
   state.resources.human.gold = 100_000
-  state.settings.populationCap = 2000
+  state.settings = { ...state.settings!, populationCap: 2000 }
   const prototype = state.units[0]
   for (let i = 0; i < 102; i++) {
     state.units.push({ ...prototype, id: ++state.sequence, kind: 'farm', x: -1000 - 64 * i, queue: [] })
