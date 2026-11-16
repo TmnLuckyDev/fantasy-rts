@@ -6,7 +6,7 @@ import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } 
 import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
-  buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, buildingFootprint, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
 import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
@@ -291,13 +291,13 @@ export class Match {
     const offset = scout.id % step
     let best: Point | null = null
     let score = Infinity
+    const reserved = [...this.units.values()].filter(unit => unit !== scout && unit.kind === 'scout' &&
+      unit.faction === scout.faction && unit.order?.kind === 'explore' && unit.assigned).map(unit => unit.assigned!)
     for (let y = 2 + offset; y < this.map.height - 2; y += step) {
       for (let x = 2 + offset; x < this.map.width - 2; x += step) {
         const at = cellCenter(x, y)
         if (this.visibility.at(scout.faction, at) !== 0 || !isWalkable(tileAt(this.map, x, y))) continue
-        const occupied = [...this.units.values()].some(unit => unit !== scout && unit.kind === 'scout' &&
-          unit.faction === scout.faction && unit.order?.kind === 'explore' && unit.assigned &&
-          squaredDistance(unit.assigned, at) < (6 * TILE) ** 2)
+        const occupied = reserved.some(point => squaredDistance(point, at) < (6 * TILE) ** 2)
         if (occupied) continue
         const candidate = squaredDistance(scout, at)
         if (candidate < score) { score = candidate; best = at }
@@ -674,7 +674,7 @@ export class Match {
     for (const building of this.units.values()) {
       if (isUnitKind(building.kind)) continue
       const opponent = opposite(building.faction)
-      hostileBuildings[opponent].push({ x: building.x, y: building.y, radius: unitStats[building.faction][building.kind].radius })
+      hostileBuildings[opponent].push({ x: building.x, y: building.y, radius: building.kind === 'headquarters' ? unitStats[building.faction][building.kind].radius : buildingFootprint(building.kind) })
     }
     for (const unit of this.units.values()) {
       unit.moving = false
