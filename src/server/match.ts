@@ -582,7 +582,7 @@ export class Match {
     const { used, limit } = this.population(building.faction)
     if (used + training[next.kind].population > limit) return
     const radius = unitStats[building.faction][next.kind].radius
-    const bounds = unitStats[building.faction][building.kind].radius + radius + 16
+    const bounds = unitStats[building.faction][building.kind].radius + radius + (building.kind === 'port' ? 55 : 16)
     const slots = [0, 0.65, -0.65, 1.3, -1.3, 2.0, -2.0, Math.PI]
     const direction = building.faction === 'human' ? 1 : -1
     let spawnPoint: Point | undefined
@@ -782,7 +782,7 @@ export class Match {
         let nearest = automaticRange
         const enemies = this.nearby[opposite(unit.faction)]
         for (const other of enemies.near(unit, automaticRange + maxRadius)) {
-          if (unit.kind === 'tower' && !isUnitKind(other.kind)) continue
+          if ((unit.kind === 'tower' && !isUnitKind(other.kind)) || other.embarkedOn) continue
           const radius = unitStats[other.faction][other.kind].radius
           const gap = squaredDistance(unit, other)
           if (gap > (nearest + radius) ** 2) continue
@@ -960,7 +960,7 @@ export class Match {
     if (unit.nextStrike > this.tick) return true
     unit.nextStrike = this.tick + stats.cooldown
     unit.facing = target.x < unit.x ? -1 : 1
-    if (isRanged(unit.kind) || unit.kind === 'tower') {
+    if (isRanged(unit.kind) || unit.kind === 'tower' || unit.kind === 'warship') {
       const flight = Math.max(2, Math.ceil(distance(unit, target) / 24))
       this.missiles.push({ attacker: unit, targetId: target.id, arrives: this.tick + flight })
       this.effects.push({
