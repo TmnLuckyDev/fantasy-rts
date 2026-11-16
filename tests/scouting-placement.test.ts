@@ -37,6 +37,6 @@ test('only scouts can receive autonomous exploration orders', () => {
 test('buildings use smaller footprints while headquarters remain full size', () => {
   const match = new Match()
   assert.ok(buildingFootprint('barracks') < unitStats.human.barracks.radius)
-  const at = cellCenter(20, 15)
-  assert.ok(validPlacement(match.map, 'barracks', at, []))
+  const at = cellCenter(45, 15)
+  assert.ok(validPlacement({ ...match.map, tiles: match.map.tiles.map(() => 'grass' as const) }, 'barracks', at, []))
 })
