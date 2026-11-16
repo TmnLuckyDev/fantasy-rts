@@ -396,6 +396,11 @@ export class BattleScene extends Phaser.Scene {
     }
     const picked = this.pick(point, touch)
     if (touch && this.workOnBuilding(this.workerIds(), picked)) return
+    if (touch && picked?.kind === 'transport' && picked.faction === this.faction &&
+        this.mobileUnits().some(id => !isShipKind(this.visuals.get(id)?.entity.kind))) {
+      this.actions.order(this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind)), { kind: 'board', transport: picked.id })
+      return
+    }
     if (picked?.faction === this.faction) {
       this.selectedGroup = null
       if (!append) this.selected.clear()
