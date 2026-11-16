@@ -73,6 +73,8 @@ export type Entity = Point & {
   embarkedOn?: number
   passengers?: number[]
   passengerPop?: number
+  weaponLevel?: number
+  armorLevel?: number
   level?: number
   upgradeProgress?: number
 }
