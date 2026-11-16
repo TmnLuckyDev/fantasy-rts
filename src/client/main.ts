@@ -413,6 +413,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   button('explore').hidden = !entities.some(entity => entity.kind === 'scout')
+  button('unload').hidden = !(entities.length === 1 && selected?.kind === 'transport')
+  if (selected?.kind === 'transport') button('unload').disabled = !(selected.passengers?.length)
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
   const heroSkillButton = button('hero-skill')
   heroSkillButton.hidden = !selectedHero
@@ -648,6 +650,7 @@ economyAction.onclick = () => {
 }
 
 button('explore').onclick = () => scene?.explore()
+button('unload').onclick = () => scene?.unload()
 button('hero-skill').onclick = () => scene?.castHeroAbility()
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
