@@ -972,7 +972,7 @@ export class Match {
     }
     const next = unit.path[0]
     if (!next) return
-    const gap = distance(unit, next), step = unitStats[unit.faction][unit.kind].speed / TICK_HZ
+    const gap = distance(unit, next), step = this.moveSpeed(unit) / TICK_HZ
     if (gap <= step) {
       Object.assign(unit, next)
       unit.path.shift()
@@ -1035,6 +1035,11 @@ export class Match {
     unit.pursued = destination
     unit.nextPath = this.tick + 10
     unit.blockedTicks = 0
+  }
+
+  private moveSpeed(unit: Unit): number {
+    const base = unitStats[unit.faction][unit.kind].speed
+    return base * (1 + this.upgrades[unit.faction].filter(kind => kind === 'speed').length * upgrades.speed.bonus / 100)
   }
 
   private attackRange(unit: Unit): number {
@@ -1160,7 +1165,7 @@ export class Match {
       unit.path.shift()
       return
     }
-    const step = Math.min(remaining, stats.speed / TICK_HZ)
+    const step = Math.min(remaining, this.moveSpeed(unit) / TICK_HZ)
     const vx = (next.x - unit.x) / remaining
     const vy = (next.y - unit.y) / remaining
     for (const { sin, cos, direct } of steering) {
@@ -1231,7 +1236,7 @@ export class Match {
         const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
         const next = queue[0]
         return {
-          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, weaponLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'weapons').length : undefined, armorLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'armor').length : undefined, precisionLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'precision').length : undefined, vitalityLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'vitality').length : undefined, rangeLevel: benefitsFromRange(kind) ? this.upgrades[faction].filter(value => value === 'range').length : undefined, level: unit.level, upgradeProgress: unit.structureJob ? 1 - unit.structureJob.left / unit.structureJob.total : undefined, passengers: unit.passengers, passengerPop: unit.kind === 'transport' ? (unit.passengers ?? []).reduce((total, id) => {
+          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, weaponLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'weapons').length : undefined, armorLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'armor').length : undefined, precisionLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'precision').length : undefined, vitalityLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'vitality').length : undefined, rangeLevel: benefitsFromRange(kind) ? this.upgrades[faction].filter(value => value === 'range').length : undefined, speedLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'speed').length : undefined, level: unit.level, upgradeProgress: unit.structureJob ? 1 - unit.structureJob.left / unit.structureJob.total : undefined, passengers: unit.passengers, passengerPop: unit.kind === 'transport' ? (unit.passengers ?? []).reduce((total, id) => {
              const passenger = this.units.get(id)
              return total + (passenger ? training[passenger.kind as UnitKind].population : 0)
            }, 0) : undefined, embarkedOn: unit.embarkedOn, experience: unit.experience, abilityReadyAt: unit.abilityReadyAt, abilityActiveUntil: unit.abilityActiveUntil,
