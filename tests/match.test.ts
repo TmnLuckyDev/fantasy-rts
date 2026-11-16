@@ -1,3 +1,4 @@
+import { buildingFootprint } from '../src/shared/economy.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { TILE, ashford, ashfordClassic, cellCenter, distance, isWalkable, riverColumn, tileAt } from '../src/shared/map.ts'
@@ -94,7 +95,7 @@ test('units cross friendly buildings and either side’s units, but go around ho
         }
         assert.ok(distance(mover, end) < 2, `${faction} failed to reach destination past ${owner} ${kind}`)
         if (owner === enemy && kind !== 'worker') {
-          assert.ok(closest >= unitStats[owner][kind].radius + unitStats[faction].worker.radius)
+          assert.ok(closest >= buildingFootprint(kind) + unitStats[faction].worker.radius)
         } else assert.ok(closest < 3, `${faction} detoured around ${owner} ${kind}`)
       }
     }
