@@ -752,7 +752,7 @@ export class BattleScene extends Phaser.Scene {
         visual.ring.setPosition(sprite.x, sprite.y + 2)
       } else this.releaseRing(visual)
       const fullDetail = !crowded || building || isHeroKind(entity.kind)
-      if (entity.hp < entity.maxHp || entity.kind === 'headquarters' || entity.construction !== undefined || (selected && fullDetail)) {
+      if (entity.hp > 0) {
         const w = building ? radius * 1.8 : 22
         const x = sprite.x - w / 2
         const y = sprite.y - (entity.kind === 'headquarters' ? 85 : entity.kind === 'tower' ? 65 : entity.kind === 'wall' ? 31 : building ? 46 : 37)

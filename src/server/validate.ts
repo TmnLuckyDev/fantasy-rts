@@ -70,6 +70,7 @@ function parseOrder(order: Record<string, unknown>): Order | null {
   if (order.kind === 'rally' && object(order.to) && coordinate(order.to.x) && coordinate(order.to.y)) {
     return { kind: 'rally', to: { x: order.to.x, y: order.to.y } }
   }
+  if (order.kind === 'bulk-structure-upgrade' && (order.building === 'wall' || order.building === 'tower')) return { kind: 'bulk-structure-upgrade', building: order.building }
   if (order.kind === 'board' && validId(order.transport)) return { kind: 'board', transport: order.transport }
   if (order.kind === 'attack' && validId(order.target)) return { kind: 'attack', target: order.target, ...options }
   if ((order.kind === 'move' || order.kind === 'advance') && object(order.to) &&

@@ -160,6 +160,7 @@ export type Order =
   | { kind: 'wall-line', from: Point, to: Point }
   | { kind: 'upgrade', upgrade: UpgradeKind }
   | { kind: 'structure-upgrade' }
+  | { kind: 'bulk-structure-upgrade', building: 'wall' | 'tower' }
   | { kind: 'resume-build', target: number }
   | { kind: 'repair', target: number }
   | { kind: 'train', unit: UnitKind, count?: number }
