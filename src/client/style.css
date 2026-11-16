@@ -258,3 +258,33 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #troop-groups button[aria-pressed="true"] { border-color: var(--team); background: #3c4b45; }
 #troop-groups canvas { width: 26px; height: 26px; image-rendering: pixelated; }
 .troop-count { color: var(--gold); font-variant-numeric: tabular-nums; }
+
+#global-train-panel {
+  position: absolute;
+  z-index: 2;
+  right: 0.5rem;
+  bottom: calc(100% + 2.65rem);
+  width: min(28rem, calc(100% - 1rem));
+  max-height: min(48dvh, 20rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.55rem;
+  background: #1b2629;
+  border: 1px solid var(--edge);
+  box-shadow: 0 4px 12px #0008;
+}
+#global-train-toggle[aria-expanded="true"] { border-color: var(--team); }
+#global-train-panel > strong::after { content: attr(data-limits); display: block; color: #e3c39a; font-size: 0.75rem; }
+.training-feedback { margin: 0; color: #ffa78c; font-size: 0.8rem; }
+.global-train-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding-block: 0.25rem;
+  border-bottom: 1px solid #68553b;
+  font-size: 0.82rem;
+}
+.global-train-row > div { flex: 1 1 auto; }
+.global-train-row small { display: block; color: var(--muted); }
+.global-train-row canvas { width: 28px; height: 28px; image-rendering: pixelated; }
+.global-train-row button { min-width: 38px; min-height: 36px; padding-inline: 0.35rem; }

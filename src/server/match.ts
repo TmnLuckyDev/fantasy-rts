@@ -3,6 +3,7 @@ import type { BattleMap, MapId } from '../shared/map.ts'
 import { MAX_SELECTION, factions, inTroopGroup, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
 import type { ArmyOrder, TroopGroup, Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
+import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
   buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
@@ -383,19 +384,47 @@ export class Match {
     return { used, reserved, limit }
   }
 
-  private enqueue(building: Unit, kind: UnitKind, count: number) {
-    if (building.buildDuration || !trainedAt(building.kind).includes(kind) || !Number.isSafeInteger(count) || count < 1) return false
-    if (isHeroKind(kind) && (count !== 1 || this.activeHeroes[building.faction] ||
-        building.queue.some(entry => isHeroKind(entry.kind)))) return false
+  trainGlobally(faction: Faction, kind: UnitKind, count: number): string | null {
+    if (this.result) return 'The match has ended.'
+    const buildings = [...this.units.values()].filter(building => building.faction === faction &&
+      !building.buildDuration && trainedAt(building.kind).includes(kind))
+    if (!buildings.length) return 'Build the required production building first.'
+    const error = this.trainingError(faction, kind, count)
+    if (error) return error
     const rule = training[kind]
-    const stock = this.resources[building.faction]
-    const { used, reserved, limit } = this.population(building.faction)
-    if (count > Math.floor(stock.gold / rule.gold) || count > Math.floor((limit - used - reserved) / rule.population)) return false
-    stock.gold -= count * rule.gold
+    const loads = buildings.map(building => trainingTimeline(building.queue, building.queue[0]?.left ?? 0).ticks)
+    const allocation = allocateTraining(loads, rule.ticks, count)
+    this.resources[faction].gold -= count * rule.gold
+    buildings.forEach((building, i) => {
+      if (allocation[i]) this.appendTraining(building, kind, allocation[i])
+    })
+    return null
+  }
+
+  private trainingError(faction: Faction, kind: UnitKind, count: number) {
+    if (!Number.isSafeInteger(count) || count < 1) return 'Choose a valid unit count.'
+    if (isHeroKind(kind) && (count !== 1 || this.activeHeroes[faction] ||
+        [...this.units.values()].some(unit => unit.faction === faction && unit.queue.some(entry => isHeroKind(entry.kind))))) {
+      return 'You can only have one active or queued hero.'
+    }
+    const rule = training[kind]
+    if (count > Math.floor(this.resources[faction].gold / rule.gold)) return 'Not enough gold.'
+    const { used, reserved, limit } = this.population(faction)
+    if (count > Math.floor((limit - used - reserved) / rule.population)) return 'Not enough population space. Build more farms.'
+    return null
+  }
+
+  private enqueue(building: Unit, kind: UnitKind, count: number) {
+    if (building.buildDuration || !trainedAt(building.kind).includes(kind) || this.trainingError(building.faction, kind, count)) return false
+    this.resources[building.faction].gold -= count * training[kind].gold
+    this.appendTraining(building, kind, count)
+    return true
+  }
+
+  private appendTraining(building: Unit, kind: UnitKind, count: number) {
     const tail = building.queue.at(-1)
     if (tail?.kind === kind) tail.count = (tail.count ?? 1) + count
-    else building.queue.push({ kind, left: rule.ticks, count })
-    return true
+    else building.queue.push({ kind, left: training[kind].ticks, count })
   }
 
   private cancelTraining(building: Unit, count: number) {

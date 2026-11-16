@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
-import type { ArmyOrder, GroupCommand, TroopGroup, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import type { ArmyOrder, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
@@ -9,6 +9,7 @@ import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
 import { MatchSettingsMenu, clockText, drawMatchStats } from './match-settings.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
+import { GlobalProduction } from './global-production.ts'
 import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
@@ -51,6 +52,13 @@ const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
 const productionPanel = element('production-panel')
 const productionToggle = button('production-toggle')
+const globalTrainPanel = element('global-train-panel')
+const globalTrainToggle = button('global-train-toggle')
+const globalProduction = new GlobalProduction(globalTrainPanel, (unit, count) => {
+  const message: GlobalTrainCommand = { type: 'global-train', unit, count }
+  if (solo.active) solo.sendArmyCommand(message)
+  else client.send(message)
+}, paintPortrait)
 const placementTip = element('placement-tip')
 const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
 const audio = new BattleAudio()
@@ -155,6 +163,7 @@ function receive(message: ServerMessage) {
       ownEntities = message.entities.filter(entity => entity.faction === faction)
       researched = message.upgrades ?? []
       drawProduction()
+      if (!globalTrainPanel.hidden) globalProduction.update(faction, ownEntities, resources, population)
       drawEconomy()
       const idle = message.entities.filter(entity => entity.faction === faction && entity.idle).length
       button('idle-worker').disabled = idle === 0
@@ -165,6 +174,7 @@ function receive(message: ServerMessage) {
     case 'error':
       if (message.resetSession) showLobby()
       if (scene) {
+        if (!globalTrainPanel.hidden) globalProduction.message(message.message)
         banner.textContent = message.message
         window.clearTimeout(orderMessageTimer)
         orderMessageTimer = window.setTimeout(() => updateBanner(client.connected), 2500)
@@ -234,6 +244,7 @@ function showBattle() {
   ownEntities = []
   researched = []
   toggleProduction(false)
+  toggleGlobalTrain(false)
   drawProduction()
   population = { used: 0, reserved: 0, limit: 0 }
   drawEconomy()
@@ -292,7 +303,7 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
 
 function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
   const message: GroupCommand = { type: 'group-command', group, order }
-  if (solo.active) solo.group(message)
+  if (solo.active) solo.sendArmyCommand(message)
   else client.send(message)
   audio.play('order')
 }
@@ -520,6 +531,7 @@ function buildingActions(site: Entity) {
 }
 
 function openEconomyMenu(rebuild = false) {
+  toggleGlobalTrain(false)
   if (!economyContext || placing) return
   if (rebuild) {
     if (economyContext === 'build') menu.replaceChildren(...buildChoices())
@@ -574,11 +586,25 @@ function trainingSummary(training: NonNullable<Entity['training']>) {
   return labels.length ? active + ' → ' + labels.join(', ') : active
 }
 
+function toggleGlobalTrain(open: boolean) {
+  globalTrainPanel.hidden = !open
+  globalTrainToggle.setAttribute('aria-expanded', String(open))
+  if (!open) return
+  toggleProduction(false)
+  closeEconomyMenu()
+  scene?.place(null)
+  globalProduction.message('')
+  globalProduction.update(faction, ownEntities, resources, population)
+}
+
+globalTrainToggle.onclick = () => toggleGlobalTrain(globalTrainPanel.hidden)
+
 function toggleProduction(open: boolean) {
   productionPanel.hidden = !open
   productionToggle.setAttribute('aria-expanded', String(open))
   syncWorkerActions()
   if (open) {
+    toggleGlobalTrain(false)
     closeEconomyMenu()
     drawProduction()
   }

@@ -1,6 +1,6 @@
 import type { MatchSettings } from '../shared/match-settings.ts'
 import { isFaction } from '../shared/protocol.ts'
-import type { Difficulty, Faction, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
 import type { SoloInput, SoloOutput, SoloSave } from './solo.worker.ts'
 
 const key = 'ash-and-iron-solo'
@@ -64,7 +64,7 @@ export class SoloClient {
     if (!this.storageAvailable) this.storageError()
   }
 
-  group(message: GroupCommand) { this.post(message) }
+  sendArmyCommand(message: GroupCommand | GlobalTrainCommand) { this.post(message) }
 
   command(ids: number[], order: Order) { this.post({ type: 'command', ids, order }) }
 

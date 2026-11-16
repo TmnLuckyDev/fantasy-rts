@@ -39,6 +39,8 @@ export function parseMessage(raw: string): ClientMessage | null {
       return typeof ready === 'boolean' ? { type, ready } : null
     case 'leave':
       return { type }
+    case 'global-train':
+      return isUnitKind(value.unit) && validId(value.count) ? { type, unit: value.unit, count: value.count } : null
     case 'group-command': {
       const group = troopGroups.find(group => group === value.group)
       const parsed = object(order) && parseOrder(order)

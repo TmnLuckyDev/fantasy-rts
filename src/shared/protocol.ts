@@ -112,6 +112,8 @@ export type ArmyOrder = Extract<Order, { kind: 'move' | 'advance' | 'attack' | '
 export const isArmyOrder = (order: Order): order is ArmyOrder =>
   order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack' || order.kind === 'halt'
 
+export type GlobalTrainCommand = { type: 'global-train', unit: UnitKind, count: number }
+
 export type GroupCommand = { type: 'group-command', group: TroopGroup, order: ArmyOrder }
 
 export type ClientMessage =
@@ -123,6 +125,7 @@ export type ClientMessage =
   | { type: 'settings', settings: MatchSettings }
   | { type: 'ready', ready: boolean }
   | GroupCommand
+  | GlobalTrainCommand
   | { type: 'command', ids: number[], order: Order }
 
 export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[] }

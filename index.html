@@ -121,12 +121,14 @@
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
           <button id="halt" type="button" title="Stop (S)">Stop</button>
+          <button id="global-train-toggle" type="button" aria-expanded="false" aria-controls="global-train-panel">Recruit</button>
           <button id="production-toggle" type="button" aria-expanded="false" aria-controls="production-panel">Queues <span id="production-count">0</span></button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
         </div>
         <div id="worker-actions" class="economy-menu worker-actions" role="group" aria-label="Gather resources" hidden></div>
         <div id="economy-menu" class="economy-menu" aria-label="Economy commands" hidden></div>
         <section id="production-panel" class="economy-menu production-panel" aria-label="Production queues" hidden></section>
+        <section id="global-train-panel" aria-label="Global production" hidden></section>
         <div id="placement-tip" class="placement-tip" role="status" hidden><span id="placement-message">Choose a clear tile to build on.</span> <button id="cancel-placement" type="button">Done</button></div>
       </footer>
       <dialog id="result">
