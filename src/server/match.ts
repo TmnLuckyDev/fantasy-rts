@@ -7,7 +7,7 @@ import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
-  buildings as buildingRules, buildingFootprint, canAfford, REPAIR, repairCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
 import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
@@ -330,6 +330,7 @@ export class Match {
       ship.passengers = []
       return true
     }
+    if (order.kind === 'bulk-structure-upgrade') return this.startBulkStructureUpgrade(faction, order.building)
     if (order.kind === 'structure-upgrade') return units.length === 1 && this.startStructureUpgrade(units[0])
     if (order.kind === 'upgrade') return units.length === 1 && this.startUpgrade(units[0], order.upgrade)
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
@@ -525,6 +526,25 @@ export class Match {
       worker.job = { kind: 'construct', site }
       worker.buildQueue = remaining
     }
+  }
+
+  private startBulkStructureUpgrade(faction: Faction, kind: 'wall' | 'tower') {
+    const eligible = [...this.units.values()].filter(unit =>
+      unit.faction === faction && unit.kind === kind && !unit.buildDuration && !unit.structureJob &&
+      (unit.level ?? 1) < MAX_UPGRADE_LEVEL)
+    if (!eligible.length) return false
+    const total: Resources = { gold: 0, wood: 0, stone: 0 }
+    for (const unit of eligible) {
+      const cost = bulkStructureCost(kind, (unit.level ?? 1) + 1)
+      for (const resource of resourceKinds) total[resource] += cost[resource] ?? 0
+    }
+    if (!canAfford(this.resources[faction], total)) return false
+    spend(this.resources[faction], total)
+    for (const unit of eligible) {
+      const rule = structureUpgrade(kind, (unit.level ?? 1) + 1)
+      unit.structureJob = { left: rule.ticks, total: rule.ticks }
+    }
+    return true
   }
 
   private startStructureUpgrade(building: Unit) {
