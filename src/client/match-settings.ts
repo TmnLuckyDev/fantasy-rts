@@ -1,6 +1,6 @@
 import { mapOptions } from '../shared/map.ts'
 import { ARMY_SCORE_PER_UNIT, DEPOSIT_STOCK_MAX, MAX_DEPOSITS, STARTING_RESOURCE_MAX, TIME_LIMIT_MAX_MINUTES,
-  WORKER_LIMIT_MAX, defaultMatchSettings, parseMatchSettings, treeLimit } from '../shared/match-settings.ts'
+  WORKER_LIMIT_MAX, MAX_POPULATION_CAP, defaultMatchSettings, parseMatchSettings, treeLimit } from '../shared/match-settings.ts'
 import type { MatchReport, MatchSettings } from '../shared/match-settings.ts'
 import { factionNames, factions, resourceKinds } from '../shared/protocol.ts'
 
@@ -51,6 +51,7 @@ export class MatchSettingsMenu {
       groups.append(section)
     }
     this.input('minutes').max = String(TIME_LIMIT_MAX_MINUTES)
+    this.input('population-cap').max = String(MAX_POPULATION_CAP)
     document.querySelector('#score-rule')!.textContent =
       'At the time limit, one point per gold, wood or stone in reserve and ' + ARMY_SCORE_PER_UNIT +
       ' points per surviving soldier or hero. Equal scores draw. Losing your headquarters ends the match.'
@@ -84,6 +85,7 @@ export class MatchSettingsMenu {
       const number = (key: string) => this.input(key).value === '' ? null : this.input(key).valueAsNumber
       settings.randomStarts = this.input('random-starts').checked
       settings.minutes = number('minutes')
+      settings.populationCap = this.input('population-cap').valueAsNumber
       for (const resource of resourceKinds) {
         settings.sources[resource] = {
           count: this.input(resource + '-count').valueAsNumber,
@@ -126,6 +128,7 @@ export class MatchSettingsMenu {
     mapInput.value = settings.map
     this.input('random-starts').checked = settings.randomStarts !== false
     this.input('minutes').value = String(settings.minutes ?? '')
+    this.input('population-cap').value = String(settings.populationCap ?? defaultMatchSettings().populationCap)
     this.input('wood-count').max = String(treeLimit(settings.map))
     for (const resource of resourceKinds) {
       const { count, stock, workers } = settings.sources[resource]

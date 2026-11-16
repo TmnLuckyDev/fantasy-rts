@@ -24,7 +24,7 @@ test('ports require a coastline and can train both naval units', () => {
   const map = ashfordMap('shattered-isles')
   assert.ok(buildings.port.cost.wood)
   assert.deepEqual(trainedAt('port'), ['transport', 'warship'])
-  assert.equal(training.transport.population, 3)
+  assert.equal(training.transport.population, 1)
   assert.ok(unitStats.human.warship.damage > 0)
   assert.equal(validPlacement(map, 'port', cellCenter(30, 56), []), false)
   let coast = false

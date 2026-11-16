@@ -11,6 +11,8 @@ export const STARTING_RESOURCE_MAX = 100_000
 export const DEPOSIT_STOCK_MAX = 1_000_000
 export const WORKER_LIMIT_MAX = 100
 export const TIME_LIMIT_MAX_MINUTES = 720
+export const MAX_POPULATION_CAP = 2000
+export const DEFAULT_POPULATION_CAP = 500
 
 type ResourceSettings = { count: number, stock: number | null, workers: number | null }
 export type MatchSettings = {
@@ -19,6 +21,7 @@ export type MatchSettings = {
   sources: Record<ResourceKind, ResourceSettings>
   starting: Resources
   minutes: number | null
+  populationCap: number
 }
 
 export type MatchStats = {
@@ -47,7 +50,8 @@ export function defaultMatchSettings(map: MapId = 'ashford-expanded'): MatchSett
       wood: { count: treeLimit(map), stock: null, workers: null }
     },
     starting: { ...STARTING_RESOURCES },
-    minutes: null
+    minutes: null,
+    populationCap: DEFAULT_POPULATION_CAP
   }
 }
 
@@ -62,13 +66,15 @@ const bounded = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max
 
 export function parseMatchSettings(value: unknown): MatchSettings | null {
-  const { map, randomStarts, sources, starting, minutes } = record(value)
+  const { map, randomStarts, sources, starting, minutes, populationCap } = record(value)
   const selected = mapIds.find(id => id === map)
   if (!selected || (randomStarts !== undefined && typeof randomStarts !== 'boolean')) return null
   if (minutes !== null && !bounded(minutes, 1, TIME_LIMIT_MAX_MINUTES)) return null
   const validated = defaultMatchSettings(selected)
   validated.randomStarts = randomStarts ?? true
   validated.minutes = minutes
+  if (populationCap !== undefined && !bounded(populationCap, 10, MAX_POPULATION_CAP)) return null
+  validated.populationCap = populationCap ?? DEFAULT_POPULATION_CAP
   for (const resource of resourceKinds) {
     const { count, stock, workers } = record(record(sources)[resource])
     const initial = record(starting)[resource]
