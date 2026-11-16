@@ -2,7 +2,8 @@ import { mapOptions } from '../shared/map.ts'
 import { ARMY_SCORE_PER_UNIT, DEPOSIT_STOCK_MAX, MAX_DEPOSITS, STARTING_RESOURCE_MAX, TIME_LIMIT_MAX_MINUTES,
   WORKER_LIMIT_MAX, MAX_POPULATION_CAP, defaultMatchSettings, parseMatchSettings, treeLimit } from '../shared/match-settings.ts'
 import type { MatchReport, MatchSettings } from '../shared/match-settings.ts'
-import { factionNames, factions, resourceKinds } from '../shared/protocol.ts'
+import type { PlayerRaces } from '../shared/protocol.ts'
+import { defaultRaces, factionNames, factions, resourceKinds } from '../shared/protocol.ts'
 
 const resourceName = { gold: 'Gold', wood: 'Wood', stone: 'Stone' }
 const sourceName = { gold: 'Gold mines', stone: 'Stone quarries', wood: 'Trees' }
@@ -140,7 +141,7 @@ export class MatchSettingsMenu {
   }
 }
 
-export function drawMatchStats(target: HTMLElement, report?: MatchReport) {
+export function drawMatchStats(target: HTMLElement, report?: MatchReport, races: PlayerRaces = defaultRaces) {
   target.hidden = !report
   target.replaceChildren()
   if (!report) return
@@ -148,7 +149,7 @@ export function drawMatchStats(target: HTMLElement, report?: MatchReport) {
   const caption = table.createCaption()
   caption.textContent = 'Match stats · ' + clockText(report.elapsedSeconds) + ' played'
   const heading = table.createTHead().insertRow()
-  for (const text of ['Statistic', ...factions.map(faction => factionNames[faction])]) {
+  for (const text of ['Statistic', ...factions.map(faction => factionNames[races[faction]])]) {
     const cell = document.createElement('th')
     cell.scope = 'col'
     cell.textContent = text

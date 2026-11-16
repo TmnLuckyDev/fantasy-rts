@@ -1,9 +1,10 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, formations, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
-import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
-import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../shared/economy.ts'
+import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
+import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { hasHero, heroAbilities, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
 import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
 import { MatchSettingsMenu, clockText, drawMatchStats } from './match-settings.ts'
@@ -91,6 +92,20 @@ function toggleFormation(open: boolean) {
     closeEconomyMenu()
   }
 }
+for (const race of ['dwarf', 'elf', 'undead'] as const) {
+  const choice = document.createElement('button')
+  choice.className = 'faction ' + race
+  choice.type = 'button'
+  choice.dataset.faction = race
+  const title = document.createElement('strong')
+  title.textContent = factionNames[race]
+  const description = document.createElement('small')
+  description.textContent = raceRules[race].description
+  choice.append(title, description)
+  document.querySelector('.factions')!.append(choice)
+}
+const opponentChoice = element<HTMLSelectElement>('solo-race')
+for (const race of races) opponentChoice.add(new Option(factionNames[race], race))
 const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
 const audio = new BattleAudio()
 const settingsMenu = new MatchSettingsMenu()
@@ -99,6 +114,9 @@ const clock = element('match-clock')
 const touch = matchMedia('(pointer: coarse)').matches
 
 let faction: Faction = 'human'
+let chosenRace: Race = 'human'
+let explicitRace = false
+let playerRaces: PlayerRaces = { human: 'human', orc: 'orc' }
 let room: RoomState | null = null
 let scene: BattleScene | null = null
 let game: Phaser.Game | null = null
@@ -144,13 +162,13 @@ function note(message: string, error = false) {
 function updateBanner(online: boolean) {
   if (!online && !solo.active) banner.textContent = 'Reconnecting to match…'
   else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
-  else banner.textContent = factionNames[faction] + (room?.mode === 'solo' ? ' vs Computer' : '') +
+  else banner.textContent = factionNames[chosenRace] + (room?.mode === 'solo' ? ' vs Computer' : '') +
     (room?.settings?.minutes ? ' · Destroy the enemy headquarters or win on score' : ' · Destroy the enemy headquarters')
 }
 
-function setFaction(choice: Faction) {
-  faction = choice
-  for (const item of factionButtons) item.setAttribute('aria-pressed', String(item.dataset.faction === faction))
+function selectRace(race: Race) {
+  chosenRace = race
+  for (const item of factionButtons) item.setAttribute('aria-pressed', String(item.dataset.faction === race))
 }
 
 function showLobby() {
@@ -175,11 +193,14 @@ function showLobby() {
 function receive(message: ServerMessage) {
   switch (message.type) {
     case 'session':
-      setFaction(message.faction)
+      faction = message.faction
       break
     case 'room':
       room = message.room
-      setFaction(message.faction)
+      faction = message.faction
+      playerRaces = { human: 'human', orc: 'orc' }
+      for (const seat of room.players) playerRaces[seat.faction] = seat.race ?? seat.faction
+      selectRace(playerRaces[faction])
       if (room.phase === 'lobby') drawLobby()
       else {
         if (!scene) showBattle()
@@ -196,7 +217,7 @@ function receive(message: ServerMessage) {
       ownEntities = message.entities.filter(entity => entity.faction === faction)
       researched = message.upgrades ?? []
       drawProduction()
-      if (!globalTrainPanel.hidden) globalProduction.update(faction, ownEntities, resources, population)
+      if (!globalTrainPanel.hidden) globalProduction.update(chosenRace, ownEntities, resources, population)
       drawEconomy()
       const idle = message.entities.filter(entity => entity.faction === faction && entity.idle).length
       button('idle-worker').disabled = idle === 0
@@ -225,7 +246,6 @@ function drawLobby() {
   element('room-code').textContent = room.code
   element('room-map').textContent = ashfordMap(room.settings?.map).name
   button('match-settings').textContent = room.host === faction ? 'Edit match settings' : 'View match settings'
-  for (const item of factionButtons) item.disabled = room.players.length > 1
   const mine = room.players.find(seat => seat.faction === faction)
   button('ready').textContent = mine?.ready ? 'Cancel ready' : 'Ready'
   const rows = room.players.map(seat => {
@@ -233,7 +253,7 @@ function drawLobby() {
     row.className = 'seat ' + seat.faction
     const name = document.createElement('span')
     const state = document.createElement('span')
-    name.textContent = factionNames[seat.faction] + (seat.faction === faction ? ' · You' : '')
+    name.textContent = factionNames[seat.race ?? seat.faction] + (seat.faction === faction ? ' · You' : '')
     state.textContent = !seat.connected ? 'Disconnected' : seat.ready ? 'Ready' : 'Preparing'
     row.append(name, state)
     return row
@@ -253,7 +273,7 @@ function showBattle() {
   button('advance').setAttribute('aria-pressed', 'false')
   const map = room?.settings ? mapForSettings(room.settings, room.mapSeed) : ashfordMap(room?.map)
   element('result-map').textContent = map.name
-  scene = new BattleScene(faction, map, battlefield, minimap, {
+  scene = new BattleScene(faction, playerRaces, map, battlefield, minimap, {
     order: issueOrder,
     groupOrder: issueGroupOrder,
     groups: drawTroopGroups,
@@ -271,7 +291,7 @@ function showBattle() {
         return
       }
       const action = kind === 'wall' ? 'Drag to queue a wall line, or tap a tile.' : 'Tap each tile to queue another.'
-      element('placement-message').textContent = blocked ? 'Choose explored, open ground.' : entityNames[faction][kind] + ' · ' + action
+      element('placement-message').textContent = blocked ? 'Choose explored, open ground.' : entityNames[chosenRace][kind] + ' · ' + action
     },
     effect: kind => audio.play(kind)
   })
@@ -308,7 +328,7 @@ function showBattle() {
   })
 }
 
-function paintPortrait(target: HTMLCanvasElement, side: Faction, kind: EntityKind) {
+function paintPortrait(target: HTMLCanvasElement, side: Race, kind: EntityKind) {
   const key = side + kind
   if (target.dataset.sprite === key) return
   target.dataset.sprite = key
@@ -361,7 +381,7 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
     ui.button.hidden = !members?.length
     if (!members?.length) continue
     const kind = group === 'all' ? 'blade' : members[0].kind
-    const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Heroes' : entityNames[faction][kind]
+    const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Heroes' : entityNames[chosenRace][kind]
     if (ui.label.textContent !== label) ui.label.textContent = label
     const count = String(members.length)
     if (ui.count.textContent !== count) {
@@ -370,7 +390,7 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
     }
     const pressed = String(group === selected)
     if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
-    paintPortrait(ui.icon, faction, kind)
+    paintPortrait(ui.icon, chosenRace, kind)
   }
 }
 
@@ -400,7 +420,7 @@ function drawSelection(entities: Entity[], interactive = false) {
   const selected = entities[0]
   const workers = entities.some(entity => entity.kind === 'worker')
   const trainer = entities.length === 1 && selected && selected.construction === undefined &&
-    trainedAt(selected.kind).length ? selected : undefined
+    trainedAt(selected.kind, chosenRace).length ? selected : undefined
   const smithy = entities.length === 1 && selected?.kind === 'smithy' && selected.construction === undefined
   const building = entities.length === 1 && selected && !isUnitKind(selected.kind) ? selected : undefined
   const foundation = building?.construction !== undefined
@@ -424,14 +444,15 @@ function drawSelection(entities: Entity[], interactive = false) {
   button('unload').hidden = !(entities.length === 1 && selected?.kind === 'transport')
   if (selected?.kind === 'transport') button('unload').disabled = !(selected.passengers?.length)
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
+  const skill = entities.length === 1 && selected && isUnitKind(selected.kind) ? raceSkills[raceOf(selected)]?.[selected.kind] : undefined
   const heroSkillButton = button('hero-skill')
-  heroSkillButton.hidden = !selectedHero
-  if (selectedHero) {
-    const ability = heroAbilities[selectedHero.kind as keyof typeof heroAbilities]
-    const remaining = Math.max(0, (selectedHero.abilityReadyAt ?? 0) - currentTick)
+  heroSkillButton.hidden = !selectedHero && !skill
+  if (selected && (selectedHero || skill)) {
+    const ability = skill ?? heroAbilities[selected.kind as keyof typeof heroAbilities]
+    const remaining = Math.max(0, (selected.abilityReadyAt ?? 0) - currentTick)
     heroSkillButton.textContent = remaining ? ability.name + ' · ' + Math.ceil(remaining / TICKS_PER_SECOND) + 's' : ability.name
     heroSkillButton.disabled = remaining > 0
-    heroSkillButton.title = ability.passive
+    heroSkillButton.title = 'description' in ability ? ability.description : ability.passive
   }
   const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').disabled = !movable
@@ -443,13 +464,13 @@ function drawSelection(entities: Entity[], interactive = false) {
     detail.textContent = touch ? 'Drag to select · Two fingers to pan.' : 'Click or drag to select.'
     return
   }
-  paintPortrait(portrait, selected.faction, selected.kind)
+  paintPortrait(portrait, raceOf(selected), selected.kind)
   const hp = entities.reduce((total, entity) => total + entity.hp, 0)
   const totalHp = entities.reduce((total, entity) => total + entity.maxHp, 0)
-  const stats = unitStats[selected.faction][selected.kind]
+  const stats = unitStats[raceOf(selected)][selected.kind]
   meter.value = hp / totalHp * 100
   if (entities.length === 1) {
-    label.textContent = entityNames[selected.faction][selected.kind]
+    label.textContent = entityNames[raceOf(selected)][selected.kind]
     if (selected.construction !== undefined) detail.textContent = constructionSummary(selected)
     else if (selected.repairing) detail.textContent = selected.kind === 'worker' ? 'Repairing a building' : `Repairing · ${hp}/${totalHp} HP`
     else if (selected.research) detail.textContent = upgrades[selected.research.kind].name + ' · ' + percentage(selected.research.progress)
@@ -542,12 +563,12 @@ function economyChoice(kind: EntityKind, cost: Cost, population: number, act: ()
   choiceRules.set(choice, { cost, population, upgrade })
   const prices = resourceKinds.flatMap(kind => cost[kind] ? [`${cost[kind]} ${kind}`] : [])
   if (population > 1) prices.push(`${population} pop`)
-  const name = upgrade ? `${upgrades[upgrade].name} · Lv ${Math.min(MAX_UPGRADE_LEVEL, researched.filter(kind => kind === upgrade).length + 1)}/${MAX_UPGRADE_LEVEL}` : entityNames[faction][kind]
+  const name = upgrade ? `${upgrades[upgrade].name} · Lv ${Math.min(MAX_UPGRADE_LEVEL, researched.filter(kind => kind === upgrade).length + 1)}/${MAX_UPGRADE_LEVEL}` : entityNames[chosenRace][kind]
   choice.setAttribute('aria-label', [name, ...prices].join(' · '))
   const icon = document.createElement('canvas')
   icon.width = icon.height = 36
   icon.setAttribute('aria-hidden', 'true')
-  paintPortrait(icon, faction, kind)
+  paintPortrait(icon, chosenRace, kind)
   const caption = document.createElement('span')
   const title = document.createElement('strong')
   title.textContent = name
@@ -590,8 +611,8 @@ function actionButton(label: string, run: () => void) {
 }
 
 function productionChoices(building: Entity) {
-  const choices = trainedAt(building.kind).map(kind => {
-    const choice = economyChoice(kind, trainingCost(kind), training[kind].population, () =>
+  const choices = trainedAt(building.kind, chosenRace).map(kind => {
+    const choice = economyChoice(kind, trainingCost(kind, chosenRace), trainingRule(kind, chosenRace).population, () =>
       issueOrder([building.id], { kind: 'train', unit: kind }))
     if (isHeroKind(kind)) {
       choiceRules.get(choice)!.hero = true
@@ -623,13 +644,19 @@ function buildingActions(site: Entity) {
   repair.dataset.repair = ''
   const materials = site.kind === 'wall' ? '1 stone' : '1 wood + 1 stone'
   repair.setAttribute('aria-label', `Repair · ${materials} per ${REPAIR.health} HP`)
-  if (site.kind === 'headquarters') return [repair]
+  const actions = [repair]
+  if (trainedAt(site.kind, chosenRace).length) actions.push(actionButton('Set rally point', () => {
+    scene?.setRallyTarget(site.id)
+    closeEconomyMenu()
+    banner.textContent = 'Tap a tile to set the rally point.'
+  }))
+  if (site.kind === 'headquarters') return actions
   const demolish = actionButton('Demolish', () => {
-    const name = entityNames[site.faction][site.kind]
+    const name = entityNames[raceOf(site)][site.kind]
     if (window.confirm('Demolish ' + name + '? No resources are refunded.')) issueOrder([site.id], { kind: 'demolish' })
   })
   demolish.classList.add('demolish-action')
-  return [repair, demolish]
+  return [...actions, demolish]
 }
 
 function openEconomyMenu(rebuild = false) {
@@ -649,14 +676,14 @@ function openEconomyMenu(rebuild = false) {
       button.dataset.fortify = ''
       button.disabled = level >= MAX_UPGRADE_LEVEL || site.upgradeProgress !== undefined || !canAfford(resources, cost)
       menu.replaceChildren(button, ...buildingActions(site))
-    } else if (economyContext.startsWith('research:')) {
+    } else if (selection[0]?.kind === 'smithy') {
       const smith = selection[0]
       menu.replaceChildren(...upgradeKinds.map(kind => economyChoice('smithy', upgrades[kind].cost, 0, () =>
-        issueOrder([smith.id], { kind: 'upgrade', upgrade: kind }), kind)), ...buildingActions(smith))
+        issueOrder([smith.id], { kind: 'upgrade', upgrade: kind }), kind)), ...productionChoices(smith), ...buildingActions(smith))
     } else {
       const building = selection[0]
       if (!building) return
-      const production = trainedAt(building.kind).length ? productionChoices(building) : []
+      const production = trainedAt(building.kind, chosenRace).length ? productionChoices(building) : []
       menu.replaceChildren(...production, ...buildingActions(building))
     }
   }
@@ -681,7 +708,10 @@ button('dismiss-units').onclick = () => {
   }
 }
 button('unload').onclick = () => scene?.unload()
-button('hero-skill').onclick = () => scene?.castHeroAbility()
+button('hero-skill').onclick = () => {
+  if (selection.length === 1 && !isHeroKind(selection[0].kind)) issueOrder([selection[0].id], { kind: 'unit-ability' })
+  else scene?.castHeroAbility()
+}
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
 button('cancel-placement').onclick = () => scene?.place(null)
@@ -695,7 +725,7 @@ function constructionSummary(entity: Entity) {
 }
 
 function trainingSummary(training: NonNullable<Entity['training']>) {
-  const names = entityNames[faction]
+  const names = entityNames[chosenRace]
   const runs = training.queue ?? []
   const waiting = runs.map((run, index) => ({ ...run, count: run.count - Number(index === 0) }))
     .filter(run => run.count > 0)
@@ -715,7 +745,7 @@ function toggleGlobalTrain(open: boolean) {
   closeEconomyMenu()
   scene?.place(null)
   globalProduction.message('')
-  globalProduction.update(faction, ownEntities, resources, population)
+  globalProduction.update(chosenRace, ownEntities, resources, population)
 }
 
 globalTrainToggle.onclick = () => toggleGlobalTrain(globalTrainPanel.hidden)
@@ -736,7 +766,7 @@ function drawProduction() {
   const rows: string[] = []
   let count = 0
   for (const entity of ownEntities) {
-    const name = entityNames[faction][entity.kind]
+    const name = entityNames[chosenRace][entity.kind]
     if (entity.construction !== undefined) {
       count++
       rows.push(name + ' · ' + constructionSummary(entity))
@@ -771,14 +801,14 @@ function drawResult(outcome: NonNullable<RoomState['result']>) {
   let detail: string
   if (outcome.reason === 'time') {
     setText('match-clock', '0:00')
-    detail = outcome.winner ? 'Time expired. ' + factionNames[outcome.winner] + ' finished with the higher score.' : 'Time expired with equal scores.'
+    detail = outcome.winner ? 'Time expired. ' + factionNames[playerRaces[outcome.winner]] + ' finished with the higher score.' : 'Time expired with equal scores.'
   } else if (outcome.reason === 'headquarters') {
-    detail = outcome.winner ? factionNames[opposite(outcome.winner)] + ' lost their headquarters.' : 'Both headquarters fell.'
+    detail = outcome.winner ? factionNames[playerRaces[opposite(outcome.winner)]] + ' lost their headquarters.' : 'Both headquarters fell.'
   } else {
-    detail = outcome.winner ? factionNames[outcome.winner] + ' won by forfeit.' : 'Both players disconnected.'
+    detail = outcome.winner ? factionNames[playerRaces[outcome.winner]] + ' won by forfeit.' : 'Both players disconnected.'
   }
   element('result-detail').textContent = detail
-  drawMatchStats(element('match-stats'), room?.report)
+  drawMatchStats(element('match-stats'), room?.report, playerRaces)
   if (!result.open) result.showModal()
 }
 
@@ -800,15 +830,18 @@ function toggleAdvance() {
 for (const item of factionButtons) {
   item.onclick = () => {
     const choice = item.dataset.faction
-    if (!isFaction(choice)) return
-    if (room) client.send({ type: 'faction', faction: choice })
-    else setFaction(choice)
+    if (!isRace(choice)) return
+    explicitRace = true
+    if (room) client.send({ type: 'race', race: choice })
+    else selectRace(choice)
   }
 }
 button('solo').onclick = () => {
-  if (!client.hasSeat) solo.start(faction, solo.saved, element<HTMLSelectElement>('solo-difficulty').value as Difficulty, matchSettings)
+  const opponent = opponentChoice.value
+  if (!client.hasSeat) solo.start(chosenRace === 'orc' ? 'orc' : 'human', solo.saved,
+    element<HTMLSelectElement>('solo-difficulty').value as Difficulty, matchSettings, chosenRace, isRace(opponent) ? opponent : undefined)
 }
-button('create').onclick = () => client.send({ type: 'create', faction, settings: matchSettings })
+button('create').onclick = () => client.send({ type: 'create', race: chosenRace, settings: matchSettings })
 button('match-settings').onclick = () => {
   if (room) {
     settingsMenu.show(room.settings ?? matchSettings, room.host === faction ? settings => {
@@ -823,7 +856,7 @@ button('match-settings').onclick = () => {
 }
 element<HTMLFormElement>('join-form').onsubmit = event => {
   event.preventDefault()
-  client.send({ type: 'join', code: joinCode.value.trim().toUpperCase(), faction })
+  client.send({ type: 'join', code: joinCode.value.trim().toUpperCase(), ...(explicitRace ? { race: chosenRace } : { faction: 'human' }) })
 }
 button('ready').onclick = () => client.send({ type: 'ready', ready: !room?.players.find(seat => seat.faction === faction)?.ready })
 button('copy').onclick = async () => {

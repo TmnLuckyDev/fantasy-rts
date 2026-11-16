@@ -10,7 +10,7 @@ export type SnapshotDelta = {
   pose?: Pose[]
   upsert?: Entity[]
   removed?: number[]
-} & Partial<Pick<Snapshot, 'fog' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
+} & Partial<Pick<Snapshot, 'fog' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
 
 function sameTraining(a: Entity['training'], b: Entity['training']) {
   return a === b || Boolean(a && b && a.kind === b.kind && a.progress === b.progress &&
@@ -19,7 +19,13 @@ function sameTraining(a: Entity['training'], b: Entity['training']) {
 }
 
 function sameDetails(a: Entity, b: Entity) {
-  return a.kind === b.kind && a.faction === b.faction && a.maxHp === b.maxHp &&
+  return a.kind === b.kind && a.faction === b.faction && a.race === b.race &&
+    a.rally?.x === b.rally?.x && a.rally?.y === b.rally?.y && a.concealed === b.concealed && a.summonedUntil === b.summonedUntil &&
+    a.abilityReadyAt === b.abilityReadyAt && a.abilityActiveUntil === b.abilityActiveUntil &&
+    a.level === b.level && a.upgradeProgress === b.upgradeProgress && a.passengerPop === b.passengerPop &&
+    a.passengers?.length === b.passengers?.length && (a.passengers ?? []).every((id, i) => id === b.passengers![i]) &&
+    a.weaponLevel === b.weaponLevel && a.armorLevel === b.armorLevel && a.precisionLevel === b.precisionLevel &&
+    a.vitalityLevel === b.vitalityLevel && a.rangeLevel === b.rangeLevel && a.speedLevel === b.speedLevel && a.maxHp === b.maxHp &&
     a.construction === b.construction && a.constructionStatus === b.constructionStatus &&
     a.experience === b.experience && a.repairing === b.repairing && a.carrying === b.carrying && a.idle === b.idle &&
     a.research?.kind === b.research?.kind && a.research?.progress === b.research?.progress &&
@@ -54,6 +60,8 @@ export function makeDelta(previous: Snapshot, next: Snapshot): SnapshotDelta {
     delta.deposits = next.deposits ?? []
   }
   if (next.alerts !== previous.alerts && (next.alerts?.length || previous.alerts?.length)) delta.alerts = next.alerts ?? []
+  if ((next.corpses?.length || previous.corpses?.length) && (next.corpses?.length !== previous.corpses?.length ||
+      next.corpses?.some((corpse, i) => corpse.id !== previous.corpses?.[i]?.id))) delta.corpses = next.corpses ?? []
   return delta
 }
 
@@ -75,6 +83,7 @@ export function applyDelta(previous: Snapshot | undefined, delta: SnapshotDelta)
     type: 'snapshot', tick: delta.tick, entities, effects: delta.effects ?? [],
     fog: delta.fog ?? previous.fog, resources: delta.resources ?? previous.resources,
     population: delta.population ?? previous.population, upgrades: delta.upgrades ?? previous.upgrades,
+    ...(delta.corpses || previous.corpses ? { corpses: delta.corpses ?? previous.corpses } : {}),
     ...(delta.alerts || previous.alerts ? { alerts: delta.alerts ?? previous.alerts } : {}),
     ...(delta.depleted || previous.depleted ? { depleted: delta.depleted ?? previous.depleted } : {}),
     ...(delta.deposits || previous.deposits ? { deposits: delta.deposits ?? previous.deposits } : {})

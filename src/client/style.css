@@ -383,3 +383,8 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   min-height: 0;
   accent-color: var(--gold);
 }
+
+.faction.dwarf { border-color: #b99352; text-align: left; }
+.faction.elf { border-color: #75ab65; text-align: left; }
+.faction.undead { border-color: #a48abb; text-align: left; }
+.faction[aria-pressed="true"] { outline: 2px solid var(--gold); outline-offset: -3px; }

@@ -1,7 +1,8 @@
 import { TILE, distance, snapToCell, tileAt } from './map.ts'
 import type { BattleMap } from './map.ts'
-import { heroKinds, isUnitKind, resourceKinds } from './protocol.ts'
-import type { BuildingKind, Entity, EntityKind, Point, ResourceKind, Resources, UnitKind, UpgradeKind } from './protocol.ts'
+import { heroKinds, isUnitKind, raceOf, resourceKinds } from './protocol.ts'
+import type { BuildingKind, Race, Entity, EntityKind, Point, ResourceKind, Resources, UnitKind, UpgradeKind } from './protocol.ts'
+import { raceRules } from './race-rules.ts'
 import { unitStats } from './units.ts'
 
 export const STARTING_RESOURCES: Readonly<Resources> = { gold: 300, wood: 180, stone: 120 }
@@ -46,6 +47,8 @@ export const structureUpgrade = (kind: 'tower' | 'wall', level: number) => ({
 })
 
 export const training: Record<UnitKind, { gold: number, wood?: number, ticks: number, population: number }> = {
+  support: { gold: 130, ticks: 155, population: 1 },
+  siege: { gold: 245, wood: 95, ticks: 230, population: 2 },
   transport: { gold: 160, wood: 130, ticks: 220, population: 1 },
   warship: { gold: 230, wood: 185, ticks: 270, population: 2 },
   scout: { gold: 85, ticks: 110, population: 1 },
@@ -67,9 +70,16 @@ const production: Partial<Record<EntityKind, readonly UnitKind[]>> = {
   port: ['transport', 'warship']
 }
 
-export const trainingCost = (kind: UnitKind): Cost => ({ gold: training[kind].gold, ...(training[kind].wood ? { wood: training[kind].wood } : {}) })
+export const trainingRule = (kind: UnitKind, race: Race = 'human') => {
+  const change = raceRules[race].training?.[kind]
+  return change ? { ...training[kind], ...change } : training[kind]
+}
+export const trainingCost = (kind: UnitKind, race?: Race): Cost => {
+  const { gold, wood } = trainingRule(kind, race)
+  return wood ? { gold, wood } : { gold }
+}
 
-export const trainedAt = (building: EntityKind) => production[building] ?? []
+export const trainedAt = (building: EntityKind, race: Race = 'human') => raceRules[race].production?.[building] ?? production[building] ?? []
 
 export function canAfford(resources: Resources, cost: Cost) {
   return resourceKinds.every(kind => resources[kind] >= (cost[kind] ?? 0))
@@ -100,8 +110,8 @@ export function validPlacement(map: BattleMap, kind: BuildingKind, position: Poi
       [1, 2, 3].some(distance => tileAt(map, x + dx * distance, y + dy * distance) === 'water'))) return false
   }
   for (const entity of entities) {
-    const otherRadius = isUnitKind(entity.kind) ? unitStats[entity.faction][entity.kind].radius :
-      entity.kind === 'headquarters' ? unitStats[entity.faction][entity.kind].radius : buildingFootprint(entity.kind)
+    const otherRadius = isUnitKind(entity.kind) ? unitStats[raceOf(entity)][entity.kind].radius :
+      entity.kind === 'headquarters' ? unitStats[raceOf(entity)][entity.kind].radius : buildingFootprint(entity.kind)
     if (distance(point, entity) < radius + otherRadius + (isUnitKind(entity.kind) ? 2 : -0.01)) return false
   }
   return true

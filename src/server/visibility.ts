@@ -1,23 +1,24 @@
 import { decodeFog } from '../shared/fog.ts'
 import { TILE } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { factions } from '../shared/protocol.ts'
+import { factions, raceOf } from '../shared/protocol.ts'
+import { raceRules } from '../shared/race-rules.ts'
 import type { Entity, EntityKind, Faction, Point } from '../shared/protocol.ts'
 
 const sight: Record<EntityKind, number> = {
-  headquarters: 10, scout: 13, transport: 9, warship: 10, worker: 6, blade: 7, polearm: 7, ranged: 8, marksman: 8, heavy: 8, vanguard: 8, pathfinder: 9,
+  headquarters: 10, support: 7, siege: 8, scout: 13, transport: 9, warship: 10, worker: 6, blade: 7, polearm: 7, ranged: 8, marksman: 8, heavy: 8, vanguard: 8, pathfinder: 9,
   barracks: 5, range: 5, elite: 5, farm: 4, wall: 2, tower: 9, smithy: 5, port: 7
 }
 
 const circles = new Map<number, Point[]>()
-for (const radius of new Set(Object.values(sight))) {
+for (const radius of new Set([...Object.values(sight), 14.3])) {
   const cells: Point[] = []
-  for (let y = -radius; y <= radius; y++) {
-    for (let x = -radius; x <= radius; x++) {
+  for (let y = -Math.floor(radius); y <= radius; y++) {
+    for (let x = -Math.floor(radius); x <= radius; x++) {
       if (x * x + y * y <= radius * radius) cells.push({ x, y })
     }
   }
-  circles.set(radius, cells)
+  circles.set(Math.round(radius * 10), cells)
 }
 
 export class Visibility {
@@ -41,11 +42,12 @@ export class Visibility {
     const { width, height } = this.map
     const size = width * height
     for (const unit of units) {
-      if (unit.buildDuration) continue
+      if (unit.buildDuration || unit.embarkedOn) continue
       const x = Math.floor(unit.x / TILE)
       const y = Math.floor(unit.y / TILE)
       if (x < 0 || x >= width || y < 0 || y >= height) continue
-      this.current[unit.faction].add(sight[unit.kind] * size + y * width + x)
+      const radius = unit.kind === 'scout' ? sight.scout * (raceRules[raceOf(unit)].scoutSight ?? 1) : sight[unit.kind]
+      this.current[unit.faction].add(Math.round(radius * 10) * size + y * width + x)
     }
     for (const faction of factions) {
       const next = this.current[faction]

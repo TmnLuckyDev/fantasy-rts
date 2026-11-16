@@ -1,10 +1,10 @@
 import Phaser from 'phaser'
 import { TILE, cellCenter, distance, isWalkable, resourceAt, snapToCell, tileAt, wallLine } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isShipKind, isUnitKind } from '../shared/protocol.ts'
+import { raceOf, MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isShipKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement, buildingFootprint } from '../shared/economy.ts'
-import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
+import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, PlayerRaces, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
@@ -64,11 +64,13 @@ export class BattleScene extends Phaser.Scene {
   private lastMiniDraw = 0
   advanceMode = false
   formation: Formation = 'line'
+  private rallyTarget: number | null = null
   private placing: BuildingKind | null = null
   private pointer: Point | null = null
 
   constructor(
     readonly faction: Faction,
+    private readonly races: PlayerRaces,
     private readonly map: BattleMap,
     private host: HTMLElement,
     private minimap: HTMLCanvasElement,
@@ -86,8 +88,8 @@ export class BattleScene extends Phaser.Scene {
     }
     for (const faction of ['human', 'orc'] as const) {
       for (const kind of entityKinds) {
-        this.textures.addCanvas(faction + kind + '0', entityTexture(faction, kind))
-        if (isUnitKind(kind)) this.textures.addCanvas(faction + kind + '1', entityTexture(faction, kind, 1))
+        this.textures.addCanvas(faction + kind + '0', entityTexture(this.races[faction], kind))
+        if (isUnitKind(kind)) this.textures.addCanvas(faction + kind + '1', entityTexture(this.races[faction], kind, 1))
       }
     }
     this.map.tiles.forEach((tile, i) => {
@@ -102,7 +104,7 @@ export class BattleScene extends Phaser.Scene {
     this.textures.addCanvas('selection-unit', this.ringTexture(27, 12))
     for (const kind of entityKinds) {
       if (!isUnitKind(kind)) {
-        this.textures.addCanvas('selection-' + kind, this.ringTexture(unitStats[this.faction][kind].radius * 2.1, 22))
+        this.textures.addCanvas('selection-' + kind, this.ringTexture(unitStats[this.races[this.faction]][kind].radius * 2.1, 22))
       }
     }
     this.graphics = this.add.graphics().setDepth(this.mapHeight + 2)
@@ -405,7 +407,19 @@ export class BattleScene extends Phaser.Scene {
 
   private ownUnit(entity: Entity) { return entity.faction === this.faction && isUnitKind(entity.kind) }
 
+  setRallyTarget(id: number) { this.rallyTarget = id }
+
+  private placeRally(screen: Point) {
+    if (this.rallyTarget === null) return false
+    const at = this.world(screen)
+    this.actions.order([this.rallyTarget], { kind: 'rally', to: at })
+    this.rallyTarget = null
+    this.markers.push({ point: at, color: 0xffdc82, born: this.time.now })
+    return true
+  }
+
   private click(screen: Point, append: boolean, touch: boolean) {
+    if (this.placeRally(screen)) return
     const point = this.world(screen)
     if (this.placing) {
       const ids = this.workerIds()
@@ -465,7 +479,7 @@ export class BattleScene extends Phaser.Scene {
         const dx = Math.abs(point.x - sprite.x)
         const dy = sprite.y - point.y
         if (isUnitKind(entity.kind)) return dx < (isShipKind(entity.kind) ? 30 : touch ? 21 : 14) && dy > -12 && dy < 35
-        const radius = unitStats[entity.faction][entity.kind].radius
+        const radius = unitStats[raceOf(entity)][entity.kind].radius
         const height = entity.kind === 'headquarters' ? 76 : entity.kind === 'tower' ? 61 : 35
         return dx < radius + 10 && dy > -14 && dy < height
       })
@@ -520,6 +534,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private orderAt(screen: Point) {
+    if (this.placeRally(screen)) return
     if (this.placing) {
       this.place(null)
       return
@@ -664,6 +679,11 @@ export class BattleScene extends Phaser.Scene {
     const center = this.cameraCenter()
     const halfWidth = camera.width / camera.zoom / 2 + 96
     const halfHeight = camera.height / camera.zoom / 2 + 96
+    for (const corpse of this.newest?.corpses ?? []) {
+      if (Math.abs(corpse.x - center.x) >= halfWidth || Math.abs(corpse.y - center.y) >= halfHeight) continue
+      this.graphics.fillStyle(0xa087af, 0.6).fillEllipse(corpse.x, corpse.y, 13, 5)
+      this.graphics.fillStyle(0xe9d7c0, 0.75).fillRect(corpse.x - 2, corpse.y - 3, 4, 2)
+    }
     this.updateTerrain(center, halfWidth, halfHeight)
     const walkFrame = Math.floor(time / 125) % 2
     for (const visual of this.visuals.values()) {
@@ -687,8 +707,9 @@ export class BattleScene extends Phaser.Scene {
       }
       const alpha = entity.construction === undefined ? 1 :
         entity.constructionStatus === 'queued' ? 0.25 : 0.4 + entity.construction * 0.55
-      if (sprite.alpha !== alpha) sprite.setAlpha(alpha)
-      const radius = unitStats[entity.faction][entity.kind].radius
+      const visibilityAlpha = entity.concealed ? alpha * 0.62 : alpha
+      if (sprite.alpha !== visibilityAlpha) sprite.setAlpha(visibilityAlpha)
+      const radius = unitStats[raceOf(entity)][entity.kind].radius
       if (entity.construction !== undefined && (!entity.constructionStatus || entity.constructionStatus === 'building')) {
         this.graphics.fillStyle(0x3d332d, 0.8).fillRect(sprite.x - radius, sprite.y + 1, radius * 2, 4)
         for (const side of [-1, 1]) {

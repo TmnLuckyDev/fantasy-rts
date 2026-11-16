@@ -1,4 +1,4 @@
-import type { EntityKind, Faction, UnitKind, BuildingKind } from '../shared/protocol.ts'
+import type { EntityKind, Race, UnitKind, BuildingKind } from '../shared/protocol.ts'
 import { isHeroKind, isUnitKind } from '../shared/protocol.ts'
 import { brush, canvas } from './voxel.ts'
 import type { Faces } from './voxel.ts'
@@ -17,6 +17,12 @@ const green: Faces = ['#bbd566', '#82a94f', '#587548']
 const leather: Faces = ['#bd8c61', '#8c5e45', '#5b3d35']
 const boot: Faces = ['#735c54', '#493d3e', '#2a2b34']
 const bone: Faces = ['#fff5ce', '#d8c098', '#aa9075']
+
+const palettes: Record<Race, Faces> = {
+  human: cobalt, orc: vermilion, dwarf: ['#ffe39a', '#b07b3d', '#5d482e'],
+  elf: ['#d8ed8d', '#52955d', '#2d6541'], undead: ['#dac0fc', '#8661ac', '#4a3e69']
+}
+const materials: Record<Race, Faces> = { human: sandstone, orc: timber, dwarf: iron, elf: oak, undead: ['#a29aaf', '#635e73', '#383442'] }
 
 type Ink = ReturnType<typeof brush>
 
@@ -70,13 +76,13 @@ function battlements(ink: Ink, face: Faces, x: number, y: number, w: number, orc
   }
 }
 
-function headquarters(faction: Faction) {
+function headquarters(faction: Race) {
   const surface = canvas(76, 64)
   const ink = brush(surface)
   const { rect, block, poly, shadow } = ink
   const human = faction === 'human'
-  const team = human ? cobalt : vermilion
-  const wall = human ? sandstone : timber
+  const team = palettes[faction]
+  const wall = materials[faction]
   const plinth = human ? marble : iron
   shadow(37, 53, 34, 8)
   block(plinth, 5, 49, 57, 7, 11)
@@ -87,6 +93,16 @@ function headquarters(faction: Faction) {
     block(iron, 29, 15, 11, 5, 9)
     poly(bone[0], 26, 18, 25, 7, 31, 15, 31, 19)
     poly(bone[1], 39, 16, 45, 6, 45, 16, 40, 21)
+  }
+  if (faction === 'dwarf') {
+    block(iron, 12, 22, 43, 12, 8)
+    for (const x of [20, 32, 44]) rect(brass[0], x, 29, 4, 3)
+  } else if (faction === 'elf') {
+    block(oak, 31, 23, 10, 22, 6)
+    poly(team[1], 13, 25, 24, 9, 34, 15, 44, 5, 62, 24, 41, 28)
+  } else if (faction === 'undead') {
+    poly(iron[2], 19, 34, 37, 4, 53, 34)
+    poly(team[0], 34, 17, 38, 12, 42, 17, 38, 22)
   }
   flag(ink, team, 40, 2)
   for (const x of [7, 51]) {
@@ -108,10 +124,10 @@ function headquarters(faction: Faction) {
   return surface
 }
 
-function structure(faction: Faction, kind: BuildingKind) {
+function structure(faction: Race, kind: BuildingKind) {
   const human = faction === 'human'
-  const team = human ? cobalt : vermilion
-  const wall = human ? sandstone : timber
+  const team = palettes[faction]
+  const wall = materials[faction]
   const plinth = human ? marble : iron
   const tall = kind === 'tower'
   const base = tall ? 42 : 33
@@ -181,13 +197,13 @@ function structure(faction: Faction, kind: BuildingKind) {
   return surface
 }
 
-function troop(faction: Faction, kind: UnitKind, frame: number) {
+function troop(faction: Race, kind: UnitKind, frame: number) {
   const surface = canvas(36, 35)
   const { rect, block, poly, shadow } = brush(surface)
   const human = faction === 'human'
-  const team = human ? cobalt : vermilion
-  const armor = human ? steel : iron
-  const skin = human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : green
+  const team = palettes[faction]
+  const armor = faction === 'dwarf' ? brass : faction === 'undead' ? bone : human ? steel : iron
+  const skin = human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : faction === 'undead' ? bone : faction === 'elf' ? sandstone : faction === 'dwarf' ? leather : green
   const worker = kind === 'worker'
   const scout = kind === 'scout'
   const heavy = kind === 'heavy'
@@ -196,6 +212,21 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   const head = heavy ? 7 : ranged || worker || scout ? 10 : 8
   shadow(17, 29, heavy ? 14 : 11, 4)
 
+  if (kind === 'siege') {
+    block(iron, 5, 18, 22, 8, 5)
+    block(team, 11, 10, 13, 10, 5)
+    poly(steel[0], 18, 13, 28, 3, 33, 7, 24, 17)
+    for (const x of [7, 21]) { rect(boot[2], x + step, 24, 7, 6); rect(brass[0], x + 2 + step, 26, 3, 2) }
+    return surface
+  }
+  if (kind === 'support') {
+    poly(team[2], 7, 29, 11, 13, 22, 13, 26, 29)
+    block(team, 10, 7, 12, 9, 3)
+    rect(skin[0], 14, 12, 6, 5)
+    rect(oak[1], 27, 8, 2, 20)
+    poly(team[0], 24, 9, 28, 3, 32, 9, 28, 13)
+    return surface
+  }
   if (kind === 'transport' || kind === 'warship') {
     // Ship silhouettes use the existing troop atlas and water-facing hulls.
     poly(timber[2], 1, 22, 34, 22, 29, 32, 8, 32)
@@ -232,7 +263,18 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   block(heavy && !human ? green : outfit, 8, 15, 4, 5, 3)
   block(heavy && !human ? green : outfit, 21, 14, 4, 6, 3)
   block(skin, 12, head, heavy && !human ? 10 : 8, 7, 3)
-  if (human) {
+  if (faction === 'dwarf') {
+    block(brass, 10, head, 12, 4, 3)
+    poly(leather[0], 11, head + 5, 21, head + 5, 18, head + 13, 14, head + 12)
+  } else if (faction === 'elf') {
+    poly(team[0], 9, head + 5, 16, head - 4, 23, head + 5)
+    rect(sandstone[0], 20, head + 5, 5, 1)
+  } else if (faction === 'undead') {
+    rect(bone[0], 12, head, 9, 7)
+    rect('#33293b', 14, head + 2, 2, 2)
+    rect('#33293b', 19, head + 2, 2, 2)
+    rect(bone[1], 15, head + 7, 5, 2)
+  } else if (human) {
     block(worker ? thatch : ranged || scout ? team : armor, 11, head, 9, 3, 4)
     rect('#263c4f', 17, head + 4, 4, 1)
     if (kind === 'polearm') rect(team[0], 13, head - 4, 4, 2)
@@ -297,7 +339,7 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   return surface
 }
 
-export function entityTexture(faction: Faction, kind: EntityKind, frame = 0) {
+export function entityTexture(faction: Race, kind: EntityKind, frame = 0) {
   if (isUnitKind(kind)) return troop(faction, kind, frame)
   return kind === 'headquarters' ? headquarters(faction) : structure(faction, kind)
 }
