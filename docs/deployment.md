@@ -13,6 +13,20 @@ Render handles TLS termination and [incoming WSS connections](https://render.com
 
 When deploying manually, choose a Node web service from this repository on the branch to test. Set the build command to `npm ci --include=dev && npm run build && npm prune --omit=dev`, the start command to `npm start`, and the health check path to `/healthz`. Read `.env.example` for optional environment settings. The server binds to the platform's `PORT` and uses the same origin by default.
 
+## Play from two phones on the same Wi-Fi
+
+Use a computer on your network as the server. From this repository on that computer, build and start the game with Node 22.12 or newer:
+
+```sh
+npm ci
+npm run build
+npm start
+```
+
+Open `http://localhost:3000/healthz` on the host first. Find the host computer's Wi-Fi IPv4 address in its network settings. Open `http://<host-IPv4>:3000/` in Safari or Chrome on **both phones**. For example, if the host's address is `192.168.1.42`, open `http://192.168.1.42:3000/` on both. One player selects **Create room**, the other enters its code, and both select **Ready**.
+
+Keep the host awake and leave the server running. If the phones cannot reach the page, check that they are on the same Wi-Fi and that the host firewall allows inbound TCP 3000 on the private network. Guest Wi-Fi may isolate devices from one another. The server and WebSocket run on the host computer, so this setup uses neither Render nor internet bandwidth for the match. It is a plain HTTP connection for a trusted local network.
+
 ## Physical-device check
 
 Use an iPhone on Safari in landscape and a desktop browser. Repeat with Android Chrome.

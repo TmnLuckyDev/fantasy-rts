@@ -1,4 +1,6 @@
-import type { ClientMessage, Faction, ServerMessage } from '../shared/protocol.ts'
+import { applyDelta, deltaProtocol } from '../shared/snapshot-delta.ts'
+import type { SnapshotDelta } from '../shared/snapshot-delta.ts'
+import type { ClientMessage, Faction, ServerMessage, Snapshot } from '../shared/protocol.ts'
 
 type Connection = 'waiting' | 'open' | 'closed'
 type SavedSeat = { code: string, token: string, faction: Faction }
@@ -45,7 +47,8 @@ export class ConnectionClient {
     this.status('waiting')
     const url = new URL('/socket', location.href)
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socket = new WebSocket(url)
+    let base: Snapshot | undefined
+    const socket = new WebSocket(url, deltaProtocol)
     this.socket = socket
     socket.addEventListener('open', () => {
       this.delay = 500
@@ -53,8 +56,21 @@ export class ConnectionClient {
       this.status('open')
     })
     socket.addEventListener('message', event => {
-      const message = JSON.parse(String(event.data)) as ServerMessage
+      if (this.socket !== socket) return
+      const message = JSON.parse(String(event.data)) as ServerMessage | SnapshotDelta
+      if (message.type === 'delta') {
+        const next = applyDelta(base, message)
+        if (!next) {
+          socket.close(4001, 'Snapshot base changed')
+          return
+        }
+        base = next
+        this.receive(next)
+        return
+      }
+      if (message.type === 'snapshot') base = message
       if (message.type === 'session') {
+        base = undefined
         this.seat = { code: message.code, token: message.token, faction: message.faction }
         try { sessionStorage.setItem('ash-and-iron-seat', JSON.stringify(this.seat)) } catch { /* Storage is optional. */ }
       }
