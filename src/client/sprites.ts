@@ -257,6 +257,20 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
     rect(brass[0], 19, 15, 2, 5)
     rect(brass[1], 14, 21, 5, 2)
     rect(team[0], 16, 21, 1, 1)
+    if (kind === 'vanguard') {
+      poly(team[0], 8, 11, 12, 3, 17, 6, 22, 2, 25, 12)
+      block(armor, 3, 13, 8, 8, 4)
+      block(armor, 22, 12, 8, 8, 4)
+      poly(team[2], 1, 18, 8, 15, 13, 21, 9, 29, 2, 27)
+      rect(brass[0], 5, 20, 3, 4)
+    } else {
+      poly(team[2], 9, 12, 12, 2, 19, 0, 24, 11)
+      poly(team[0], 6, 16, 10, 12, 9, 29, 3, 29)
+      block(oak, 2, 14, 5, 14, 3)
+      rect(brass[0], 3, 17, 2, 7)
+      poly(brass[0], 26, 4, 33, 12, 34, 20, 29, 29)
+      rect('#fff5ce', 31, 11, 1, 12)
+    }
   }
   return surface
 }
