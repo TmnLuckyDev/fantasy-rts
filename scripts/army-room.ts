@@ -31,7 +31,7 @@ export async function startArmyRoom(root = process.cwd()) {
   const rooms: SavedRoom[] = [{ code, seats, match: checkpoint, finishedAt: 0 }]
   await writeFile(path, JSON.stringify({ version: 1, rooms }))
   const server = spawn(process.execPath, ['--experimental-strip-types', 'src/server/index.ts'], {
-    cwd: root, env: { ...process.env, PORT: '0', MATCH_SAVE_FILE: path }, stdio: ['ignore', 'pipe', 'inherit']
+    cwd: root, env: { ...process.env, FORCE_COLOR: '0', PORT: '0', MATCH_SAVE_FILE: path }, stdio: ['ignore', 'pipe', 'inherit']
   })
   const close = async () => {
     if (server.exitCode === null) {
@@ -43,11 +43,19 @@ export async function startArmyRoom(root = process.cwd()) {
   }
   try {
     const port = await new Promise<string>((resolve, reject) => {
-      server.once('error', reject)
-      server.once('exit', code => reject(new Error('Army fixture exited with code ' + code)))
+      let output = ''
+      const timeout = setTimeout(() => reject(new Error('Army fixture did not announce its port: ' + output)), 10000)
+      server.once('error', error => { clearTimeout(timeout); reject(error) })
+      server.once('exit', code => {
+        clearTimeout(timeout)
+        reject(new Error('Army fixture exited with code ' + code + ': ' + output))
+      })
       server.stdout.on('data', (chunk: Buffer) => {
-        const port = /listening on port (\d+)/.exec(chunk.toString())?.[1]
-        if (port) resolve(port)
+        output = (output + chunk.toString()).slice(-4000)
+        const port = /listening on port (\d+)/.exec(output)?.[1]
+        if (!port) return
+        clearTimeout(timeout)
+        resolve(port)
       })
     })
     return { url: 'http://127.0.0.1:' + port, code, seats, close }
