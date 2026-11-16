@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Match } from '../src/server/match.ts'
-import { trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../src/shared/economy.ts'
+import { trainingCost, bulkStructureCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../src/shared/economy.ts'
 import { cellCenter } from '../src/shared/map.ts'
 import { parseMessage } from '../src/server/validate.ts'
 import { heroLevel } from '../src/shared/heroes.ts'
@@ -145,4 +145,46 @@ test('five speed research levels accelerate both land troops and ships without c
   const restored = Match.restore(structuredClone(game.checkpoint()))
   assert.equal(restored.view('human').entities.find(unit => unit.id === soldier.id)?.speedLevel, 5)
   assert.equal(restored.view('human').entities.find(unit => unit.id === ship.id)?.speedLevel, 5)
+})
+
+test('bulk fortification upgrades charge 20% extra per eligible building and complete together', () => {
+  const checkpoint = new Match().checkpoint()
+  const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
+  const wallA = { ...base, id: ++checkpoint.sequence, kind: 'wall' as const, ...cellCenter(10, 15), hp: 360, maxHp: 360, level: 1 }
+  const wallB = { ...base, id: ++checkpoint.sequence, kind: 'wall' as const, ...cellCenter(11, 15), hp: 360, maxHp: 360, level: 1 }
+  const tower = { ...base, id: ++checkpoint.sequence, kind: 'tower' as const, ...cellCenter(12, 15), hp: 460, maxHp: 460, level: 1 }
+  checkpoint.units.push(wallA, wallB, tower)
+  checkpoint.resources.human = { gold: 1000, wood: 1000, stone: 1000 }
+  const game = Match.restore(checkpoint)
+  const before = { ...game.view('human').resources }
+  assert.equal(game.command('human', [base.id], { kind: 'bulk-structure-upgrade', building: 'wall' }), true)
+  const price = bulkStructureCost('wall', 2)
+  assert.equal(game.view('human').resources.stone, before.stone - 2 * (price.stone ?? 0))
+  assert.equal(game.view('human').resources.wood, before.wood - 2 * (price.wood ?? 0))
+  assert.equal(game.command('human', [base.id], { kind: 'bulk-structure-upgrade', building: 'wall' }), false)
+  advance(game, structureUpgrade('wall', 2).ticks)
+  assert.equal(game.units.get(wallA.id)?.level, 2)
+  assert.equal(game.units.get(wallB.id)?.level, 2)
+  assert.equal(game.units.get(tower.id)?.level, 1)
+  assert.equal(game.command('human', [base.id], { kind: 'bulk-structure-upgrade', building: 'tower' }), true)
+  advance(game, structureUpgrade('tower', 2).ticks)
+  assert.equal(game.units.get(tower.id)?.level, 2)
+})
+
+test('bulk upgrade rejects insufficient funds atomically and rejects enemy-owned commands', () => {
+  const checkpoint = new Match().checkpoint()
+  const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
+  const wallA = { ...base, id: ++checkpoint.sequence, kind: 'wall' as const, ...cellCenter(10, 15), hp: 360, maxHp: 360, level: 1 }
+  const wallB = { ...base, id: ++checkpoint.sequence, kind: 'wall' as const, ...cellCenter(11, 15), hp: 360, maxHp: 360, level: 1 }
+  checkpoint.units.push(wallA, wallB)
+  checkpoint.resources.human = { gold: 0, wood: 0, stone: 150 }
+  const game = Match.restore(checkpoint)
+  assert.equal(game.command('orc', [base.id], { kind: 'bulk-structure-upgrade', building: 'wall' }), false)
+  assert.equal(game.command('human', [base.id], { kind: 'bulk-structure-upgrade', building: 'wall' }), false)
+  assert.equal(game.view('human').resources.stone, 150)
+  assert.equal(game.units.get(wallA.id)?.structureJob, undefined)
+  assert.equal(game.units.get(wallB.id)?.structureJob, undefined)
+  const parsed = parseMessage(JSON.stringify({ type: 'command', ids: [base.id], order: { kind: 'bulk-structure-upgrade', building: 'tower' } }))
+  assert.equal(parsed?.type, 'command')
+  assert.equal(parseMessage(JSON.stringify({ type: 'command', ids: [base.id], order: { kind: 'bulk-structure-upgrade', building: 'headquarters' } })), null)
 })
