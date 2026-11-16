@@ -397,7 +397,7 @@ function drawSelection(entities: Entity[], interactive = false) {
   const smithy = entities.length === 1 && selected?.kind === 'smithy' && selected.construction === undefined
   const building = entities.length === 1 && selected && !isUnitKind(selected.kind) ? selected : undefined
   const foundation = building?.construction !== undefined
-  const nextContext = workers ? 'build' : (building && (building.kind === 'tower' || building.kind === 'wall')) ? 'fortify:' + building.id : trainer ? 'train:' + trainer.id :
+  const nextContext = workers ? 'build' : (building && !foundation && (building.kind === 'tower' || building.kind === 'wall')) ? 'fortify:' + building.id : trainer ? 'train:' + trainer.id :
     smithy ? 'research:' + selected.id : foundation ? 'cancel:' + building.id :
     building ? 'manage:' + building.id : ''
   const changed = nextContext !== economyContext
@@ -505,6 +505,12 @@ function updateEconomyOptions() {
       Boolean(rule.hero && heroTaken)
     if (rule.hero) choice.title = heroTaken ? 'You already have a hero or one is in training.' : 'One hero per faction.'
     if (rule.upgrade) choice.title = researched.filter(kind => kind === rule.upgrade).length >= MAX_UPGRADE_LEVEL ? 'Max level' : ''
+  }
+  const fortify = menu.querySelector<HTMLButtonElement>('[data-fortify]')
+  if (fortify) {
+    const site = selection[0]
+    fortify.disabled = (site.level ?? 1) >= MAX_UPGRADE_LEVEL || site.upgradeProgress !== undefined ||
+      !canAfford(resources, structureUpgrade(site.kind as 'tower' | 'wall', (site.level ?? 1) + 1).cost)
   }
   const repair = menu.querySelector<HTMLButtonElement>('[data-repair]')
   if (repair) {
@@ -632,6 +638,7 @@ function openEconomyMenu(rebuild = false) {
       const button = actionButton(`Upgrade to level ${level + 1}/${MAX_UPGRADE_LEVEL}`, () => issueOrder([site.id], { kind: 'structure-upgrade' }))
       const cost = structureUpgrade(site.kind as 'wall' | 'tower', level + 1).cost
       button.textContent += ' · ' + resourceKinds.filter(kind => cost[kind]).map(kind => `${cost[kind]} ${kind}`).join(' · ')
+      button.dataset.fortify = ''
       button.disabled = level >= MAX_UPGRADE_LEVEL || site.upgradeProgress !== undefined || !canAfford(resources, cost)
       menu.replaceChildren(button, ...buildingActions(site))
     } else if (economyContext.startsWith('research:')) {
