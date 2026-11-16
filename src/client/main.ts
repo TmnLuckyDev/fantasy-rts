@@ -271,6 +271,8 @@ function drawLobby() {
 }
 
 function preferredBattleRenderer() {
+  // Touch devices can mask their GPU information. Use the faster renderer from the mobile load tests.
+  if (touch) return Phaser.CANVAS
   // A CPU-backed WebGL context can be slower than drawing this pixel art with Canvas 2D.
   const probe = document.createElement('canvas')
   const gl = probe.getContext('webgl', { failIfMajorPerformanceCaveat: true })
