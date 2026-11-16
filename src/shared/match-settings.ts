@@ -1,3 +1,4 @@
+import { mapIds, mapOptions } from './map.ts'
 import type { MapId } from './map.ts'
 import { STARTING_RESOURCES } from './economy.ts'
 import { resourceKinds } from './protocol.ts'
@@ -14,6 +15,7 @@ export const TIME_LIMIT_MAX_MINUTES = 720
 type ResourceSettings = { count: number, stock: number | null, workers: number | null }
 export type MatchSettings = {
   map: MapId
+  randomStarts?: boolean
   sources: Record<ResourceKind, ResourceSettings>
   starting: Resources
   minutes: number | null
@@ -32,12 +34,13 @@ export type MatchStats = {
 export type FinalStats = MatchStats & { bank: Resources, army: number, score: number }
 export type MatchReport = { elapsedSeconds: number, sides: Record<'human' | 'orc', FinalStats> }
 
-export const treeLimit = (map: MapId) => map === 'ashford-original' ? 412 : 1242
+export const treeLimit = (map: MapId) => mapOptions.find(option => option.id === map)!.trees
 
 export function defaultMatchSettings(map: MapId = 'ashford-expanded'): MatchSettings {
-  const deposits = map === 'ashford-original' ? 3 : 7
+  const deposits = mapOptions.find(option => option.id === map)!.deposits
   return {
     map,
+    randomStarts: true,
     sources: {
       gold: { count: deposits, stock: null, workers: null },
       stone: { count: deposits, stock: null, workers: null },
@@ -59,15 +62,17 @@ const bounded = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max
 
 export function parseMatchSettings(value: unknown): MatchSettings | null {
-  const { map, sources, starting, minutes } = record(value)
-  if (map !== 'ashford-original' && map !== 'ashford-expanded') return null
+  const { map, randomStarts, sources, starting, minutes } = record(value)
+  const selected = mapIds.find(id => id === map)
+  if (!selected || (randomStarts !== undefined && typeof randomStarts !== 'boolean')) return null
   if (minutes !== null && !bounded(minutes, 1, TIME_LIMIT_MAX_MINUTES)) return null
-  const validated = defaultMatchSettings(map)
+  const validated = defaultMatchSettings(selected)
+  validated.randomStarts = randomStarts ?? true
   validated.minutes = minutes
   for (const resource of resourceKinds) {
     const { count, stock, workers } = record(record(sources)[resource])
     const initial = record(starting)[resource]
-    if (!bounded(count, 0, resource === 'wood' ? treeLimit(map) : MAX_DEPOSITS) ||
+    if (!bounded(count, 0, resource === 'wood' ? treeLimit(selected) : MAX_DEPOSITS) ||
         (stock !== null && !bounded(stock, 1, DEPOSIT_STOCK_MAX)) ||
         (workers !== null && !bounded(workers, 1, WORKER_LIMIT_MAX)) ||
         !bounded(initial, 0, STARTING_RESOURCE_MAX)) return null

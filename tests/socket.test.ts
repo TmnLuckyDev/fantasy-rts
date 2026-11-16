@@ -7,6 +7,8 @@ import { once } from 'node:events'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { WebSocket } from 'ws'
+import { defaultMatchSettings } from '../src/shared/match-settings.ts'
+import { mapForSettings } from '../src/shared/map.ts'
 import type { ClientMessage, ServerMessage } from '../src/shared/protocol.ts'
 
 class TestPeer {
@@ -76,7 +78,8 @@ test('two sockets share a room, reject forged commands and recover a seat after 
   const human = await connect()
   const orc = await connect()
   const intruder = await connect()
-  human.send({ type: 'create', faction: 'human' })
+  const settings = defaultMatchSettings('twinmere-basin')
+  human.send({ type: 'create', faction: 'human', settings })
   const { code } = await human.wait('session')
   orc.send({ type: 'join', code, faction: 'human' })
   const { token, faction } = await orc.wait('session')
@@ -88,18 +91,25 @@ test('two sockets share a room, reject forged commands and recover a seat after 
   assert.equal(human.messages.some(message => message.type === 'snapshot'), false)
   orc.send({ type: 'ready', ready: true })
   const [world1, world2] = await Promise.all([human.wait('snapshot'), orc.wait('snapshot')])
+  const [state1, state2] = await Promise.all([human.wait('room', ({ room }) => room.phase === 'playing'),
+    orc.wait('room', ({ room }) => room.phase === 'playing')])
+  assert.equal(typeof state1.room.mapSeed, 'number')
+  assert.equal(state1.room.mapSeed, state2.room.mapSeed)
+  const map = mapForSettings(settings, state1.room.mapSeed)
   assert.equal(world1.tick, world2.tick)
   assert.notEqual(world1.fog, world2.fog)
   for (const [world, faction] of [[world1, 'human'], [world2, 'orc']] as const) {
     assert.deepEqual(world.resources, { gold: 300, wood: 180, stone: 120 })
     assert.deepEqual(world.population, { used: 9, reserved: 0, limit: 10 })
     assert.equal(world.entities.length, 10)
+    const hall = world.entities.find(entity => entity.kind === 'headquarters')!
+    assert.deepEqual({ x: hall.x, y: hall.y }, map.bases[faction])
     assert.ok(world.entities.every(entity => entity.faction === faction))
   }
   human.send({ type: 'command', ids: [9], order: { kind: 'move', to: { x: 400, y: 400 } } })
   assert.match((await human.wait('error')).message, /cannot be issued/)
-  const oldX = world1.entities.find(entity => entity.id === 2)!.x
-  human.send({ type: 'command', ids: [2], order: { kind: 'move', to: { x: oldX + 130, y: 337 } } })
+  const { x: oldX, y } = world1.entities.find(entity => entity.id === 2)!
+  human.send({ type: 'command', ids: [2], order: { kind: 'move', to: { x: oldX + 32, y } } })
   const moved = await human.wait('snapshot', message => (message.entities.find(entity => entity.id === 2)?.x ?? 0) > oldX + 10)
   const unseen = await orc.wait('snapshot', message => message.tick === moved.tick)
   assert.equal(unseen.entities.some(entity => entity.id === 2), false)
@@ -113,6 +123,8 @@ test('two sockets share a room, reject forged commands and recover a seat after 
   const replacement = await connect()
   replacement.send({ type: 'resume', code, token })
   assert.equal((await replacement.wait('session')).faction, 'orc')
+  const returnedRoom = await replacement.wait('room', ({ room }) => room.phase === 'playing')
+  assert.equal(returnedRoom.room.mapSeed, state1.room.mapSeed)
   const resumed = await replacement.wait('snapshot', message => message.tick > world2.tick)
   assert.equal(resumed.fog, world2.fog)
   assert.ok(resumed.entities.every(entity => entity.faction === 'orc'))

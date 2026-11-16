@@ -38,6 +38,7 @@ export class BattleScene extends Phaser.Scene {
   private newest: Snapshot | null = null
   private graphics!: Phaser.GameObjects.Graphics
   private water!: Phaser.GameObjects.Graphics
+  private waterTiles: number[] = []
   private ui!: Phaser.GameObjects.Graphics
   private controls!: BattlefieldInput
   private miniTerrain!: HTMLCanvasElement
@@ -77,6 +78,7 @@ export class BattleScene extends Phaser.Scene {
 
   create() {
     this.water = this.add.graphics().setDepth(-4)
+    this.map.tiles.forEach((tile, index) => { if (tile === 'water') this.waterTiles.push(index) })
     for (const tile of ['forest', 'rock', 'mine', 'quarry'] as const) {
       for (let v = 0; v < (tile === 'forest' || tile === 'rock' ? 3 : 1); v++) this.textures.addCanvas(tile + v, propTexture(tile, v))
     }
@@ -584,11 +586,11 @@ export class BattleScene extends Phaser.Scene {
     const vertical = Number(this.keys?.DOWN.isDown ?? false) - Number(this.keys?.UP.isDown ?? false)
     if (horizontal || vertical) this.pan(-horizontal * delta * 0.37, -vertical * delta * 0.37)
     this.water.clear()
-    const riverColumn = this.map.width / 2 - 1
-    for (let i = 0; i < 48; i++) {
-      const y = (i * 53 + Math.floor(time * 0.024)) % this.mapHeight
-      if (this.map.tiles[Math.floor(y / TILE) * this.map.width + riverColumn] !== 'water') continue
-      const x = riverColumn * TILE + 5 + (i * 13) % 45
+    const glints = Math.min(48, this.waterTiles.length)
+    for (let i = 0; i < glints; i++) {
+      const tile = this.waterTiles[Math.floor(i * this.waterTiles.length / glints)]
+      const x = tile % this.map.width * TILE + 3 + (i * 13) % 12
+      const y = Math.floor(tile / this.map.width) * TILE + (i * 17 + Math.floor(time * 0.014)) % 27
       const glint = 0.16 + 0.26 * ((Math.sin(time * 0.003 + i) + 1) / 2)
       this.water.fillStyle(0xa4e0d8, glint).fillRect(x, y, 5 + i % 8, 2)
       this.water.fillStyle(0x72cbd1, glint).fillRect(x + 4, y + 2, 8 + i % 5, 1)

@@ -83,6 +83,7 @@ export type Result = { winner: Faction | null, reason: 'headquarters' | 'disconn
 export type RoomState = {
   code: string
   map?: MapId
+  mapSeed?: number
   settings?: MatchSettings
   host?: Faction
   report?: MatchReport

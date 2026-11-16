@@ -61,6 +61,7 @@ type Missile = { attacker: Unit, targetId: number, arrives: number }
 
 export type MatchCheckpoint = {
   map?: MapId
+  mapSeed?: number
   settings?: MatchSettings
   stats?: Record<Faction, MatchStats>
   extracted?: Array<[number, number]>
@@ -128,12 +129,17 @@ export class Match {
     this.visibility.update(this.units.values())
   }
 
-  static configured(settings: MatchSettings) {
-    return new Match(mapForSettings(settings), settings)
+  static start(settings: MatchSettings) {
+    const seed = settings.randomStarts === false ? undefined : globalThis.crypto.getRandomValues(new Uint32Array(1))[0]
+    return Match.configured(settings, seed)
+  }
+
+  static configured(settings: MatchSettings, seed?: number) {
+    return new Match(mapForSettings(settings, seed), settings)
   }
 
   static restore(checkpoint: MatchCheckpoint, map = checkpoint.settings
-    ? mapForSettings(checkpoint.settings) : ashfordMap(checkpoint.map ?? 'ashford-original')) {
+    ? mapForSettings(checkpoint.settings, checkpoint.mapSeed) : ashfordMap(checkpoint.map ?? 'ashford-original')) {
     const match = new Match(map, checkpoint.settings)
     Object.assign(match.stats, checkpoint.stats)
     for (const [index, amount] of checkpoint.extracted ?? []) {
@@ -172,7 +178,7 @@ export class Match {
 
   checkpoint(): MatchCheckpoint {
     return {
-      map: this.map.id, settings: this.settings, stats: this.stats, extracted: [...this.extracted],
+      map: this.map.id, mapSeed: this.map.seed, settings: this.settings, stats: this.stats, extracted: [...this.extracted],
       knownDepletion: this.visibleDepletion, tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
       units: [...this.units.values()], missiles: this.missiles, upgrades: this.upgrades,
       heroExperience: this.heroExperience,

@@ -9,6 +9,11 @@ export const terrainColor: Record<Tile, string> = {
   bridge: '#ab7953', rock: '#707b70', mine: '#8b7546', quarry: '#8a9c9b'
 }
 
+const meadowByMap = {
+  'pinewatch-vale': ['#4e7841', '#5d8747', '#62904c', '#56834a', '#6b9853'],
+  'ironbreak-pass': ['#797d51', '#85875b', '#8e8b61', '#868b60', '#96966a'],
+  'twinmere-basin': ['#4d7961', '#54846a', '#5b8a69', '#5d8965', '#65936c']
+} as const
 const grass = ['#628b43', '#6c964a', '#759d50', '#6f984a', '#7ba252']
 const trail = ['#ad8251', '#b38854', '#b38a58', '#b88f5c']
 const rock = ['#b3bab3', '#7f918b', '#4c6564'] as const
@@ -31,6 +36,7 @@ export function randomAt(seed: number) {
 export function terrainTexture(map: BattleMap, startX: number, startY: number, width: number, height: number) {
   const surface = canvas(width * TILE, height * TILE)
   const { rect, block } = brush(surface)
+  const palette = map.id && map.id in meadowByMap ? meadowByMap[map.id as keyof typeof meadowByMap] : grass
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       const tx = startX + col
@@ -44,10 +50,12 @@ export function terrainTexture(map: BattleMap, startX: number, startY: number, w
         for (let j = 0; j < 10; j++) {
           rect(j % 3 ? '#317992' : '#3b8e9c', x + Math.floor(rand() * 26), y + Math.floor(rand() * 30), 3 + j % 4, 2)
         }
-        const bank = tileAt(map, tx - 1, ty) === 'water' ? x + TILE - 4 : x
         if (tile === 'water') {
-          rect('#426e63', bank, y, 4, TILE)
-          rect('#6aa393', bank + 1, y, 2, TILE)
+          for (const [dx, offset] of [[-1, 0], [1, TILE - 4]]) {
+            if (tileAt(map, tx + dx, ty) === 'water') continue
+            rect('#426e63', x + offset, y, 4, TILE)
+            rect('#6aa393', x + offset + 1, y, 2, TILE)
+          }
         } else {
           rect('#463b31', x, y + 2, TILE, 30)
           for (let d = 2; d < TILE; d += 5) {
@@ -66,13 +74,13 @@ export function terrainTexture(map: BattleMap, startX: number, startY: number, w
       }
 
       const meadow = Math.floor((Math.sin(tx * 0.46 + ty * 0.11) + Math.cos(ty * 0.41) + 2) * 1.18)
-      rect(tile === 'grass' ? grass[meadow] : terrainColor[tile], x, y, TILE, TILE)
+      rect(tile === 'grass' ? palette[meadow] : terrainColor[tile], x, y, TILE, TILE)
       if (tile === 'road') {
         const north = tileAt(map, tx, ty - 1) === 'road'
         const south = tileAt(map, tx, ty + 1) === 'road'
         const top = north ? 0 : 3
         const bottom = south ? 0 : 3
-        rect(grass[meadow], x, y, TILE, TILE)
+        rect(palette[meadow], x, y, TILE, TILE)
         rect('#9e7d50', x, y + top, TILE, TILE - top - Math.max(0, bottom - 1))
         rect(trail[(tx + ty) % trail.length], x, y + top, TILE, TILE - top - bottom)
         for (const dx of [1, 12, 25]) {

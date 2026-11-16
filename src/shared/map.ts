@@ -5,6 +5,7 @@ export const TILE = 32
 export type Tile = 'grass' | 'road' | 'forest' | 'water' | 'rock' | 'bridge' | 'mine' | 'quarry'
 export type BattleMap = {
   id?: MapId
+  seed?: number
   name: string
   width: number
   height: number
@@ -12,9 +13,11 @@ export type BattleMap = {
   bases: Record<Faction, Point>
 }
 
-export type MapId = 'ashford-original' | 'ashford-expanded'
+export const mapIds = ['ashford-original', 'ashford-expanded', 'pinewatch-vale', 'ironbreak-pass', 'twinmere-basin'] as const
+export type MapId = typeof mapIds[number]
+type NewMap = Exclude<MapId, 'ashford-original' | 'ashford-expanded'>
 
-function createAshford(id: MapId): BattleMap {
+function createAshford(id: 'ashford-original' | 'ashford-expanded'): BattleMap {
   const expanded = id === 'ashford-expanded'
   const width = expanded ? 176 : 88
   const height = expanded ? 80 : 40
@@ -87,9 +90,103 @@ export const ashfordClassic = createAshford('ashford-original')
 export const ashford = createAshford('ashford-expanded')
 export const riverColumn = ashford.width / 2 - 1
 
-export const ashfordMap = (id: MapId | undefined) => id === 'ashford-original' ? ashfordClassic : ashford
+const terrainLayouts = {
+  'pinewatch-vale': { name: 'Pinewatch Vale', width: 112, height: 64, deposits: 6 },
+  'ironbreak-pass': { name: 'Ironbreak Pass', width: 144, height: 72, deposits: 7 },
+  'twinmere-basin': { name: 'Twinmere Basin', width: 160, height: 88, deposits: 8 }
+} as const
 
-export function mapForSettings(settings: MatchSettings): BattleMap {
+function createBattlefield(id: NewMap): BattleMap {
+  const { name, width, height } = terrainLayouts[id]
+  const half = width / 2
+  const tiles: Tile[] = Array(width * height).fill('grass')
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < half; x++) {
+      const u = x / half
+      const v = y / height
+      const patch = (cx: number, cy: number, rx: number, ry: number) =>
+        ((u - cx) / rx) ** 2 + ((v - cy) / ry) ** 2 < 1
+      let tile: Tile = 'grass'
+      if (y === 0 || y === height - 1 || x === 0) tile = 'forest'
+      if (patch(.23, .27, .13, .095) || patch(.35, .77, .14, .095) ||
+          patch(.53, .12, .16, .07) || patch(.59, .58, .15, .09) ||
+          patch(.76, .88, .15, .075)) tile = 'forest'
+      if (id === 'pinewatch-vale' && (patch(.22, .51, .15, .08) || patch(.79, .31, .14, .13) ||
+          patch(.92, .64, .1, .12))) tile = 'forest'
+      if (id === 'ironbreak-pass') {
+        if (patch(.62, .35, .12, .115) || patch(.78, .63, .15, .115)) tile = 'rock'
+        if (x >= half - 2) {
+          const pass = [.2, .5, .8].some(center => Math.abs(y + 0.5 - center * height) < 3)
+          tile = pass ? 'road' : 'rock'
+        }
+      }
+      if (id === 'twinmere-basin') {
+        if (patch(.56, .34, .22, .15) || patch(.81, .68, .17, .12)) tile = 'water'
+        if (x === half - 1) {
+          const crossing = [.16, .50, .84].some(center => Math.abs(y + 0.5 - center * height) < 3)
+          tile = crossing ? 'bridge' : 'water'
+        }
+      }
+      const index = y * width + x
+      tiles[index] = tiles[tiles.length - 1 - index] = tile
+    }
+  }
+  return { id, name, width, height, tiles, bases: mirroredBases(width, height, 8, 9) }
+}
+
+function mirroredBases(width: number, height: number, x: number, y: number): BattleMap['bases'] {
+  return { human: { x: (x + .5) * TILE, y: (y + .5) * TILE },
+    orc: { x: (width - x - .5) * TILE, y: (height - y - .5) * TILE } }
+}
+
+const battlefields = {
+  'ashford-original': ashfordClassic,
+  'ashford-expanded': ashford,
+  'pinewatch-vale': createBattlefield('pinewatch-vale'),
+  'ironbreak-pass': createBattlefield('ironbreak-pass'),
+  'twinmere-basin': createBattlefield('twinmere-basin')
+} satisfies Record<MapId, BattleMap>
+
+export const ashfordMap = (id: MapId | undefined) => id ? battlefields[id] : ashford
+export const mapOptions = mapIds.map(id => {
+  const { name, width, height, tiles } = battlefields[id]
+  const deposits = id === 'ashford-original' ? 3 : id === 'ashford-expanded' ? 7 : terrainLayouts[id].deposits
+  return { id, name, width, height, deposits, trees: tiles.filter(tile => tile === 'forest').length / 2 }
+})
+
+const starterSites = [
+  { resource: 'gold', tile: 'mine', x: -4, y: 2 },
+  { resource: 'stone', tile: 'quarry', x: -4, y: -2 },
+  { resource: 'wood', tile: 'forest', x: 1, y: -4 }
+] as const
+
+function startingSites(map: BattleMap) {
+  const { width, height } = map
+  const options: Point[] = []
+  const open = (x: number, y: number) => isWalkable(tileAt(map, x, y))
+  const spacing = map.id === 'ashford-original' ? 2 : 3
+  for (let y = 6; y < height - 6; y += spacing) {
+    for (let x = 6; x < width * .38; x += spacing) {
+      let clear = true
+      for (let dy = -2; dy <= 2 && clear; dy++) {
+        for (let dx = -2; dx <= 4; dx++) {
+          if (!open(x + dx, y + dy)) { clear = false; break }
+        }
+      }
+      if (clear && starterSites.every(site => {
+        const sx = x + site.x
+        const sy = y + site.y
+        return (tileAt(map, sx, sy) === 'grass' || tileAt(map, sx, sy) === site.tile) &&
+          (site.x < 0 ? open(sx + 1, sy) : open(sx, sy + 1))
+      })) options.push({ x, y })
+    }
+  }
+  return options
+}
+
+const spawnSites = new Map<MapId, Point[]>()
+
+export function mapForSettings(settings: MatchSettings, seed?: number): BattleMap {
   const base = ashfordMap(settings.map)
   const { width, height } = base
   const half = base.tiles.length / 2
@@ -98,10 +195,29 @@ export function mapForSettings(settings: MatchSettings): BattleMap {
     tiles[index] = tile
     tiles[tiles.length - 1 - index] = tile
   }
+  let bases = base.bases
+  const reserved = new Set<number>()
+  if (seed !== undefined || !settings.map.startsWith('ashford-')) {
+    let sites = spawnSites.get(settings.map)
+    if (!sites) {
+      sites = startingSites(base)
+      spawnSites.set(settings.map, sites)
+    }
+    const site = sites[(seed ?? 0) % sites.length]
+    if (site) {
+      bases = mirroredBases(width, height, site.x, site.y)
+      for (const resource of starterSites) {
+        if (!settings.sources[resource.resource].count) continue
+        const index = (site.y + resource.y) * width + site.x + resource.x
+        mirror(index, resource.tile)
+        reserved.add(Math.min(index, tiles.length - 1 - index))
+      }
+    }
+  }
   const coordinates = (i: number) => cellCenter(i % width, Math.floor(i / width))
   const toBase = (i: number) => {
     const p = coordinates(i)
-    return Math.min(distance(p, base.bases.human), distance(p, base.bases.orc))
+    return Math.min(distance(p, bases.human), distance(p, bases.orc))
   }
   const locations: Array<{ tile: Tile, count: number }> = [
     { tile: 'forest', count: settings.sources.wood.count },
@@ -111,7 +227,7 @@ export function mapForSettings(settings: MatchSettings): BattleMap {
   for (const { tile, count } of locations) {
     const present = tiles.slice(0, half).flatMap((kind, i) => kind === tile ? [i] : [])
     if (present.length > count) {
-      present.sort((a, b) => toBase(a) - toBase(b))
+      present.sort((a, b) => Number(reserved.has(b)) - Number(reserved.has(a)) || toBase(a) - toBase(b))
       for (const i of present.slice(count)) mirror(i, 'grass')
     }
     if (present.length >= count) continue
@@ -130,7 +246,7 @@ export function mapForSettings(settings: MatchSettings): BattleMap {
       if (--missing === 0) break
     }
   }
-  return { ...base, tiles }
+  return { ...base, ...(seed === undefined ? {} : { seed }), bases, tiles }
 }
 
 export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {

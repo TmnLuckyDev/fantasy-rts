@@ -221,6 +221,7 @@ function drawLobby() {
   element('room-actions').hidden = false
   element('lobby-title').textContent = 'War room'
   element('room-code').textContent = room.code
+  element('room-map').textContent = ashfordMap(room.settings?.map).name
   button('match-settings').textContent = room.host === faction ? 'Edit match settings' : 'View match settings'
   for (const item of factionButtons) item.disabled = room.players.length > 1
   const mine = room.players.find(seat => seat.faction === faction)
@@ -248,7 +249,9 @@ function showBattle() {
   if (minutes) setText('match-clock', clockText(minutes * 60))
   match.dataset.faction = faction
   button('advance').setAttribute('aria-pressed', 'false')
-  scene = new BattleScene(faction, room?.settings ? mapForSettings(room.settings) : ashfordMap(room?.map), battlefield, minimap, {
+  const map = room?.settings ? mapForSettings(room.settings, room.mapSeed) : ashfordMap(room?.map)
+  element('result-map').textContent = map.name
+  scene = new BattleScene(faction, map, battlefield, minimap, {
     order: issueOrder,
     groupOrder: issueGroupOrder,
     groups: drawTroopGroups,

@@ -1,5 +1,6 @@
 import { chromium, devices, expect, test, webkit } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { defaultMatchSettings } from '../src/shared/match-settings.ts'
 import { TILE, ashford, cellCenter, distance } from '../src/shared/map.ts'
 import { applyDelta } from '../src/shared/snapshot-delta.ts'
 import type { SnapshotDelta } from '../src/shared/snapshot-delta.ts'
@@ -68,6 +69,9 @@ async function cameraBox(page: Page) {
 const mobileBrowser = process.env.MOBILE_BROWSER === 'webkit' ? webkit : chromium
 const mobileProfile = process.env.MOBILE_BROWSER === 'webkit' ? 'iPhone 14' : 'Pixel 7'
 
+// These scenarios exercise exact map coordinates for gathering and touch construction.
+const fixedAshford = { ...defaultMatchSettings(), randomStarts: false }
+
 test('desktop and landscape touch players can finish an authoritative match', async ({ browser, baseURL }, info) => {
   test.setTimeout(265_000)
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 750 } })
@@ -77,6 +81,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
     ...phone,
     viewport: { width: phone.viewport.height, height: phone.viewport.width }
   })
+  await desktop.addInitScript(settings => localStorage.setItem('ash-and-iron-match-settings', JSON.stringify(settings)), fixedAshford)
   const human = await desktop.newPage()
   const orc = await touch.newPage()
   const humanHistory = observe(human)
@@ -280,6 +285,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     ...phone,
     viewport: { width: phone.viewport.height, height: phone.viewport.width }
   })
+  await context.addInitScript(settings => localStorage.setItem('ash-and-iron-match-settings', JSON.stringify(settings)), fixedAshford)
   try {
     let page = await context.newPage()
     await page.goto(baseURL!)
