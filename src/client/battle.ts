@@ -3,7 +3,7 @@ import { TILE, cellCenter, distance, isWalkable, resourceAt, snapToCell, tileAt,
 import type { BattleMap } from '../shared/map.ts'
 import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
-import { validPlacement } from '../shared/economy.ts'
+import { validPlacement, buildingFootprint } from '../shared/economy.ts'
 import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
@@ -686,7 +686,7 @@ export class BattleScene extends Phaser.Scene {
     })
     const drag = this.controls?.selection
     if (this.placing && this.pointer) {
-      const radius = unitStats[this.faction][this.placing].radius
+      const radius = buildingFootprint(this.placing)
       const points = drag && this.placing === 'wall'
         ? wallLine(this.map, this.world(drag.from), this.world(drag.to))
         : [snapToCell(this.world(this.pointer))]
