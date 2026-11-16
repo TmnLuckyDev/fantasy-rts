@@ -128,6 +128,8 @@ export type Order =
   | { kind: 'cancel-train', count: number }
   | { kind: 'cancel-build' }
   | { kind: 'demolish' }
+  | { kind: 'dismiss' }
+  | { kind: 'dismiss' }
 
 export type ArmyOrder = Extract<Order, { kind: 'move' | 'advance' | 'attack' | 'halt' }>
 export const isArmyOrder = (order: Order): order is ArmyOrder =>
@@ -151,7 +153,8 @@ export type ClientMessage =
 
 export type AttackAlert = { id: number, kind: 'base' | 'building' | 'workers' | 'army', at: Point, until: number }
 
-export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
+export type DepositInfo = { index: number, remaining: number | null }
+export type Snapshot = { type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }
