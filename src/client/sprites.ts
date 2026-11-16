@@ -81,6 +81,7 @@ function headquarters(faction: Race) {
   const ink = brush(surface)
   const { rect, block, poly, shadow } = ink
   const human = faction === 'human'
+  const orc = faction === 'orc'
   const team = palettes[faction]
   const wall = materials[faction]
   const plinth = human ? marble : iron
@@ -88,7 +89,7 @@ function headquarters(faction: Race) {
   block(plinth, 5, 49, 57, 7, 11)
   masonry(ink, wall, 19, 26, 31, 25, 13)
   if (human) pitchedRoof(ink, team, 16, 27, 37, 13, 15)
-  else {
+  else if (orc) {
     pitchedRoof(ink, team, 15, 28, 39, 14, 14)
     block(iron, 29, 15, 11, 5, 9)
     poly(bone[0], 26, 18, 25, 7, 31, 15, 31, 19)
@@ -107,7 +108,7 @@ function headquarters(faction: Race) {
   flag(ink, team, 40, 2)
   for (const x of [7, 51]) {
     masonry(ink, wall, x, 29, 12, 23, 6)
-    battlements(ink, plinth, x - 2, 27, 16, !human)
+    battlements(ink, plinth, x - 2, 27, 16, orc)
     rect('#34404b', x + 4, 35, 3, 7)
     rect('#f4bb68', x + 4, 40, 2, 2)
   }
@@ -117,7 +118,7 @@ function headquarters(faction: Race) {
     rect(team[0], x + 1, 32, 1, 12)
     rect(bone[0], x + 2, 36, 3, 3)
   }
-  if (!human) {
+  if (orc) {
     poly(bone[0], 20, 51, 17, 38, 21, 43, 24, 52)
     poly(bone[1], 48, 51, 53, 38, 51, 51, 49, 53)
   }
@@ -126,6 +127,7 @@ function headquarters(faction: Race) {
 
 function structure(faction: Race, kind: BuildingKind) {
   const human = faction === 'human'
+  const orc = faction === 'orc'
   const team = palettes[faction]
   const wall = materials[faction]
   const plinth = human ? marble : iron
@@ -148,13 +150,13 @@ function structure(faction: Race, kind: BuildingKind) {
   }
   if (kind === 'wall') {
     masonry(ink, plinth, 8, 23, 27, 10, 5)
-    battlements(ink, human ? sandstone : iron, 8, 21, 27, !human)
+    battlements(ink, human ? sandstone : iron, 8, 21, 27, orc)
     return surface
   }
   if (tall) {
     block(plinth, 10, 37, 22, 5, 5)
     masonry(ink, wall, 12, 18, 17, 20, 6)
-    battlements(ink, plinth, 9, 16, 23, !human)
+    battlements(ink, plinth, 9, 16, 23, orc)
     rect('#303943', 18, 28, 4, 8)
     rect('#fcc36a', 19, 32, 2, 2)
     flag(ink, team, 24, 2)
@@ -165,7 +167,27 @@ function structure(faction: Race, kind: BuildingKind) {
   masonry(ink, wall, 5, 18, width, 13, 7)
   pitchedRoof(ink, kind === 'farm' ? thatch : team, 3, 20, width + 3, 8, kind === 'elite' ? 12 : 9)
   gate(ink, kind === 'elite' ? 10 : 11, 32, 11, brass)
-  if (kind === 'farm') {
+  if (kind === 'farm' && faction === 'dwarf') {
+    block(iron, 5, 15, 21, 5, 5)
+    block(brass, 11, 12, 4, 17, 4)
+    rect(iron[2], 15, 19, 7, 11)
+    poly(steel[0], 18, 29, 23, 29, 37, 37, 34, 38)
+    poly(steel[0], 21, 29, 23, 28, 42, 36, 39, 37)
+    block(iron, 29, 27, 10, 5, 4)
+    rect(brass[0], 34, 26, 3, 2)
+  } else if (kind === 'farm' && faction === 'elf') {
+    block(oak, 16, 14, 7, 19, 5)
+    poly(team[2], 3, 17, 12, 6, 22, 6, 34, 17, 27, 24, 10, 23)
+    poly(team[1], 6, 16, 13, 7, 23, 5, 32, 16, 21, 20, 11, 20)
+    for (const [x, y] of [[12, 14], [21, 10], [25, 17]]) rect(team[0], x, y, 2, 2)
+    poly(team[2], 23, 34, 31, 27, 41, 30, 35, 34)
+  } else if (kind === 'farm' && faction === 'undead') {
+    for (const [x, y] of [[6, 28], [20, 31], [32, 26]]) {
+      block(iron, x, y + 3, 8, 4, 3)
+      block(wall, x + 1, y - 6, 5, 9, 3)
+      rect(team[0], x + 2, y - 3, 2, 2)
+    }
+  } else if (kind === 'farm') {
     block(timber, 27, 31, 10, 4, 4)
     for (let row = 0; row < 3; row++) {
       for (let col = 0; col < 3; col++) rect(human ? '#f8d782' : '#e9a48e',
@@ -184,7 +206,14 @@ function structure(faction: Race, kind: BuildingKind) {
     rect(iron[2], 30, 31, 3, 3)
   } else if (kind === 'elite') {
     if (human) gate(ink, 24, 32, 9, brass)
-    else {
+    else if (faction === 'dwarf') {
+      block(iron, 26, 10, 7, 18, 4)
+      block(iron, 24, 8, 11, 5, 5)
+      rect('#f7b563', 16, 26, 4, 4)
+    } else if (faction === 'elf') {
+      poly(team[0], 12, 19, 22, 5, 30, 19, 23, 15)
+      rect('#f8e8b6', 22, 13, 2, 8)
+    } else {
       poly(bone[0], 27, 32, 28, 19, 32, 25, 32, 32)
       poly(bone[1], 6, 33, 7, 22, 10, 28, 10, 33)
       rect(iron[2], 23, 24, 3, 5)
@@ -201,6 +230,7 @@ function troop(faction: Race, kind: UnitKind, frame: number) {
   const surface = canvas(36, 35)
   const { rect, block, poly, shadow } = brush(surface)
   const human = faction === 'human'
+  const orc = faction === 'orc'
   const team = palettes[faction]
   const armor = faction === 'dwarf' ? brass : faction === 'undead' ? bone : human ? steel : iron
   const skin = human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : faction === 'undead' ? bone : faction === 'elf' ? sandstone : faction === 'dwarf' ? leather : green
@@ -260,8 +290,8 @@ function troop(faction: Race, kind: UnitKind, frame: number) {
   block(outfit, heavy ? 7 : 9, 14, heavy ? 16 : 11, 6, 4)
   block(team, 12, 17, 8, 6, 2)
   rect(brass[1], 15, 20, 3, 2)
-  block(heavy && !human ? green : outfit, 8, 15, 4, 5, 3)
-  block(heavy && !human ? green : outfit, 21, 14, 4, 6, 3)
+  block(heavy && orc ? green : outfit, 8, 15, 4, 5, 3)
+  block(heavy && orc ? green : outfit, 21, 14, 4, 6, 3)
   block(skin, 12, head, heavy && !human ? 10 : 8, 7, 3)
   if (faction === 'dwarf') {
     block(brass, 10, head, 12, 4, 3)
@@ -294,7 +324,19 @@ function troop(faction: Race, kind: UnitKind, frame: number) {
   } else if (worker) {
     rect(oak[1], 26, 12, 2, 15)
     poly(steel[0], 21, 11, 26, 7, 32, 10, 32, 13, 26, 10, 21, 14)
-  } else if ((kind === 'ranged' && human) || kind === 'pathfinder') {
+  } else if (faction === 'dwarf' && ranged) {
+    poly(oak[1], 20, 22, 23, 16, 34, 11, 34, 14, 25, 20)
+    poly(steel[0], 23, 16, 33, 10, 35, 10, 35, 12, 24, 19)
+    rect(brass[0], 27, 14, 2, 3)
+  } else if (faction === 'dwarf' && (kind === 'blade' || heavy)) {
+    block(steel, 3, 14, heavy ? 11 : 8, heavy ? 12 : 8, 3)
+    rect(team[0], 5, 16, heavy ? 7 : 4, 2)
+    poly(steel[0], 24, 18, 28, 8, 31, 6, 32, 8, 27, 20)
+  } else if (faction === 'undead' && kind === 'pathfinder') {
+    rect(iron[0], 28, 10, 2, 18)
+    poly(team[0], 25, 9, 29, 3, 33, 8, 29, 13)
+  } else if ((kind === 'ranged' && !orc) ||
+      (kind === 'marksman' && faction === 'elf') || kind === 'pathfinder') {
     poly(brass[1], 25, 9, 30, 12, 32, 17, 31, 22, 27, 27, 25, 27, 29, 22, 30, 17, 28, 13)
     rect('#f3dfb5', 25, 11, 1, 15)
   } else if (kind === 'marksman' && human) {
