@@ -733,9 +733,36 @@ export class Match {
     return this.visibility.at(faction, point) > 0 && !this.exhausted.has(this.depositIndex(point))
   }
 
+  private nextTree(worker: Unit, previous: number): Point | null {
+    let closest: Point | null = null
+    let bestDistance = Infinity
+    for (let index = 0; index < this.map.tiles.length; index++) {
+      if (index === previous || this.map.tiles[index] !== 'forest' || this.exhausted.has(index)) continue
+      const at = cellCenter(index % this.map.width, Math.floor(index / this.map.width))
+      if (this.visibility.at(worker.faction, at) === 0) continue
+      const range = distance(worker, at)
+      if (range < bestDistance) {
+        closest = at
+        bestDistance = range
+      }
+    }
+    return closest
+  }
+
   private harvest(worker: Unit, job: Extract<WorkerJob, { kind: 'gather' }>, obstacles: Obstacle[]) {
     const index = this.depositIndex(job.at)
     if (this.exhausted.has(index)) {
+      if (job.resource === 'wood') {
+        const next = this.nextTree(worker, index)
+        if (next) {
+          job.at = next
+          job.workTicks = 0
+          worker.path = []
+          worker.pursued = null
+          worker.assigned = null
+          return
+        }
+      }
       this.resetOrders(worker)
       return
     }
