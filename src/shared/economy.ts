@@ -23,7 +23,8 @@ export const buildings: Record<BuildingKind, { cost: Cost, ticks: number }> = {
   farm: { cost: { wood: 70, stone: 20 }, ticks: 100 },
   wall: { cost: { stone: 28 }, ticks: 55 },
   tower: { cost: { wood: 55, stone: 85 }, ticks: 110 },
-  smithy: { cost: { wood: 105, stone: 65 }, ticks: 150 }
+  smithy: { cost: { wood: 105, stone: 65 }, ticks: 150 },
+  port: { cost: { wood: 145, stone: 80 }, ticks: 170 }
 }
 
 export const REPAIR = { health: 20, ticks: 10 }
@@ -35,6 +36,8 @@ export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: nu
 }
 
 export const training: Record<UnitKind, { gold: number, ticks: number, population: number }> = {
+  transport: { gold: 230, ticks: 220, population: 3 },
+  warship: { gold: 320, ticks: 270, population: 4 },
   scout: { gold: 85, ticks: 110, population: 1 },
   worker: { gold: 60, ticks: 95, population: 1 },
   blade: { gold: 75, ticks: 95, population: 1 },
@@ -50,7 +53,8 @@ const production: Partial<Record<EntityKind, readonly UnitKind[]>> = {
   headquarters: ['worker', 'scout', ...heroKinds],
   barracks: ['blade', 'polearm'],
   range: ['ranged', 'marksman'],
-  elite: ['heavy']
+  elite: ['heavy'],
+  port: ['transport', 'warship']
 }
 
 export const trainedAt = (building: EntityKind) => production[building] ?? []
@@ -77,6 +81,11 @@ export function validPlacement(map: BattleMap, kind: BuildingKind, position: Poi
       const tile = tileAt(map, Math.floor((point.x + dx) / TILE), Math.floor((point.y + dy) / TILE))
       if (tile !== 'grass' && tile !== 'road') return false
     }
+  }
+  if (kind === 'port') {
+    const x = Math.floor(point.x / TILE), y = Math.floor(point.y / TILE)
+    if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) =>
+      [1, 2, 3].some(distance => tileAt(map, x + dx * distance, y + dy * distance) === 'water'))) return false
   }
   for (const entity of entities) {
     const otherRadius = isUnitKind(entity.kind) ? unitStats[entity.faction][entity.kind].radius :
