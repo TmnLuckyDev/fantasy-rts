@@ -11,7 +11,7 @@ export const STARTING_RESOURCE_MAX = 100_000
 export const DEPOSIT_STOCK_MAX = 1_000_000
 export const WORKER_LIMIT_MAX = 100
 export const TIME_LIMIT_MAX_MINUTES = 720
-export const MAX_POPULATION_CAP = 1000
+export const MAX_POPULATION_CAP = 2000
 export const DEFAULT_POPULATION_CAP = 500
 
 type ResourceSettings = { count: number, stock: number | null, workers: number | null }
