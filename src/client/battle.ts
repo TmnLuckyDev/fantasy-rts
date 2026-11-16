@@ -169,8 +169,7 @@ export class BattleScene extends Phaser.Scene {
       const info = snapshot.deposits?.find(deposit => deposit.index === index)
       const at = cellCenter(index % this.map.width, Math.floor(index / this.map.width))
       const kind = resourceAt(this.map, at)
-      if (info && kind) this.actions.resource(kind, info.remaining)
-      else {
+      if (!info || !kind) {
         this.selectedResource = null
         this.selectionChanged()
       }
