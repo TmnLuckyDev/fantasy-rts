@@ -106,6 +106,7 @@ let orderMessageTimer: number | undefined
 let resources: Resources = { gold: 0, wood: 0, stone: 0 }
 let ownEntities: Entity[] = []
 let researched: UpgradeKind[] = []
+let currentTick = 0
 let population: Population = { used: 0, reserved: 0, limit: 0 }
 const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind, hero?: boolean }>()
 let selection: Entity[] = []
@@ -187,6 +188,7 @@ function receive(message: ServerMessage) {
       }
       break
     case 'snapshot': {
+      currentTick = message.tick
       const minutes = room?.settings?.minutes
       if (minutes) setText('match-clock', clockText(Math.max(0, minutes * 60 - Math.floor(message.tick / TICKS_PER_SECOND))))
       resources = message.resources
