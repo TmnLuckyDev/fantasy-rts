@@ -3,7 +3,7 @@ import { TILE, cellCenter, distance, isWalkable, resourceAt, snapToCell, tileAt,
 import type { BattleMap } from '../shared/map.ts'
 import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
-import { validPlacement } from '../shared/economy.ts'
+import { validPlacement, buildingFootprint } from '../shared/economy.ts'
 import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
@@ -355,6 +355,10 @@ export class BattleScene extends Phaser.Scene {
   private workerIds() { return this.selectedGroup ? [] : [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
 
   halt() { this.issue({ kind: 'halt' }) }
+  explore() {
+    const ids = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'scout')
+    if (ids.length) this.actions.order(ids, { kind: 'explore' })
+  }
   home() { if (this.initialized) this.focus(this.map.bases[this.faction]) }
   focusAlert(point: Point) { if (this.initialized) this.focus(point) }
 
@@ -368,7 +372,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.placing) {
       const ids = this.workerIds()
       const at = snapToCell(point)
-      if (ids.length && this.sightAt(at) === 2 && validPlacement(this.map, this.placing, at, this.entities())) {
+      if (ids.length && this.sightAt(at) > 0 && validPlacement(this.map, this.placing, at, this.entities())) {
         this.actions.order(ids, { kind: 'build', building: this.placing, at })
         this.actions.placement(this.placing)
       } else this.actions.placement(this.placing, true)
@@ -682,13 +686,13 @@ export class BattleScene extends Phaser.Scene {
     })
     const drag = this.controls?.selection
     if (this.placing && this.pointer) {
-      const radius = unitStats[this.faction][this.placing].radius
+      const radius = buildingFootprint(this.placing)
       const points = drag && this.placing === 'wall'
         ? wallLine(this.map, this.world(drag.from), this.world(drag.to))
         : [snapToCell(this.world(this.pointer))]
       let valid = 0
       for (const at of points) {
-        const ok = this.sightAt(at) === 2 && validPlacement(this.map, this.placing, at, this.entities())
+        const ok = this.sightAt(at) > 0 && validPlacement(this.map, this.placing, at, this.entities())
         if (ok) valid++
         const color = ok ? 0x9fdf8d : 0xf27b65
         this.ui.fillStyle(color, 0.27).fillRect(at.x - radius, at.y - radius, radius * 2, radius * 2)

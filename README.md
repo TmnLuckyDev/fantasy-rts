@@ -46,6 +46,12 @@ Select a completed building and choose **Repair** to send the closest idle worke
 | Ironbreak Pass | 144 × 72 | A central ridge with three passages |
 | Twinmere Basin | 160 × 88 | Lakes, a central river and three crossings |
 
+## Scouting and explored construction
+
+Train a **Scout** from your Town Hall or Great Hall for 85 gold. Scouts are fast, lightly armored and have a large sight radius. Select one or more scouts and tap **Explore** to automatically seek unexplored walkable terrain. Issue a normal movement or Stop command to cancel exploration. Scouts are included in the troop bar.
+
+Workers can place buildings on terrain already explored, even when it is currently under fog of war. Completely unexplored tiles remain unavailable. Building collision footprints are smaller than the artwork, allowing closer construction while preserving the original headquarters footprint. Placement outlines show the actual reduced footprint.
+
 ## Match settings and results
 
 Use **Match settings** before creating an online room or starting a new solo match. The online host can also edit the settings in the lobby. Both players can review the final rules before readying up. A change in the lobby clears both ready states. Solo saves retain the settings they started with.
