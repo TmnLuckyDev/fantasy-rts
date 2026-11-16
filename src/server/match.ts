@@ -1,5 +1,5 @@
-import { TILE, ashford, distance, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
-import type { BattleMap } from '../shared/map.ts'
+import { TILE, ashford, ashfordMap, distance, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
+import type { BattleMap, MapId } from '../shared/map.ts'
 import { MAX_SELECTION, factions, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
 import type { Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
@@ -53,6 +53,7 @@ type WorldSnapshot = Omit<Snapshot, 'resources' | 'population' | 'fog' | 'upgrad
 type Missile = { attacker: Unit, targetId: number, arrives: number }
 
 export type MatchCheckpoint = {
+  map?: MapId
   tick: number
   result: Result | null
   sequence: number
@@ -108,7 +109,7 @@ export class Match {
     this.visibility.update(this.units.values())
   }
 
-  static restore(checkpoint: MatchCheckpoint, map: BattleMap = ashford) {
+  static restore(checkpoint: MatchCheckpoint, map: BattleMap = ashfordMap(checkpoint.map ?? 'ashford-original')) {
     const match = new Match(map)
     match.tick = checkpoint.tick
     match.result = checkpoint.result
@@ -138,7 +139,7 @@ export class Match {
 
   checkpoint(): MatchCheckpoint {
     return {
-      tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
+      map: this.map.id, tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
       units: [...this.units.values()], missiles: this.missiles, upgrades: this.upgrades,
       heroExperience: this.heroExperience,
       fog: { human: this.visibility.mask('human'), orc: this.visibility.mask('orc') }
@@ -175,7 +176,7 @@ export class Match {
     if (order.kind === 'cancel-build') return units.length === 1 && this.cancelConstruction(units[0])
     if (order.kind === 'demolish') {
       const [building] = units
-      if (units.length !== 1 || isUnitKind(building.kind) || building.buildDuration) return false
+      if (units.length !== 1 || building.kind === 'headquarters' || isUnitKind(building.kind) || building.buildDuration) return false
       this.destroy(building)
       return true
     }

@@ -26,7 +26,7 @@ function announce() {
   if (!game) return
   const { faction, match, computer } = game
   send({ type: 'room', faction, room: {
-    code: '', mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
+    code: '', map: match.map.id, mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
     players: [faction, computer.faction].map(side => ({ faction: side, ready: true, connected: true }))
   } })
 }

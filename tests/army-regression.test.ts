@@ -12,7 +12,7 @@ test('all 500 troops in a single order eventually cross the river without lost u
   const health = unitStats.human.blade.health
   const army: number[] = []
   for (let i = 0; i < 500; i++) {
-    const x = 27 + i % 10
+    const x = riverColumn - 16 + i % 10
     let y = 8 + Math.floor(i / 90)
     while (!isWalkable(tileAt(ashford, x, y))) y++
     const id = ++checkpoint.sequence
@@ -20,7 +20,7 @@ test('all 500 troops in a single order eventually cross the river without lost u
     army.push(id)
   }
   const match = Match.restore(checkpoint)
-  assert.ok(match.command('human', army, { kind: 'move', to: cellCenter(65, 15) }))
+  assert.ok(match.command('human', army, { kind: 'move', to: cellCenter(riverColumn + 22, 15) }))
   for (let tick = 0; tick < 650; tick++) match.step()
   assert.equal(match.units.size, 502)
   assert.equal(army.filter(id => (match.units.get(id)?.x ?? 0) > (riverColumn + 2) * TILE).length, 500)

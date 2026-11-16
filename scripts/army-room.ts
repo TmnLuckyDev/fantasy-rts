@@ -2,9 +2,10 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Match } from '../src/server/match.ts'
-import { cellCenter, isWalkable, ashford, tileAt } from '../src/shared/map.ts'
+import { cellCenter, isWalkable, TILE, tileAt } from '../src/shared/map.ts'
 import { combatKinds, factions } from '../src/shared/protocol.ts'
 import { unitStats } from '../src/shared/units.ts'
 import type { SavedRoom } from '../src/server/rooms.ts'
@@ -12,15 +13,18 @@ import type { SavedRoom } from '../src/server/rooms.ts'
 export async function startArmyRoom(root = process.cwd()) {
   const directory = await mkdtemp(join(tmpdir(), 'ash-army-room-'))
   const path = join(directory, 'match.json')
-  const checkpoint = new Match().checkpoint()
+  const source = (path: string) => import(pathToFileURL(resolve(root, path)).href)
+  const match: Match = resolve(root) === process.cwd() ? new Match() : new (await source('src/server/match.ts')).Match()
+  const map = match.map
+  const checkpoint = match.checkpoint()
   checkpoint.units = checkpoint.units.filter(unit => unit.kind === 'headquarters')
   for (const faction of factions) {
     const prototype = checkpoint.units.find(unit => unit.faction === faction)!
     for (let i = 0; i < 500; i++) {
       const kind = combatKinds[i % combatKinds.length]
-      const x = (faction === 'human' ? 25 : 49) + i % 12
+      const x = map.width / 2 + (faction === 'human' ? -19 : 5) + i % 12
       let y = 7 + Math.floor(i / 48) % 10
-      while (!isWalkable(tileAt(ashford, x, y))) y++
+      while (!isWalkable(tileAt(map, x, y))) y++
       const at = cellCenter(x, y)
       const health = unitStats[faction][kind].health
       checkpoint.units.push({ ...prototype, ...at, id: ++checkpoint.sequence, kind, hp: health, maxHp: health })
@@ -58,7 +62,7 @@ export async function startArmyRoom(root = process.cwd()) {
         resolve(port)
       })
     })
-    return { url: 'http://127.0.0.1:' + port, code, seats, close }
+    return { url: 'http://127.0.0.1:' + port, code, seats, close, worldWidth: map.width * TILE, worldHeight: map.height * TILE }
   } catch (error) {
     await close()
     throw error

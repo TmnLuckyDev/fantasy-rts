@@ -255,7 +255,7 @@ test('wall repairs use only stone and stop when stock runs out', () => {
   assert.equal(restored.command('human', [15], { kind: 'repair', target: wall.id }), false)
 })
 
-test('demolition validates ownership, releases queued capacity and ends the match for headquarters', () => {
+test('demolition validates ownership, releases queued capacity and protects both headquarters', () => {
   const match = new Match()
   assert.ok(match.command('human', [15], { kind: 'build', building: 'barracks', at: cellCenter(10, 15) }))
   advance(match, 220)
@@ -271,9 +271,12 @@ test('demolition validates ownership, releases queued capacity and ends the matc
   assert.equal(match.view('human').population.reserved, 0)
   assert.deepEqual(match.view('human').resources, paid)
   assert.ok(match.snapshot(true).effects.some(effect => effect.kind === 'fallen' && effect.entityKind === 'barracks'))
-  assert.ok(match.command('human', [1], order))
+  assert.equal(match.command('human', [1], order), false)
+  assert.equal(match.command('orc', [8], order), false)
   match.step()
-  assert.deepEqual(match.result, { winner: 'orc', reason: 'headquarters' })
+  assert.equal(match.units.get(1)?.hp, 1500)
+  assert.equal(match.units.get(8)?.hp, 1500)
+  assert.equal(match.result, null)
 })
 
 test('building repair and demolition parse through the multiplayer protocol', () => {

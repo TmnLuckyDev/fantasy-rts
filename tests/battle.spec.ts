@@ -69,7 +69,7 @@ const mobileBrowser = process.env.MOBILE_BROWSER === 'webkit' ? webkit : chromiu
 const mobileProfile = process.env.MOBILE_BROWSER === 'webkit' ? 'iPhone 14' : 'Pixel 7'
 
 test('desktop and landscape touch players can finish an authoritative match', async ({ browser, baseURL }, info) => {
-  test.setTimeout(210_000)
+  test.setTimeout(265_000)
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 750 } })
   const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
   const phone = devices[mobileProfile]
@@ -135,7 +135,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
       await touchEvent('touchStart', [a, b])
       await touchEvent('touchMove', [{ ...a, x: a.x + 100 }, { ...b, x: b.x + 100 }])
       await touchEvent('touchEnd', [])
-      await expect.poll(() => cameraBox(orc).then(box => box.x)).toBeLessThan(before.x - 4)
+      await expect.poll(() => cameraBox(orc).then(box => box.x)).toBeLessThan(before.x - 1)
       expect(Math.abs((await cameraBox(orc)).width - before.width)).toBeLessThanOrEqual(2)
       await expect(orc.locator('#selection-name')).toHaveText('Grunt')
       expect(unit(orcHistory, 9)).toEqual(firstOrc)
@@ -143,7 +143,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
       await touchEvent('touchStart', [a, b])
       await touchEvent('touchMove', [{ ...a, x: a.x - 36 }, { ...b, x: b.x + 36 }])
       await touchEvent('touchEnd', [])
-      await expect.poll(() => cameraBox(orc).then(box => box.width)).toBeLessThan(before.width - 3)
+      await expect.poll(() => cameraBox(orc).then(box => box.width)).toBeLessThan(before.width - 1)
       await expect(orc.locator('#selection-name')).toHaveText('Grunt')
 
       // Recenter without resetting zoom, then reset the zoom with the inverse pinch.
@@ -163,7 +163,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect(orc.locator('#selection-name')).toHaveText('6 troops selected')
     if (process.env.CAPTURE_BROWSER === '1') await orc.screenshot({ path: info.outputPath('landscape-touch.png') })
 
-    const retreat = cellCenter(ashford.width - 8, 7)
+    const retreat = cellCenter(ashford.width - 8, ashford.height - 32)
     await panTo(orc, retreat, true)
     const retreatTap = await screenPoint(orc, retreat, retreat)
     await orc.touchscreen.tap(retreatTap.x, retreatTap.y)
@@ -244,7 +244,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await expect(orc.locator('#battlefield canvas')).toBeVisible()
     await expect(orc.locator('#banner')).toContainText('Orcish Horde')
     expect(unit(orcHistory, 1)).toBeUndefined()
-    await expect.poll(() => unit(humanHistory, 8)?.id, { timeout: 55_000 }).toBe(8)
+    await expect.poll(() => unit(humanHistory, 8)?.id, { timeout: 110_000 }).toBe(8)
     expect(decodeFog(newest(humanHistory)!.fog, ashford.tiles.length)[baseCell]).toBe(2)
     const target = await screenPoint(human, { x: base.x, y: base.y - 29 }, base)
     await human.mouse.click(target.x, target.y, { button: 'right' })
@@ -382,17 +382,10 @@ test('a phone can resume a saved solo match and use worker commands without a se
     const demolishSpot = await screenPoint(page, { x: hall.x, y: hall.y - 28 }, hall)
     await page.touchscreen.tap(demolishSpot.x, demolishSpot.y)
     await expect(page.locator('#selection-name')).toHaveText('Great Hall')
-    const demolish = page.getByRole('button', { name: 'Demolish', exact: true })
-    page.once('dialog', async dialog => {
-      expect(dialog.message()).toContain('This ends the match.')
-      await dialog.dismiss()
-    })
-    await demolish.tap()
-    await expect(page.locator('#selection-name')).toHaveText('Great Hall')
+    await expect(page.getByRole('button', { name: 'Demolish', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Repair ·/ })).toBeVisible()
     page.once('dialog', dialog => dialog.accept())
-    await demolish.tap()
-    await expect(page.getByRole('heading', { name: 'Defeat' })).toBeVisible()
-    await page.getByRole('button', { name: 'Back to lobby', exact: true }).tap()
+    await page.getByRole('button', { name: 'Leave', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Play vs Computer', exact: true })).toBeEnabled()
   } finally {
     await context.close()

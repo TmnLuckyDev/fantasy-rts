@@ -1,3 +1,5 @@
+import type { MapId } from './map.ts'
+
 export const factions = ['human', 'orc'] as const
 export const difficulties = ['easy', 'normal', 'hard'] as const
 export type Difficulty = typeof difficulties[number]
@@ -73,6 +75,7 @@ export type Player = { faction: Faction, connected: boolean, ready: boolean }
 export type Result = { winner: Faction | null, reason: 'headquarters' | 'disconnect' }
 export type RoomState = {
   code: string
+  map?: MapId
   mode: 'multiplayer' | 'solo'
   phase: 'lobby' | 'playing' | 'finished'
   players: Player[]

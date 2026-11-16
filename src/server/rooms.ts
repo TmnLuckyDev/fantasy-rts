@@ -254,6 +254,7 @@ export class Rooms {
     if (room.computer) players.push({ faction: room.computer.faction, ready: true, connected: true })
     const state: RoomState = {
       code: room.code,
+      map: room.match?.map.id,
       mode: room.computer ? 'solo' : 'multiplayer',
       phase: room.match?.result ? 'finished' : room.match ? 'playing' : 'lobby',
       result: room.match?.result ?? null,

@@ -11,7 +11,7 @@ const { ashford, cellCenter } = await load('src/shared/map.ts')
 const counts = (process.env.BENCH_COUNTS ?? '200,500,1000,1500,2000').split(',').map(Number)
 const cases = (process.env.BENCH_CASES ?? 'idle,move,combat,bridge,ai,churn').split(',')
 const ticks = Number(process.env.BENCH_TICKS ?? 120)
-const clearMap = { name: 'Load test', width: 88, height: 40, tiles: Array(88 * 40).fill('grass'), bases: ashford.bases }
+const clearMap = { name: 'Load test', width: 88, height: 40, tiles: Array(88 * 40).fill('grass'), bases: { human: { x: 208, y: 368 }, orc: { x: 2608, y: 912 } } }
 let timings
 let garbage = 0
 const gc = new PerformanceObserver(list => { for (const entry of list.getEntries()) garbage += entry.duration })
@@ -42,7 +42,7 @@ function setup(scenario, count) {
       const x = (index ? 1570 : 1180) - direction * (j % 24) * (bridge ? 4 : 12)
       const y = (bridge ? 260 : 320) + Math.floor(j / 24) * (bridge ? 2 : 18)
       // Use a known walkable approach on Ashford, with deliberate stacking near the bridge.
-      const point = bridge ? cellCenter(index ? 48 + j % 3 : 39 + j % 3, 7 + j % 4) : { x, y }
+      const point = bridge ? cellCenter(ashford.width / 2 + (index ? 4 : -5) + j % 3, 7 + j % 4) : { x, y }
       const kind = j % 3 === 0 ? 'ranged' : j % 3 === 1 ? 'blade' : 'heavy'
       armies[faction].push(match.spawn(faction, kind, point).id)
     }
@@ -55,7 +55,7 @@ function setup(scenario, count) {
       for (let start = 0; start < ids.length; start += 500) {
         match.command(faction, ids.slice(start, start + 500), {
           kind: scenario === 'move' ? 'move' : 'advance',
-          to: { x: faction === 'human' ? 1740 : 1090, y: bridge ? 288 : 510 }
+          to: { x: (bridge ? ashford.width : clearMap.width) * 16 + (faction === 'human' ? 332 : -318), y: bridge ? 288 : 510 }
         })
       }
     }

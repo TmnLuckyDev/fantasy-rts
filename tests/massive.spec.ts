@@ -69,7 +69,7 @@ test('two browser players issue orders to 500 troops each and receive authoritat
       await page.getByRole('button', { name: 'All troops', exact: true }).click()
       await expect(page.locator('#selection-name')).toHaveText('500 troops selected')
       const map = (await page.locator('#minimap').boundingBox())!
-      const focus = { x: map.x + map.width * .50, y: map.y + map.height * .30 }
+      const focus = { x: map.x + map.width * .50, y: map.y + map.height * 384 / fixture.worldHeight }
       if (i) await page.touchscreen.tap(focus.x, focus.y)
       else await page.mouse.click(focus.x, focus.y)
       await page.getByRole('button', { name: 'Attack move', exact: true }).click()
