@@ -58,7 +58,7 @@ function roster(changes: Partial<Record<EntityKind, Partial<UnitStats>>>) {
 const elf = roster({
   blade: { armor: 1, damage: 20 }, polearm: { armor: 2, damage: 19 },
   heavy: { armor: 4, damage: 29 }, marksman: { damage: 24, cooldown: 21 },
-  ranged: { damage: 20, cooldown: 15 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
+  ranged: { damage: 20, cooldown: 15 }, siege: { health: 125, damage: 25, armor: 1, range: 205, speed: 57, cooldown: 35 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
   pathfinder: { range: 165, health: 240, speed: 94 }, warship: { health: 585, speed: 90.2 }
 })
 for (const kind of ['blade', 'polearm', 'heavy', 'ranged', 'marksman', 'scout', 'support'] as const) {
@@ -76,6 +76,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     ranged: { health: 74, damage: 17, speed: 62.05, range: 112, cooldown: 25 },
     marksman: { health: 92, speed: 54.4, range: 145, cooldown: 25 },
     heavy: { health: 248, armor: 8, speed: 76.5, cooldown: 21 },
+    siege: { health: 205, damage: 38, armor: 5, range: 180, speed: 36, cooldown: 39 },
     headquarters: { health: 1725, armor: 6 }, tower: { health: 552, armor: 4 },
     wall: { health: 432, armor: 5 }, scout: { speed: 128 }, warship: { health: 715, speed: 73.8 },
     vanguard: { health: 385, speed: 69, damage: 32 }, pathfinder: { speed: 72, damage: 26, range: 149 }
@@ -85,6 +86,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     polearm: { health: 97, speed: 105, armor: 2, damage: 15 },
     marksman: { health: 68, armor: 1, range: 143 },
     heavy: { health: 295, speed: 57, armor: 6, damage: 36, cooldown: 23 },
+    siege: { health: 135, damage: 31, armor: 1, range: 190, speed: 52, cooldown: 34 },
     tower: { health: 390 }, wall: { health: 305 }, warship: { health: 585 }, support: { health: 94, speed: 73 },
     vanguard: { armor: 5, damage: 35 }, pathfinder: { health: 230, range: 146, damage: 26 }
   })
