@@ -535,6 +535,7 @@ function closeEconomyMenu() {
   menu.hidden = true
   economyAction.setAttribute('aria-expanded', 'false')
   globalUpgradeToggle.setAttribute('aria-expanded', 'false')
+  globalUpgradeOpen = false
   syncWorkerActions()
 }
 
@@ -554,7 +555,7 @@ function updateEconomyOptions() {
     const unavailable = rule.upgrade && (researched.filter(kind => kind === rule.upgrade).length >= upgradeLevelLimit(rule.upgrade) ||
       Boolean(selection[0]?.research) || ownEntities.some(entity => entity.research?.kind === rule.upgrade))
     if (rule.hero) heroTaken ??= hasHero(ownEntities)
-    choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, rule.cost) ||
+    choice.disabled = (economyContext === 'global-upgrades' && !ownEntities.some(entity => entity.kind === 'smithy' && entity.construction === undefined && !entity.research)) || Boolean(unavailable) || needsSpace || !canAfford(resources, rule.cost) ||
       Boolean(rule.hero && heroTaken)
     if (rule.hero) choice.title = heroTaken ? 'You already have a hero or one is in training.' : 'One hero per faction.'
     if (rule.upgrade) choice.title = researched.filter(kind => kind === rule.upgrade).length >= upgradeLevelLimit(rule.upgrade) ? 'Max level' : ''
@@ -758,6 +759,8 @@ function openEconomyMenu(rebuild = false) {
 globalUpgradeToggle.onclick = () => {
   globalUpgradeOpen = !globalUpgradeOpen
   if (globalUpgradeOpen) {
+    closeEconomyMenu()
+    globalUpgradeOpen = true
     economyContext = 'global-upgrades'
     openEconomyMenu(true)
     globalUpgradeToggle.setAttribute('aria-expanded', 'true')
