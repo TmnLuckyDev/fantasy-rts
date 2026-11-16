@@ -25,6 +25,7 @@ type BattleActions = {
   selection: (entities: Entity[], interactive: boolean) => void
   placement: (kind: BuildingKind | null, blocked?: boolean, segmentCount?: number) => void
   effect: (kind: Effect['kind']) => void
+  resource: (kind: ResourceKind, remaining: number | null) => void
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -36,6 +37,7 @@ export class BattleScene extends Phaser.Scene {
   private lastIdleWorker = 0
   private effects: AnimatedEffect[] = []
   private newest: Snapshot | null = null
+  private selectedResource: number | null = null
   private graphics!: Phaser.GameObjects.Graphics
   private water!: Phaser.GameObjects.Graphics
   private waterTiles: number[] = []
@@ -162,6 +164,17 @@ export class BattleScene extends Phaser.Scene {
   snapshot(snapshot: Snapshot) {
     this.newest = snapshot
     if (!this.initialized) return
+    if (this.selectedResource !== null) {
+      const index = this.selectedResource
+      const info = snapshot.deposits?.find(deposit => deposit.index === index)
+      const at = cellCenter(index % this.map.width, Math.floor(index / this.map.width))
+      const kind = resourceAt(this.map, at)
+      if (info && kind) this.actions.resource(kind, info.remaining)
+      else {
+        this.selectedResource = null
+        this.selectionChanged()
+      }
+    }
     if (snapshot.fog !== this.fogMask) {
       this.fogMask = snapshot.fog
       this.fog = decodeFog(snapshot.fog, this.map.tiles.length)
@@ -408,6 +421,20 @@ export class BattleScene extends Phaser.Scene {
       return
     }
     const picked = this.pick(point, touch)
+    if (!picked && this.sightAt(point) === 2) {
+      const index = Math.floor(point.y / TILE) * this.map.width + Math.floor(point.x / TILE)
+      const kind = resourceAt(this.map, point)
+      const deposit = this.newest?.deposits?.find(entry => entry.index === index)
+      if (kind && deposit) {
+        this.selectedGroup = null
+        this.selected.clear()
+        this.selectionChanged(true)
+        this.selectedResource = index
+        this.actions.resource(kind, deposit.remaining)
+        return
+      }
+    }
+    this.selectedResource = null
     if (touch && this.workOnBuilding(this.workerIds(), picked)) return
     if (touch && picked?.kind === 'transport' && picked.faction === this.faction &&
         this.mobileUnits().some(id => !isShipKind(this.visuals.get(id)?.entity.kind))) {
