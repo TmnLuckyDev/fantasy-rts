@@ -2,7 +2,7 @@ import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resour
 import type { BattleMap, MapId } from '../shared/map.ts'
 import { MAX_SELECTION, factions, inTroopGroup, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
 import type { ArmyOrder, TroopGroup, Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
-import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
+import { heroAbilities, heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
@@ -220,6 +220,25 @@ export class Match {
   }
 
   private issue(faction: Faction, units: Unit[], order: Order) {
+    if (order.kind === 'hero-ability') {
+      if (units.length !== 1 || !isHeroKind(units[0].kind)) return false
+      const hero = units[0]
+      const ability = heroAbilities[hero.kind as HeroKind]
+      if (this.tick < (hero.abilityReadyAt ?? 0)) return false
+      hero.abilityReadyAt = this.tick + ability.cooldown
+      if (hero.kind === 'vanguard') {
+        hero.abilityActiveUntil = this.tick + ability.duration
+      } else {
+        // A single authoritative AoE hit. Respect current sight and never hit allies.
+        const enemies = this.nearby[opposite(faction)]
+        for (const enemy of enemies.near(hero, ability.radius)) {
+          if (squaredDistance(hero, enemy) > ability.radius ** 2 ||
+              this.visibility.at(faction, enemy) !== 2) continue
+          this.heroSkillHit(hero, enemy, ability.bonus)
+        }
+      }
+      return true
+    }
     if (order.kind === 'upgrade') return units.length === 1 && this.startUpgrade(units[0], order.upgrade)
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
@@ -857,15 +876,33 @@ export class Match {
     return true
   }
 
+  private heroSkillHit(attacker: Unit, target: Unit, power: number) {
+    if (!this.units.has(target.id)) return
+    const damage = Math.max(1, power - unitStats[target.faction][target.kind].armor)
+    target.hp = Math.max(0, target.hp - damage)
+    this.attackAlerts[target.faction].hit(target, this.tick)
+    this.effects.push({ id: ++this.sequence, kind: 'hit', at: { x: target.x, y: target.y },
+      to: { x: attacker.x, y: attacker.y }, faction: attacker.faction, entityKind: attacker.kind })
+    if (!target.hp) {
+      if (isUnitKind(target.kind)) this.stats[attacker.faction].enemiesKilled++
+      else this.stats[attacker.faction].buildingsRazed++
+      this.awardHeroExperience(attacker.faction, target)
+      this.destroy(target)
+    }
+  }
+
   private hit(attacker: Unit, targetId: number) {
     const target = this.units.get(targetId)
     if (!target) return
     const attackBonus = isUnitKind(attacker.kind) && this.upgrades[attacker.faction].includes('weapons') ? upgrades.weapons.bonus : 0
     const armorBonus = isUnitKind(target.kind) && target.kind !== 'worker' && this.upgrades[target.faction].includes('armor') ? upgrades.armor.bonus : 0
     const heroBonus = attacker.experience === undefined ? 0 :
-      (heroLevel(attacker.experience) - 1) * heroDamagePerLevel
+      (heroLevel(attacker.experience) - 1) * heroDamagePerLevel +
+      (attacker.kind === 'pathfinder' ? 5 : 0) +
+      (attacker.kind === 'vanguard' && this.tick < (attacker.abilityActiveUntil ?? 0) ? 8 : 0)
     const damage = Math.max(1, unitStats[attacker.faction][attacker.kind].damage + attackBonus + heroBonus -
-      unitStats[target.faction][target.kind].armor - armorBonus)
+      unitStats[target.faction][target.kind].armor - armorBonus -
+      (target.kind === 'vanguard' ? 2 : 0))
     target.hp = Math.max(0, target.hp - damage)
     this.attackAlerts[target.faction].hit(target, this.tick)
     this.callDefenders(target, attacker)
@@ -986,7 +1023,7 @@ export class Match {
         const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
         const next = queue[0]
         return {
-          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, experience: unit.experience,
+          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, experience: unit.experience, abilityReadyAt: unit.abilityReadyAt, abilityActiveUntil: unit.abilityActiveUntil,
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,
