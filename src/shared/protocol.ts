@@ -72,6 +72,7 @@ export type Entity = Point & {
   idle?: boolean
   embarkedOn?: number
   passengers?: number[]
+  passengerPop?: number
 }
 
 export type Effect = {
