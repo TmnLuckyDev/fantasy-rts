@@ -129,7 +129,6 @@ export type Order =
   | { kind: 'cancel-build' }
   | { kind: 'demolish' }
   | { kind: 'dismiss' }
-  | { kind: 'dismiss' }
 
 export type ArmyOrder = Extract<Order, { kind: 'move' | 'advance' | 'attack' | 'halt' }>
 export const isArmyOrder = (order: Order): order is ArmyOrder =>
