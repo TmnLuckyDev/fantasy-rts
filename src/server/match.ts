@@ -1048,7 +1048,7 @@ export class Match {
       (attacker.kind === 'pathfinder' ? 5 : 0) +
       (attacker.kind === 'vanguard' && this.tick < (attacker.abilityActiveUntil ?? 0) ? 8 : 0)
     const damage = Math.max(1, unitStats[attacker.faction][attacker.kind].damage + attackBonus + heroBonus + (attacker.kind === 'tower' ? ((attacker.level ?? 1) - 1) * 5 : 0) -
-      unitStats[target.faction][target.kind].armor - armorBonus - (target.kind === 'wall' || target.kind === 'tower' ? ((target.level ?? 1) - 1) * 2 : 0) -
+      unitStats[target.faction][target.kind].armor - armorBonus + (target.kind === 'wall' || target.kind === 'tower' ? ((target.level ?? 1) - 1) * 2 : 0) -
       (target.kind === 'vanguard' ? 2 : 0))
     target.hp = Math.max(0, target.hp - damage)
     if (isHeroKind(attacker.kind)) this.gainHeroExperience(attacker, 3)
