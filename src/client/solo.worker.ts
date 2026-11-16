@@ -1,3 +1,5 @@
+import { defaultMatchSettings } from '../shared/match-settings.ts'
+import type { MatchSettings } from '../shared/match-settings.ts'
 import { ComputerOpponent } from '../server/computer.ts'
 import type { ComputerCheckpoint } from '../server/computer.ts'
 import { Match, TICK_HZ } from '../server/match.ts'
@@ -7,7 +9,7 @@ import type { Difficulty, Faction, Order, ServerMessage } from '../shared/protoc
 
 export type SoloSave = { faction: Faction, match: MatchCheckpoint, computer: ComputerCheckpoint }
 export type SoloInput =
-  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, paused: boolean }
+  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, paused: boolean }
   | { type: 'pause', paused: boolean }
   | { type: 'command', ids: number[], order: Order }
 export type SoloOutput = ServerMessage | { type: 'save', save: SoloSave }
@@ -26,7 +28,7 @@ function announce() {
   if (!game) return
   const { faction, match, computer } = game
   send({ type: 'room', faction, room: {
-    code: '', map: match.map.id, mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
+    code: '', map: match.map.id, settings: match.settings, report: match.result ? match.report() : undefined, mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
     players: [faction, computer.faction].map(side => ({ faction: side, ready: true, connected: true }))
   } })
 }
@@ -35,7 +37,7 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
   const message = event.data
   if (message.type === 'start') {
     try {
-      const match = message.save ? Match.restore(message.save.match) : new Match()
+      const match = message.save ? Match.restore(message.save.match) : Match.configured(message.settings ?? defaultMatchSettings())
       const faction = message.save?.faction ?? message.faction
       const computer = new ComputerOpponent(opposite(faction), match.map, message.save?.computer.difficulty ?? message.difficulty, message.save?.computer.strategy)
       if (message.save) computer.restore(message.save.computer)

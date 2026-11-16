@@ -41,6 +41,9 @@ export class BattleScene extends Phaser.Scene {
   private fog: Uint8Array
   private terrainChunks = new Map<string, Phaser.GameObjects.Image>()
   private terrainWindow = ''
+  private readonly resourceProps = new Map<number, Phaser.GameObjects.Image>()
+  private readonly depleted = new Set<number>()
+  private lastDepletion?: number[]
 
   private get mapWidth() { return this.map.width * TILE }
   private get mapHeight() { return this.map.height * TILE }
@@ -82,6 +85,7 @@ export class BattleScene extends Phaser.Scene {
       const rand = randomAt(Math.imul(i + 1, 0x9e3779b9))
       const variant = tile === 'forest' || tile === 'rock' ? Math.floor(rand() * 3) : 0
       const sprite = this.add.image(point.x + (rand() - 0.5) * 8, point.y + (rand() - 0.5) * 4, tile + variant)
+      if (tile !== 'rock') this.resourceProps.set(i, sprite)
       sprite.setScale(tile === 'forest' ? 1.06 : 0.96).setOrigin(0.5, 40 / 48).setDepth(point.y - 1)
     })
     this.textures.addCanvas('selection-unit', this.ringTexture(27, 12))
@@ -153,6 +157,14 @@ export class BattleScene extends Phaser.Scene {
       this.fogMask = snapshot.fog
       this.fog = decodeFog(snapshot.fog, this.map.tiles.length)
       this.paintFog()
+    }
+    if (snapshot.depleted !== this.lastDepletion) {
+      this.lastDepletion = snapshot.depleted
+      for (const index of snapshot.depleted ?? []) {
+        if (this.depleted.has(index)) continue
+        this.depleted.add(index)
+        this.resourceProps.get(index)?.setTint(0x777777)
+      }
     }
     const present = new Set(snapshot.entities.map(entity => entity.id))
     for (const [id, visual] of this.visuals) {
@@ -298,7 +310,7 @@ export class BattleScene extends Phaser.Scene {
     let nearest: Point | undefined
     let range = Infinity
     for (let index = 0; index < this.map.tiles.length; index++) {
-      if (!this.fog[index]) continue
+      if (!this.fog[index] || this.depleted.has(index)) continue
       const point = cellCenter(index % this.map.width, Math.floor(index / this.map.width))
       if (resourceAt(this.map, point) !== resource) continue
       const gap = distance(worker, point)
@@ -416,9 +428,12 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private gatherPoint(point: Point) {
-    if (this.sightAt(point) && resourceAt(this.map, point)) return snapToCell(point)
-    const ground = { x: point.x, y: point.y + 12 }
-    return this.sightAt(ground) && resourceAt(this.map, ground) ? snapToCell(ground) : null
+    for (const at of [point, { x: point.x, y: point.y + 12 }]) {
+      if (!this.sightAt(at) || !resourceAt(this.map, at)) continue
+      const index = Math.floor(at.y / TILE) * this.map.width + Math.floor(at.x / TILE)
+      if (!this.depleted.has(index)) return snapToCell(at)
+    }
+    return null
   }
 
   private orderAt(screen: Point) {

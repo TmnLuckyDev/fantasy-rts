@@ -21,6 +21,7 @@ test('legacy checkpoints retain their map and explored terrain', () => {
   const original = new Match(ashfordClassic)
   const checkpoint = structuredClone(original.checkpoint())
   delete checkpoint.map
+  delete checkpoint.settings
   const restored = Match.restore(checkpoint)
   assert.equal(restored.map.width, 88)
   assert.equal(restored.map.height, 40)

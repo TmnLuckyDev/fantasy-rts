@@ -56,16 +56,44 @@
               <button id="leave" type="button">Leave</button>
             </div>
           </div>
+          <button id="match-settings" type="button">Match settings</button>
           <p id="lobby-message" role="status">Choose a faction to start.</p>
         </section>
-        <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Ashford Crossing</span><span>Destroy the enemy headquarters</span></footer>
+        <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Ashford Crossing</span><span>Custom match rules</span></footer>
       </div>
     </main>
+
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
+      <form id="settings-form">
+        <header class="settings-heading">
+          <h2 id="settings-title">Match settings</h2>
+          <button id="close-settings" type="button" aria-label="Close settings">Close</button>
+        </header>
+        <fieldset id="settings-fields">
+          <div class="settings-top">
+            <label>Map size
+              <select name="map"><option value="ashford-original">Classic · 88 × 40</option><option value="ashford-expanded">Expanded · 176 × 80</option></select>
+            </label>
+            <label>Time limit (minutes)
+              <input name="minutes" type="number" inputmode="numeric" min="1" placeholder="Unlimited">
+            </label>
+          </div>
+          <p class="settings-note">Both sides start with the same resources. Blank stock, worker limit or time fields mean unlimited.</p>
+          <div id="resource-settings"></div>
+          <p id="score-rule" class="settings-note"></p>
+        </fieldset>
+        <footer class="settings-footer">
+          <button id="reset-settings" type="button">Reset defaults</button>
+          <button id="save-settings" type="submit" class="primary">Save settings</button>
+        </footer>
+      </form>
+    </dialog>
 
     <main id="match" class="match" hidden>
       <header class="match-head">
         <div class="wordmark">Ash <span>&amp;</span> Iron</div>
         <div id="banner" role="status"></div>
+        <output id="match-clock" aria-label="Time left" hidden></output>
         <div class="head-actions">
           <div class="resource-bar" aria-label="Economy">
             <div class="resource gold" title="Gold for training"><span aria-hidden="true"></span><div><small>Gold</small><output id="gold" aria-label="Gold">0</output></div></div>
@@ -105,6 +133,7 @@
         <p class="eyebrow">Ashford Crossing</p>
         <h2 id="result-title"></h2>
         <p id="result-detail"></p>
+        <section id="match-stats" aria-label="Match statistics" hidden></section>
         <button id="return" type="button" class="primary">Back to lobby</button>
       </dialog>
     </main>

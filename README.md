@@ -29,6 +29,16 @@ Nearby troops counterattack when an allied unit or building is hit. They break o
 
 Select a completed building and choose **Repair** to send the closest idle worker. You can also select workers and right-click or tap a damaged friendly building. Each repair step restores up to 20 HP for 1 wood and 1 stone. Walls use 1 stone per step. A worker stops when the building is fully repaired or materials run out. Choose **Demolish** to remove another completed building after confirming. Demolition has no refund. Your headquarters is protected from demolition.
 
+## Match settings and results
+
+Use **Match settings** before creating an online room or starting a new solo match. The online host can also edit the settings in the lobby. Both players can review the final rules before readying up. A change in the lobby clears both ready states. Solo saves retain the settings they started with.
+
+- Choose the 88 × 40 or 176 × 80 map. Set gold mines, stone quarries and tree tiles per side. The map mirrors those placements for the two factions.
+- Set stock and active workers per source separately for gold, stone and wood. Leave either field blank for unlimited. Excess workers wait for a slot, and spent sources remain on the terrain but can no longer be harvested.
+- Set starting gold, wood and stone for both sides. Leave the time field blank for an unlimited match. For timed matches, the clock advances with the simulation and pauses with the match.
+- At the time limit, the score is one point per banked gold, wood or stone and 100 points per surviving soldier or hero. Ties draw. The loss of a headquarters still decides the game if it occurs by the last tick.
+- The results show resources delivered, troops trained, buildings completed and razed, enemy units killed, losses, surviving army and score for both sides. The totals exclude starting units and resources. Old saves begin counting activity from the update.
+
 ## Heroes
 
 The Town Hall recruits Aldren the Warden or Nera the Pathfinder. The Great Hall recruits Gorak Ironhand or Vesha Emberbow. Each side can field or train one hero at a time. The vanguard defends at melee range, while the pathfinder scouts and attacks at range. Either costs 225 gold and one population slot.

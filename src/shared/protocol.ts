@@ -1,3 +1,4 @@
+import type { MatchReport, MatchSettings } from './match-settings.ts'
 import type { MapId } from './map.ts'
 
 export const factions = ['human', 'orc'] as const
@@ -72,10 +73,13 @@ export type Effect = {
 }
 
 export type Player = { faction: Faction, connected: boolean, ready: boolean }
-export type Result = { winner: Faction | null, reason: 'headquarters' | 'disconnect' }
+export type Result = { winner: Faction | null, reason: 'headquarters' | 'disconnect' | 'time' }
 export type RoomState = {
   code: string
   map?: MapId
+  settings?: MatchSettings
+  host?: Faction
+  report?: MatchReport
   mode: 'multiplayer' | 'solo'
   phase: 'lobby' | 'playing' | 'finished'
   players: Player[]
@@ -99,15 +103,16 @@ export type Order =
   | { kind: 'demolish' }
 
 export type ClientMessage =
-  | { type: 'create' | 'solo', faction: Faction }
+  | { type: 'create' | 'solo', faction: Faction, settings?: MatchSettings }
   | { type: 'join', code: string, faction: Faction }
   | { type: 'resume', code: string, token: string }
   | { type: 'leave' }
   | { type: 'faction', faction: Faction }
+  | { type: 'settings', settings: MatchSettings }
   | { type: 'ready', ready: boolean }
   | { type: 'command', ids: number[], order: Order }
 
-export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[] }
+export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[] }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }
