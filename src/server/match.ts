@@ -586,7 +586,17 @@ export class Match {
     const slots = [0, 0.65, -0.65, 1.3, -1.3, 2.0, -2.0, Math.PI]
     const direction = building.faction === 'human' ? 1 : -1
     let spawnPoint: Point | undefined
-    spawnSlots: for (const angle of slots) {
+    if (isShipKind(next.kind)) {
+      const cx = Math.floor(building.x / TILE), cy = Math.floor(building.y / TILE)
+      const water: Point[] = []
+      for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+        if (isWater(tileAt(this.map, cx + dx, cy + dy))) water.push(cellCenter(cx + dx, cy + dy))
+      }
+      water.sort((a, b) => distance(a, building) - distance(b, building))
+      spawnPoint = water.find(point => [...this.nearby.human.near(point, 60), ...this.nearby.orc.near(point, 60)]
+        .every(unit => !isShipKind(unit.kind) || distance(unit, point) >= radius + unitStats[unit.faction][unit.kind].radius + 3))
+    }
+    spawnSlots: for (const angle of isShipKind(next.kind) ? [] : slots) {
       const point = { x: building.x + direction * Math.cos(angle) * bounds, y: building.y + Math.sin(angle) * bounds }
       if (isShipKind(next.kind) ? !isWater(tileAt(this.map, Math.floor(point.x / TILE), Math.floor(point.y / TILE))) : !canStand(this.map, point, obstacles, radius)) continue
       spawnPoint ??= point
@@ -728,7 +738,7 @@ export class Match {
     for (const faction of factions) this.attackAlerts[faction].advance(this.tick)
     this.harvesting.clear()
     for (const faction of factions) this.nearby[faction].reset([])
-    for (const unit of this.units.values()) this.nearby[unit.faction].update(unit)
+    for (const unit of this.units.values()) if (!unit.embarkedOn) this.nearby[unit.faction].update(unit)
     const incoming: Missile[] = []
     for (const missile of this.missiles) {
       if (missile.arrives <= this.tick) this.hit(missile.attacker, missile.targetId)
@@ -866,8 +876,8 @@ export class Match {
     }
     if (distance(unit, destination) < TILE * .5) { unit.path = []; return }
     const goal = Math.floor(destination.y / TILE) * this.map.width + Math.floor(destination.x / TILE)
-    if (unit.lastTarget?.x !== goal || !unit.path.length) {
-      unit.lastTarget = { x: goal, y: 0 }
+    if (unit.pursued?.x !== goal || !unit.path.length) {
+      unit.pursued = { x: goal, y: 0 }
       const start = Math.floor(unit.y / TILE) * this.map.width + Math.floor(unit.x / TILE)
       const previous = new Int32Array(this.map.width * this.map.height).fill(-1)
       const queue = new Int32Array(previous.length)
