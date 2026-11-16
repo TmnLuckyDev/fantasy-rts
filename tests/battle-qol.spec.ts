@@ -23,6 +23,8 @@ test('landscape player recruits from two buildings, gets a base ping and finds g
   const host = await browser.newContext()
   try {
     const [human, orc] = await Promise.all([mobile.newPage(), host.newPage()])
+    const pageErrors: string[] = []
+    for (const page of [human, orc]) page.on('pageerror', error => pageErrors.push(error.stack ?? error.message))
     await Promise.all([human, orc].map(async (page, i) => {
       await page.addInitScript(seat => sessionStorage.setItem('ash-and-iron-seat', JSON.stringify(seat)),
         { ...fixture.seats[i], code: fixture.code })
@@ -34,11 +36,17 @@ test('landscape player recruits from two buildings, gets a base ping and finds g
     await expect(orc.getByRole('button', { name: 'Base under attack' })).toHaveCount(0)
     const minimap = human.locator('#minimap')
     const at = { x: hall.x / fixture.worldWidth, y: hall.y / fixture.worldHeight }
-    await expect.poll(() => minimap.evaluate((canvas: HTMLCanvasElement, at) => {
+    await expect.poll(async () => {
+      expect(pageErrors).toEqual([])
+      return minimap.evaluate((canvas: HTMLCanvasElement, at) => {
       const ctx = canvas.getContext('2d')!
       return [...ctx.getImageData(Math.floor(at.x * canvas.width), Math.floor(at.y * canvas.height), 1, 1).data]
-    }, at)).toEqual([255, 247, 173, 255])
+      }, at)
+    }).toEqual([255, 247, 173, 255])
+    expect(pageErrors).toEqual([])
     const map = (await minimap.boundingBox())!
+    expect(map.x).toBeGreaterThanOrEqual(0)
+    expect(map.x + map.width).toBeLessThanOrEqual(phone.viewport.height)
     const target = { x: map.x + hall.x / fixture.worldWidth * map.width, y: map.y + hall.y / fixture.worldHeight * map.height }
     await human.touchscreen.tap(target.x, target.y)
     await baseAlert.tap()

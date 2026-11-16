@@ -108,6 +108,12 @@
       <div class="battle-area">
         <section id="battlefield" aria-label="Battlefield"></section>
         <div id="attack-alerts" role="region" aria-label="Attack alerts" aria-live="polite" hidden></div>
+        <div id="formation-options" role="group" aria-label="Formation options" hidden>
+          <button type="button" data-formation="line" aria-pressed="true">Line</button>
+          <button type="button" data-formation="compact" aria-pressed="false">Compact</button>
+          <button type="button" data-formation="spread" aria-pressed="false">Spread</button>
+        </div>
+        <section id="global-train-panel" aria-label="Global production" hidden></section>
       </div>
       <nav id="troop-groups" aria-label="Troop groups" hidden></nav>
       <footer class="hud">
@@ -129,15 +135,9 @@
           <button id="production-toggle" type="button" aria-expanded="false" aria-controls="production-panel">Queues <span id="production-count">0</span></button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
         </div>
-        <div id="formation-options" role="group" aria-label="Formation options" hidden>
-          <button type="button" data-formation="line" aria-pressed="true">Line</button>
-          <button type="button" data-formation="compact" aria-pressed="false">Compact</button>
-          <button type="button" data-formation="spread" aria-pressed="false">Spread</button>
-        </div>
         <div id="worker-actions" class="economy-menu worker-actions" role="group" aria-label="Gather resources" hidden></div>
         <div id="economy-menu" class="economy-menu" aria-label="Economy commands" hidden></div>
         <section id="production-panel" class="economy-menu production-panel" aria-label="Production queues" hidden></section>
-        <section id="global-train-panel" aria-label="Global production" hidden></section>
         <div id="placement-tip" class="placement-tip" role="status" hidden><span id="placement-message">Choose a clear tile to build on.</span> <button id="cancel-placement" type="button">Done</button></div>
       </footer>
       <dialog id="result">
