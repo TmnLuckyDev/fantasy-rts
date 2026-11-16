@@ -44,8 +44,8 @@ export const structureUpgrade = (kind: 'tower' | 'wall', level: number) => ({
 })
 
 export const training: Record<UnitKind, { gold: number, wood?: number, ticks: number, population: number }> = {
-  transport: { gold: 160, wood: 130, ticks: 220, population: 3 },
-  warship: { gold: 230, wood: 185, ticks: 270, population: 4 },
+  transport: { gold: 160, wood: 130, ticks: 220, population: 1 },
+  warship: { gold: 230, wood: 185, ticks: 270, population: 2 },
   scout: { gold: 85, ticks: 110, population: 1 },
   worker: { gold: 60, ticks: 95, population: 1 },
   blade: { gold: 75, ticks: 95, population: 1 },
