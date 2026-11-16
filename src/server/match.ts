@@ -236,6 +236,7 @@ export class Match {
     }
     if (units.some(unit => !isUnitKind(unit.kind))) return false
     if (order.kind === 'explore' && units.some(unit => unit.kind !== 'scout')) return false
+    if (order.kind === 'attack' && units.some(unit => unit.kind === 'scout')) return false
     if (order.kind === 'attack') {
       const target = this.units.get(order.target)
       if (!target || target.faction === faction || this.visibility.at(faction, target) !== 2) return false
@@ -728,7 +729,7 @@ export class Match {
           }
         }
       }
-      if (target && this.fight(unit, target)) {
+      if (target && stats.damage > 0 && this.fight(unit, target)) {
         this.routes.delete(unit)
         continue
       }
