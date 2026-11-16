@@ -57,10 +57,11 @@ export function parseMessage(raw: string): ClientMessage | null {
 }
 
 function parseOrder(order: Record<string, unknown>): Order | null {
-  if (order.kind === 'halt' || order.kind === 'explore' || order.kind === 'hero-ability') return { kind: order.kind }
+  if (order.kind === 'halt' || order.kind === 'explore' || order.kind === 'hero-ability' || order.kind === 'unload') return { kind: order.kind }
   const formation = formations.find(kind => kind === order.formation)
   if (order.formation !== undefined && !formation) return null
   const options = formation ? { formation } : {}
+  if (order.kind === 'board' && validId(order.transport)) return { kind: 'board', transport: order.transport }
   if (order.kind === 'attack' && validId(order.target)) return { kind: 'attack', target: order.target, ...options }
   if ((order.kind === 'move' || order.kind === 'advance') && object(order.to) &&
       coordinate(order.to.x) && coordinate(order.to.y)) {

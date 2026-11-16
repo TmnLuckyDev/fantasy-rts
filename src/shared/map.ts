@@ -13,9 +13,9 @@ export type BattleMap = {
   bases: Record<Faction, Point>
 }
 
-export const mapIds = ['ashford-original', 'ashford-expanded', 'pinewatch-vale', 'ironbreak-pass', 'twinmere-basin'] as const
+export const mapIds = ['ashford-original', 'ashford-expanded', 'pinewatch-vale', 'ironbreak-pass', 'twinmere-basin', 'shattered-isles'] as const
 export type MapId = typeof mapIds[number]
-type NewMap = Exclude<MapId, 'ashford-original' | 'ashford-expanded'>
+type NewMap = Exclude<MapId, 'ashford-original' | 'ashford-expanded' | 'shattered-isles'>
 
 function createAshford(id: 'ashford-original' | 'ashford-expanded'): BattleMap {
   const expanded = id === 'ashford-expanded'
@@ -139,18 +139,53 @@ function mirroredBases(width: number, height: number, x: number, y: number): Bat
     orc: { x: (width - x - .5) * TILE, y: (height - y - .5) * TILE } }
 }
 
+function createIslands(): BattleMap {
+  const width = 160, height = 96
+  const tiles: Tile[] = Array(width * height).fill('water')
+  const ellipse = (x: number, y: number, cx: number, cy: number, rx: number, ry: number) =>
+    ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 < 1
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+    const jitter = Math.sin(x * .31 + y * .13) * 1.5 + Math.cos(y * .37 - x * .19)
+    const left = ellipse(x, y, 26, 48, 25 + jitter, 41 + jitter)
+    const right = ellipse(x, y, 133, 47, 25 + jitter, 41 + jitter)
+    const north = ellipse(x, y, 80, 13, 18 + jitter, 10 + jitter)
+    const south = ellipse(x, y, 80, 82, 19 + jitter, 11 + jitter)
+    const middle = ellipse(x, y, 80, 48, 12 + jitter, 10 + jitter)
+    if (!left && !right && !north && !south && !middle) continue
+    let tile: Tile = 'grass'
+    const noise = (Math.imul(x + 11, 73856093) ^ Math.imul(y + 17, 19349663)) >>> 0
+    if (noise % 37 < 3 && x > 13 && x < 147) tile = 'forest'
+    if (noise % 131 === 4) tile = 'rock'
+    tiles[y * width + x] = tile
+  }
+  // Safe starting zones and mirrored resource deposits on both large islands.
+  for (const [cx, cy] of [[24, 48], [135, 47]]) {
+    for (let y = cy - 6; y <= cy + 6; y++) for (let x = cx - 7; x <= cx + 7; x++) tiles[y * width + x] = 'grass'
+    for (const [dx, dy, tile] of [[-6, 2, 'mine'], [-6, -2, 'quarry'], [1, -5, 'forest']] as const) {
+      tiles[(cy + dy) * width + cx + dx] = tile
+    }
+  }
+  // Preserve the mirrored terrain invariant used by every multiplayer battlefield.
+  for (let y = 0; y < height; y++) for (let x = 0; x < width / 2; x++) {
+    tiles[(height - 1 - y) * width + (width - 1 - x)] = tiles[y * width + x]
+  }
+  return { id: 'shattered-isles', name: 'Shattered Isles', width, height, tiles,
+    bases: mirroredBases(width, height, 24, 48) }
+}
+
 const battlefields = {
   'ashford-original': ashfordClassic,
   'ashford-expanded': ashford,
   'pinewatch-vale': createBattlefield('pinewatch-vale'),
   'ironbreak-pass': createBattlefield('ironbreak-pass'),
-  'twinmere-basin': createBattlefield('twinmere-basin')
+  'twinmere-basin': createBattlefield('twinmere-basin'),
+  'shattered-isles': createIslands()
 } satisfies Record<MapId, BattleMap>
 
 export const ashfordMap = (id: MapId | undefined) => id ? battlefields[id] : ashford
 export const mapOptions = mapIds.map(id => {
   const { name, width, height, tiles } = battlefields[id]
-  const deposits = id === 'ashford-original' ? 3 : id === 'ashford-expanded' ? 7 : terrainLayouts[id].deposits
+  const deposits = id === 'ashford-original' ? 3 : id === 'ashford-expanded' ? 7 : id === 'shattered-isles' ? 8 : terrainLayouts[id as NewMap].deposits
   return { id, name, width, height, deposits, trees: tiles.filter(tile => tile === 'forest').length / 2 }
 })
 
@@ -254,6 +289,7 @@ export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {
   return map.tiles[y * map.width + x]
 }
 
+export const isWater = (tile: Tile | undefined) => tile === 'water'
 export const isWalkable = (tile: Tile | undefined) => tile === 'grass' || tile === 'road' || tile === 'bridge'
 export const cellCenter = (x: number, y: number): Point => ({ x: (x + 0.5) * TILE, y: (y + 0.5) * TILE })
 export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)

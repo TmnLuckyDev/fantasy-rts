@@ -1,6 +1,6 @@
-import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine, isWalkable, tileAt } from '../shared/map.ts'
+import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine, isWalkable, isWater, tileAt } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
-import { MAX_SELECTION, factions, inTroopGroup, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
+import { MAX_SELECTION, factions, inTroopGroup, isBuildingKind, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
 import type { ArmyOrder, TroopGroup, Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroAbilities, heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { allocateTraining, trainingTimeline } from '../shared/production.ts'
@@ -49,6 +49,8 @@ type Unit = Entity & {
   queue: Array<{ kind: UnitKind, left: number, count?: number }>
   buildTicks: number
   buildDuration: number
+  embarkedOn?: number
+  passengers?: number[]
   buildQueue?: number[]
   upgradeJob?: { kind: UpgradeKind, left: number }
 }
@@ -126,7 +128,7 @@ export class Match {
         this.spawn(faction, 'worker', { x: base.x + x * direction, y: base.y + y * direction })
       }
     }
-    this.visibility.update(this.units.values())
+    this.visibility.update([...this.units.values()].filter(unit => !unit.embarkedOn))
   }
 
   static start(settings: MatchSettings) {
@@ -239,6 +241,49 @@ export class Match {
       }
       return true
     }
+    if (order.kind === 'board') {
+      const ship = this.units.get(order.transport)
+      if (!ship || ship.kind !== 'transport' || ship.faction !== faction || ship.buildDuration) return false
+      const candidates = units.filter(unit => isUnitKind(unit.kind) && !isShipKind(unit.kind) &&
+        unit.kind !== 'worker' && !unit.embarkedOn && distance(unit, ship) <= 5 * TILE)
+      if (candidates.length !== units.length) return false
+      const used = (ship.passengers ?? []).reduce((total, id) => {
+        const passenger = this.units.get(id)
+        return total + (passenger ? training[passenger.kind as UnitKind].population : 0)
+      }, 0)
+      const load = candidates.reduce((total, unit) => total + training[unit.kind as UnitKind].population, 0)
+      if (used + load > 30) return false
+      ship.passengers ??= []
+      for (const unit of candidates) {
+        this.resetOrders(unit)
+        unit.embarkedOn = ship.id
+        ship.passengers.push(unit.id)
+      }
+      return true
+    }
+    if (order.kind === 'unload') {
+      if (units.length !== 1 || units[0].kind !== 'transport') return false
+      const ship = units[0]
+      const passengers = (ship.passengers ?? []).map(id => this.units.get(id)).filter((unit): unit is Unit => Boolean(unit))
+      if (!passengers.length) return false
+      const x = Math.floor(ship.x / TILE), y = Math.floor(ship.y / TILE)
+      const sites: Point[] = []
+      for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
+        if (!isWalkable(tileAt(this.map, x + dx, y + dy))) continue
+        const at = cellCenter(x + dx, y + dy)
+        if (distance(ship, at) <= 7 * TILE) sites.push(at)
+      }
+      sites.sort((a, b) => distance(ship, a) - distance(ship, b))
+      if (sites.length < passengers.length) return false
+      for (let i = 0; i < passengers.length; i++) {
+        const passenger = passengers[i]
+        passenger.embarkedOn = undefined
+        Object.assign(passenger, sites[i])
+        this.nearby[faction].update(passenger)
+      }
+      ship.passengers = []
+      return true
+    }
     if (order.kind === 'upgrade') return units.length === 1 && this.startUpgrade(units[0], order.upgrade)
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
@@ -253,9 +298,9 @@ export class Match {
         order.kind === 'resume-build' || order.kind === 'repair') {
       return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker'), order)
     }
-    if (units.some(unit => !isUnitKind(unit.kind))) return false
+    if (units.some(unit => !isUnitKind(unit.kind) || unit.embarkedOn)) return false
     if (order.kind === 'explore' && units.some(unit => unit.kind !== 'scout')) return false
-    if (order.kind === 'attack' && units.some(unit => unit.kind === 'scout')) return false
+    if (order.kind === 'attack' && units.some(unit => unit.kind === 'scout' || unit.kind === 'transport')) return false
     if (order.kind === 'attack') {
       const target = this.units.get(order.target)
       if (!target || target.faction === faction || this.visibility.at(faction, target) !== 2) return false
@@ -537,13 +582,23 @@ export class Match {
     const { used, limit } = this.population(building.faction)
     if (used + training[next.kind].population > limit) return
     const radius = unitStats[building.faction][next.kind].radius
-    const bounds = unitStats[building.faction][building.kind].radius + radius + 16
+    const bounds = unitStats[building.faction][building.kind].radius + radius + (building.kind === 'port' ? 55 : 16)
     const slots = [0, 0.65, -0.65, 1.3, -1.3, 2.0, -2.0, Math.PI]
     const direction = building.faction === 'human' ? 1 : -1
     let spawnPoint: Point | undefined
-    spawnSlots: for (const angle of slots) {
+    if (isShipKind(next.kind)) {
+      const cx = Math.floor(building.x / TILE), cy = Math.floor(building.y / TILE)
+      const water: Point[] = []
+      for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+        if (isWater(tileAt(this.map, cx + dx, cy + dy))) water.push(cellCenter(cx + dx, cy + dy))
+      }
+      water.sort((a, b) => distance(a, building) - distance(b, building))
+      spawnPoint = water.find(point => [...this.nearby.human.near(point, 60), ...this.nearby.orc.near(point, 60)]
+        .every(unit => !isShipKind(unit.kind) || distance(unit, point) >= radius + unitStats[unit.faction][unit.kind].radius + 3))
+    }
+    spawnSlots: for (const angle of isShipKind(next.kind) ? [] : slots) {
       const point = { x: building.x + direction * Math.cos(angle) * bounds, y: building.y + Math.sin(angle) * bounds }
-      if (!canStand(this.map, point, obstacles, radius)) continue
+      if (isShipKind(next.kind) ? !isWater(tileAt(this.map, Math.floor(point.x / TILE), Math.floor(point.y / TILE))) : !canStand(this.map, point, obstacles, radius)) continue
       spawnPoint ??= point
       for (const unit of [...this.nearby.human.near(point, radius + maxRadius + 4), ...this.nearby.orc.near(point, radius + maxRadius + 4)]) {
         if (isUnitKind(unit.kind) && distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4) {
@@ -683,7 +738,7 @@ export class Match {
     for (const faction of factions) this.attackAlerts[faction].advance(this.tick)
     this.harvesting.clear()
     for (const faction of factions) this.nearby[faction].reset([])
-    for (const unit of this.units.values()) this.nearby[unit.faction].update(unit)
+    for (const unit of this.units.values()) if (!unit.embarkedOn) this.nearby[unit.faction].update(unit)
     const incoming: Missile[] = []
     for (const missile of this.missiles) {
       if (missile.arrives <= this.tick) this.hit(missile.attacker, missile.targetId)
@@ -698,7 +753,7 @@ export class Match {
     }
     for (const unit of this.units.values()) {
       unit.moving = false
-      if (unit.buildDuration) continue
+      if (unit.buildDuration || unit.embarkedOn) continue
       const stats = unitStats[unit.faction][unit.kind]
       const obstacles = hostileBuildings[unit.faction]
       if (unit.kind === 'scout' && unit.order?.kind === 'explore' &&
@@ -737,7 +792,7 @@ export class Match {
         let nearest = automaticRange
         const enemies = this.nearby[opposite(unit.faction)]
         for (const other of enemies.near(unit, automaticRange + maxRadius)) {
-          if (unit.kind === 'tower' && !isUnitKind(other.kind)) continue
+          if ((unit.kind === 'tower' && !isUnitKind(other.kind)) || other.embarkedOn) continue
           const radius = unitStats[other.faction][other.kind].radius
           const gap = squaredDistance(unit, other)
           if (gap > (nearest + radius) ** 2) continue
@@ -748,7 +803,7 @@ export class Match {
           }
         }
       }
-      if (target && stats.damage > 0 && this.fight(unit, target)) {
+      if (target && !target.embarkedOn && stats.damage > 0 && this.fight(unit, target)) {
         this.routes.delete(unit)
         continue
       }
@@ -770,7 +825,8 @@ export class Match {
           }
         }
       }
-      if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
+      if (destination && stats.speed && isShipKind(unit.kind)) this.sail(unit, destination)
+      else if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
       else this.routes.delete(unit)
     }
     this.resolveRoutes(hostileBuildings)
@@ -804,6 +860,56 @@ export class Match {
       if (current && current !== attacker && squaredDistance(unit, current) <= squaredDistance(unit, attacker)) continue
       unit.defense = { targetId: attacker.id, at, until: this.tick + defenseDuration }
     }
+  }
+
+  private sail(unit: Unit, destination: Point) {
+    const x = Math.floor(destination.x / TILE), y = Math.floor(destination.y / TILE)
+    if (!isWater(tileAt(this.map, x, y))) {
+      // Warships may attack targets ashore, but must remain at sea.
+      const candidates: Point[] = []
+      for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+        if (isWater(tileAt(this.map, x + dx, y + dy))) candidates.push(cellCenter(x + dx, y + dy))
+      }
+      candidates.sort((a, b) => distance(a, destination) - distance(b, destination))
+      if (!candidates.length) return
+      destination = candidates[0]
+    }
+    if (distance(unit, destination) < TILE * .5) { unit.path = []; return }
+    const goal = Math.floor(destination.y / TILE) * this.map.width + Math.floor(destination.x / TILE)
+    if (unit.pursued?.x !== goal || !unit.path.length) {
+      unit.pursued = { x: goal, y: 0 }
+      const start = Math.floor(unit.y / TILE) * this.map.width + Math.floor(unit.x / TILE)
+      const previous = new Int32Array(this.map.width * this.map.height).fill(-1)
+      const queue = new Int32Array(previous.length)
+      let head = 0, tail = 1
+      queue[0] = start
+      previous[start] = start
+      while (head < tail && previous[goal] === -1) {
+        const index = queue[head++], px = index % this.map.width, py = Math.floor(index / this.map.width)
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = px + dx, ny = py + dy, next = ny * this.map.width + nx
+          if (!isWater(tileAt(this.map, nx, ny)) || previous[next] !== -1) continue
+          previous[next] = index
+          queue[tail++] = next
+        }
+      }
+      if (previous[goal] === -1) return
+      const route: Point[] = []
+      for (let at = goal; at !== start; at = previous[at]) route.push(cellCenter(at % this.map.width, Math.floor(at / this.map.width)))
+      unit.path = route.reverse()
+    }
+    const next = unit.path[0]
+    if (!next) return
+    const gap = distance(unit, next), step = unitStats[unit.faction][unit.kind].speed / TICK_HZ
+    if (gap <= step) {
+      Object.assign(unit, next)
+      unit.path.shift()
+    } else {
+      unit.x += (next.x - unit.x) * step / gap
+      unit.y += (next.y - unit.y) * step / gap
+    }
+    unit.moving = true
+    this.nearby[unit.faction].update(unit)
   }
 
   private approach(unit: Unit, destination: Point, obstacles: Obstacle[], pursuing: boolean) {
@@ -865,7 +971,7 @@ export class Match {
     if (unit.nextStrike > this.tick) return true
     unit.nextStrike = this.tick + stats.cooldown
     unit.facing = target.x < unit.x ? -1 : 1
-    if (isRanged(unit.kind) || unit.kind === 'tower') {
+    if (isRanged(unit.kind) || unit.kind === 'tower' || unit.kind === 'warship') {
       const flight = Math.max(2, Math.ceil(distance(unit, target) / 24))
       this.missiles.push({ attacker: unit, targetId: target.id, arrives: this.tick + flight })
       this.effects.push({
@@ -893,7 +999,7 @@ export class Match {
 
   private hit(attacker: Unit, targetId: number) {
     const target = this.units.get(targetId)
-    if (!target) return
+    if (!target || target.embarkedOn) return
     const attackBonus = isUnitKind(attacker.kind) && this.upgrades[attacker.faction].includes('weapons') ? upgrades.weapons.bonus : 0
     const armorBonus = isUnitKind(target.kind) && target.kind !== 'worker' && this.upgrades[target.faction].includes('armor') ? upgrades.armor.bonus : 0
     const heroBonus = attacker.experience === undefined ? 0 :
@@ -937,6 +1043,14 @@ export class Match {
   private destroy(target: Unit) {
     if (isUnitKind(target.kind)) this.stats[target.faction].unitsLost++
     else this.stats[target.faction].buildingsLost++
+    for (const id of target.passengers ?? []) {
+      const passenger = this.units.get(id)
+      if (passenger) this.destroy(passenger)
+    }
+    if (target.embarkedOn) {
+      const ship = this.units.get(target.embarkedOn)
+      if (ship) ship.passengers = (ship.passengers ?? []).filter(id => id !== target.id)
+    }
     this.units.delete(target.id)
     if (this.activeHeroes[target.faction] === target) delete this.activeHeroes[target.faction]
     this.nearby[target.faction].remove(target)
@@ -992,9 +1106,10 @@ export class Match {
       type: 'snapshot', tick: world.tick, fog, ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
       resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction],
       entities: world.entities.flatMap(entity => {
+        if (entity.embarkedOn) return []
         if (entity.faction === faction) return [entity]
         if (!visible(entity)) return []
-        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, ...seen } = entity
+        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, passengers: _passengers, passengerPop: _passengerPop, ...seen } = entity
         return [seen]
       }),
       effects: world.effects.filter(effect => visible(effect.at) && (!effect.to || visible(effect.to)))
@@ -1023,7 +1138,10 @@ export class Match {
         const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
         const next = queue[0]
         return {
-          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, experience: unit.experience, abilityReadyAt: unit.abilityReadyAt, abilityActiveUntil: unit.abilityActiveUntil,
+          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, passengers: unit.passengers, passengerPop: unit.kind === 'transport' ? (unit.passengers ?? []).reduce((total, id) => {
+             const passenger = this.units.get(id)
+             return total + (passenger ? training[passenger.kind as UnitKind].population : 0)
+           }, 0) : undefined, embarkedOn: unit.embarkedOn, experience: unit.experience, abilityReadyAt: unit.abilityReadyAt, abilityActiveUntil: unit.abilityActiveUntil,
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,

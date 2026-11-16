@@ -413,6 +413,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   button('explore').hidden = !entities.some(entity => entity.kind === 'scout')
+  button('unload').hidden = !(entities.length === 1 && selected?.kind === 'transport')
+  if (selected?.kind === 'transport') button('unload').disabled = !(selected.passengers?.length)
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
   const heroSkillButton = button('hero-skill')
   heroSkillButton.hidden = !selectedHero
@@ -447,7 +449,8 @@ function drawSelection(entities: Entity[], interactive = false) {
       detail.textContent = trainingSummary(selected.training)
     } else if (selected.kind === 'worker') {
       detail.textContent = selected.carrying ? `Carrying ${selected.carrying} to the hall.` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
-    } else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP`
+    } else if (selected.kind === 'transport') detail.textContent = `${hp}/${totalHp} HP · ${selected.passengerPop ?? 0}/30 population aboard`
+    else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP`
     else detail.textContent = stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`
   } else {
     const onlyWorkers = entities.every(entity => entity.kind === 'worker')
@@ -648,6 +651,7 @@ economyAction.onclick = () => {
 }
 
 button('explore').onclick = () => scene?.explore()
+button('unload').onclick = () => scene?.unload()
 button('hero-skill').onclick = () => scene?.castHeroAbility()
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()

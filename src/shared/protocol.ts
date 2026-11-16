@@ -10,15 +10,16 @@ export const combatKinds = ['blade', 'polearm', 'ranged', 'marksman', 'heavy'] a
 export const heroKinds = ['vanguard', 'pathfinder'] as const
 export type HeroKind = typeof heroKinds[number]
 export const isHeroKind = (kind: unknown): kind is HeroKind => kind === 'vanguard' || kind === 'pathfinder'
-export const unitKinds = [...combatKinds, ...heroKinds, 'scout', 'worker'] as const
-export const buildingKinds = ['barracks', 'range', 'elite', 'farm', 'wall', 'tower', 'smithy'] as const
+export const unitKinds = [...combatKinds, ...heroKinds, 'scout', 'worker', 'transport', 'warship'] as const
+export const buildingKinds = ['barracks', 'range', 'elite', 'farm', 'wall', 'tower', 'smithy', 'port'] as const
 export const entityKinds = [...unitKinds, 'headquarters', ...buildingKinds] as const
 export type UnitKind = typeof unitKinds[number]
 export type BuildingKind = typeof buildingKinds[number]
 export type EntityKind = typeof entityKinds[number]
+export const isShipKind = (kind: unknown): kind is 'transport' | 'warship' => kind === 'transport' || kind === 'warship'
 export const isUnitKind = (kind: unknown): kind is UnitKind => unitKinds.some(value => value === kind)
 export const isBuildingKind = (kind: unknown): kind is BuildingKind => buildingKinds.some(value => value === kind)
-export const troopGroups = ['all', ...combatKinds, 'scout', 'heroes'] as const
+export const troopGroups = ['all', ...combatKinds, 'scout', 'transport', 'warship', 'heroes'] as const
 export type TroopGroup = typeof troopGroups[number]
 export function inTroopGroup(kind: EntityKind, group: TroopGroup) {
   if (group === 'all') return isUnitKind(kind) && kind !== 'worker'
@@ -34,15 +35,15 @@ export const factionNames: Record<Faction, string> = { human: 'Human Kingdoms', 
 export const entityNames: Record<Faction, Record<EntityKind, string>> = {
   human: {
     blade: 'Footman', polearm: 'Pikeman', ranged: 'Archer', marksman: 'Crossbowman', heavy: 'Knight',
-    vanguard: 'Aldren the Warden', pathfinder: 'Nera the Pathfinder', scout: 'Scout',
+    vanguard: 'Aldren the Warden', pathfinder: 'Nera the Pathfinder', scout: 'Scout', transport: 'Transport Ship', warship: 'Warship',
     headquarters: 'Town Hall', worker: 'Peasant', barracks: 'Barracks', range: 'Archery Range',
-    elite: 'Stables', farm: 'Farm', wall: 'Stone Wall', tower: 'Guard Tower', smithy: 'Blacksmith'
+    elite: 'Stables', farm: 'Farm', wall: 'Stone Wall', tower: 'Guard Tower', smithy: 'Blacksmith', port: 'Harbor'
   },
   orc: {
     blade: 'Grunt', polearm: 'Cleaver', ranged: 'Spearman', marksman: 'Axe Thrower', heavy: 'Ogre',
-    vanguard: 'Gorak Ironhand', pathfinder: 'Vesha Emberbow', scout: 'Scout',
+    vanguard: 'Gorak Ironhand', pathfinder: 'Vesha Emberbow', scout: 'Scout', transport: 'Transport Ship', warship: 'Warship',
     headquarters: 'Great Hall', worker: 'Peon', barracks: 'War Barracks', range: 'Hunting Grounds',
-    elite: 'Ogre Den', farm: 'Boar Farm', wall: 'Stone Rampart', tower: 'Watch Tower', smithy: 'War Forge'
+    elite: 'Ogre Den', farm: 'Boar Farm', wall: 'Stone Rampart', tower: 'Watch Tower', smithy: 'War Forge', port: 'War Port'
   }
 }
 
@@ -69,6 +70,9 @@ export type Entity = Point & {
   repairing?: boolean
   carrying?: ResourceKind
   idle?: boolean
+  embarkedOn?: number
+  passengers?: number[]
+  passengerPop?: number
 }
 
 export type Effect = {
@@ -105,6 +109,8 @@ export type Order =
   | { kind: 'halt' }
   | { kind: 'explore' }
   | { kind: 'hero-ability' }
+  | { kind: 'board', transport: number }
+  | { kind: 'unload' }
   | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }
   | { kind: 'wall-line', from: Point, to: Point }

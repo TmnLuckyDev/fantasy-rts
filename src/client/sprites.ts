@@ -119,6 +119,17 @@ function structure(faction: Faction, kind: BuildingKind) {
   const ink = brush(surface)
   const { rect, block, poly, shadow } = ink
   shadow(23, base, tall ? 14 : 21, 5)
+  if (kind === 'port') {
+    block(oak, 2, 26, 39, 7, 5)
+    for (const x of [5, 19, 34]) {
+      block(timber, x, 31, 5, 8, 3)
+      rect(brass[1], x + 1, 31, 2, 2)
+    }
+    block(team, 8, 15, 23, 12, 5)
+    pitchedRoof(ink, team, 6, 17, 26, 8, 9)
+    flag(ink, team, 29, 3)
+    return surface
+  }
   if (kind === 'wall') {
     masonry(ink, plinth, 8, 23, 27, 10, 5)
     battlements(ink, human ? sandstone : iron, 8, 21, 27, !human)
@@ -185,6 +196,23 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   const head = heavy ? 7 : ranged || worker || scout ? 10 : 8
   shadow(17, 29, heavy ? 14 : 11, 4)
 
+  if (kind === 'transport' || kind === 'warship') {
+    // Ship silhouettes use the existing troop atlas and water-facing hulls.
+    poly(timber[2], 1, 22, 34, 22, 29, 32, 8, 32)
+    poly(oak[1], 3, 20, 32, 20, 28, 27, 8, 27)
+    rect(brass[1], 8, 24, 20, 2)
+    rect(steel[0], 17, 2, 2, 19)
+    poly(team[0], 19, 4, 30, 16, 19, 17)
+    if (kind === 'warship') {
+      block(iron, 10, 16, 12, 6, 4)
+      rect(steel[0], 25, 13, 8, 4)
+      rect(brass[0], 28, 14, 3, 2)
+    } else {
+      rect(team[2], 7, 17, 6, 3)
+      rect(team[2], 23, 17, 6, 3)
+    }
+    return surface
+  }
   if (heavy && human) {
     block(boot, 6 + step, 24, 4, 6, 2)
     block(boot, 21 - step, 24, 4, 6, 2)
