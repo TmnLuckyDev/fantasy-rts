@@ -57,7 +57,7 @@ export function parseMessage(raw: string): ClientMessage | null {
 }
 
 function parseOrder(order: Record<string, unknown>): Order | null {
-  if (order.kind === 'halt' || order.kind === 'explore' || order.kind === 'hero-ability' || order.kind === 'unload') return { kind: order.kind }
+  if (order.kind === 'halt' || order.kind === 'explore' || order.kind === 'hero-ability' || order.kind === 'unload' || order.kind === 'structure-upgrade') return { kind: order.kind }
   const formation = formations.find(kind => kind === order.formation)
   if (order.formation !== undefined && !formation) return null
   const options = formation ? { formation } : {}

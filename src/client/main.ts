@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, formations, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
-import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
+import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
 import { hasHero, heroAbilities, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
 import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
@@ -397,13 +397,13 @@ function drawSelection(entities: Entity[], interactive = false) {
   const smithy = entities.length === 1 && selected?.kind === 'smithy' && selected.construction === undefined
   const building = entities.length === 1 && selected && !isUnitKind(selected.kind) ? selected : undefined
   const foundation = building?.construction !== undefined
-  const nextContext = workers ? 'build' : trainer ? 'train:' + trainer.id :
+  const nextContext = workers ? 'build' : (building && !foundation && (building.kind === 'tower' || building.kind === 'wall')) ? 'fortify:' + building.id : trainer ? 'train:' + trainer.id :
     smithy ? 'research:' + selected.id : foundation ? 'cancel:' + building.id :
     building ? 'manage:' + building.id : ''
   const changed = nextContext !== economyContext
   economyContext = nextContext
   economyAction.hidden = !nextContext
-  economyAction.textContent = workers ? 'Build' : smithy ? 'Upgrade' : foundation ? 'Construction' : trainer ? 'Train' : 'Manage'
+  economyAction.textContent = workers ? 'Build' : smithy ? 'Upgrade' : (building && (building.kind === 'tower' || building.kind === 'wall')) ? 'Upgrade' : foundation ? 'Construction' : trainer ? 'Train' : 'Manage'
   if (!nextContext || (workers && (changed || interactive))) closeEconomyMenu()
   else if (!workers && (changed || interactive)) openEconomyMenu(changed)
   else if (!menu.hidden) updateEconomyOptions()
@@ -451,7 +451,7 @@ function drawSelection(entities: Entity[], interactive = false) {
       detail.textContent = selected.carrying ? `Carrying ${selected.carrying} to the hall.` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
     } else if (selected.kind === 'transport') detail.textContent = `${hp}/${totalHp} HP · ${selected.passengerPop ?? 0}/30 population aboard`
     else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP`
-    else detail.textContent = stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`
+    else detail.textContent = (selected.level ? `Level ${selected.level}/${MAX_UPGRADE_LEVEL} · ` : '') + (stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`) + (selected.upgradeProgress !== undefined ? ` · Upgrading ${percentage(selected.upgradeProgress)}` : '')
   } else {
     const onlyWorkers = entities.every(entity => entity.kind === 'worker')
     label.textContent = `${entities.length} ${onlyWorkers ? 'workers' : 'troops'} selected`
@@ -498,13 +498,19 @@ function updateEconomyOptions() {
     if (!rule) continue
     const needsSpace = rule.population > 0 && rule.population > available
     needsFarm ||= needsSpace
-    const unavailable = rule.upgrade && (researched.includes(rule.upgrade) ||
+    const unavailable = rule.upgrade && (researched.filter(kind => kind === rule.upgrade).length >= MAX_UPGRADE_LEVEL ||
       Boolean(selection[0]?.research) || ownEntities.some(entity => entity.research?.kind === rule.upgrade))
     if (rule.hero) heroTaken ??= hasHero(ownEntities)
     choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, rule.cost) ||
       Boolean(rule.hero && heroTaken)
     if (rule.hero) choice.title = heroTaken ? 'You already have a hero or one is in training.' : 'One hero per faction.'
-    if (rule.upgrade) choice.title = researched.includes(rule.upgrade) ? 'Researched' : ''
+    if (rule.upgrade) choice.title = researched.filter(kind => kind === rule.upgrade).length >= MAX_UPGRADE_LEVEL ? 'Max level' : ''
+  }
+  const fortify = menu.querySelector<HTMLButtonElement>('[data-fortify]')
+  if (fortify) {
+    const site = selection[0]
+    fortify.disabled = (site.level ?? 1) >= MAX_UPGRADE_LEVEL || site.upgradeProgress !== undefined ||
+      !canAfford(resources, structureUpgrade(site.kind as 'tower' | 'wall', (site.level ?? 1) + 1).cost)
   }
   const repair = menu.querySelector<HTMLButtonElement>('[data-repair]')
   if (repair) {
@@ -528,7 +534,7 @@ function economyChoice(kind: EntityKind, cost: Cost, population: number, act: ()
   choiceRules.set(choice, { cost, population, upgrade })
   const prices = resourceKinds.flatMap(kind => cost[kind] ? [`${cost[kind]} ${kind}`] : [])
   if (population > 1) prices.push(`${population} pop`)
-  const name = upgrade ? upgrades[upgrade].name : entityNames[faction][kind]
+  const name = upgrade ? `${upgrades[upgrade].name} · Lv ${Math.min(MAX_UPGRADE_LEVEL, researched.filter(kind => kind === upgrade).length + 1)}/${MAX_UPGRADE_LEVEL}` : entityNames[faction][kind]
   choice.setAttribute('aria-label', [name, ...prices].join(' · '))
   const icon = document.createElement('canvas')
   icon.width = icon.height = 36
@@ -577,7 +583,7 @@ function actionButton(label: string, run: () => void) {
 
 function productionChoices(building: Entity) {
   const choices = trainedAt(building.kind).map(kind => {
-    const choice = economyChoice(kind, { gold: training[kind].gold }, training[kind].population, () =>
+    const choice = economyChoice(kind, trainingCost(kind), training[kind].population, () =>
       issueOrder([building.id], { kind: 'train', unit: kind }))
     if (isHeroKind(kind)) {
       choiceRules.get(choice)!.hero = true
@@ -626,6 +632,15 @@ function openEconomyMenu(rebuild = false) {
     else if (economyContext.startsWith('cancel:')) {
       const site = selection[0]
       menu.replaceChildren(actionButton('Cancel construction', () => issueOrder([site.id], { kind: 'cancel-build' })))
+    } else if (economyContext.startsWith('fortify:')) {
+      const site = selection[0]
+      const level = site.level ?? 1
+      const button = actionButton(`Upgrade to level ${level + 1}/${MAX_UPGRADE_LEVEL}`, () => issueOrder([site.id], { kind: 'structure-upgrade' }))
+      const cost = structureUpgrade(site.kind as 'wall' | 'tower', level + 1).cost
+      button.textContent += ' · ' + resourceKinds.filter(kind => cost[kind]).map(kind => `${cost[kind]} ${kind}`).join(' · ')
+      button.dataset.fortify = ''
+      button.disabled = level >= MAX_UPGRADE_LEVEL || site.upgradeProgress !== undefined || !canAfford(resources, cost)
+      menu.replaceChildren(button, ...buildingActions(site))
     } else if (economyContext.startsWith('research:')) {
       const smith = selection[0]
       menu.replaceChildren(...upgradeKinds.map(kind => economyChoice('smithy', upgrades[kind].cost, 0, () =>

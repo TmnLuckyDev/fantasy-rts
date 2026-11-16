@@ -678,6 +678,40 @@ export class BattleScene extends Phaser.Scene {
         this.graphics.fillStyle(0xfff5df, 0.38).fillRect(x, y, hp, 1)
         if (entity.construction !== undefined) this.graphics.fillStyle(0xf8c972, 1).fillRect(x, y + 6, w * entity.construction, 2)
       }
+      if (entity.kind === 'tower' || entity.kind === 'wall') {
+        const level = entity.level ?? 1
+        const y = sprite.y - (entity.kind === 'tower' ? 76 : 41)
+        for (let i = 0; i < 5; i++) {
+          this.graphics.fillStyle(i < level ? 0xffd575 : 0x3b4145, 0.95)
+          this.graphics.fillRect(sprite.x - 13 + i * 6, y, 5, 4)
+        }
+        if (entity.upgradeProgress !== undefined) {
+          this.graphics.fillStyle(0x262c31, 0.9).fillRect(sprite.x - 14, y - 6, 30, 3)
+          this.graphics.fillStyle(0x74d9a1, 1).fillRect(sprite.x - 14, y - 6, 30 * entity.upgradeProgress, 3)
+        }
+      }
+      if (isUnitKind(entity.kind) && entity.kind !== 'worker' && entity.kind !== 'scout' && !isHeroKind(entity.kind)) {
+        const weapons = entity.weaponLevel ?? 0
+        const armor = entity.armorLevel ?? 0
+        const precision = entity.precisionLevel ?? 0
+        const vitality = entity.vitalityLevel ?? 0
+        const y = sprite.y - 47
+        if (weapons || armor || precision || vitality) {
+          this.graphics.fillStyle(0x2c3035, 0.9).fillRect(sprite.x - 13, y, 26, 12)
+          for (let i = 0; i < Math.min(5, weapons); i++) {
+            this.graphics.fillStyle(0xe5a456, 1).fillRect(sprite.x - 12 + i * 3, y + 1, 2, 2)
+          }
+          for (let i = 0; i < Math.min(5, armor); i++) {
+            this.graphics.fillStyle(0x86c7f0, 1).fillRect(sprite.x - 12 + i * 3, y + 4, 2, 2)
+          }
+          for (let i = 0; i < Math.min(5, precision); i++) {
+            this.graphics.fillStyle(0xe6d477, 1).fillRect(sprite.x - 12 + i * 3, y + 7, 2, 2)
+          }
+          for (let i = 0; i < Math.min(5, vitality); i++) {
+            this.graphics.fillStyle(0x86e6a3, 1).fillRect(sprite.x - 12 + i * 3, y + 10, 2, 2)
+          }
+        }
+      }
       if (entity.experience !== undefined) {
         const level = heroLevel(entity.experience)
         const y = sprite.y - 54

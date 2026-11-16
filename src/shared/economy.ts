@@ -32,12 +32,20 @@ export const repairCost = (kind: EntityKind): Cost => kind === 'wall' ? { stone:
 
 export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: number, bonus: number }> = {
   weapons: { name: 'Weapons +2 damage', cost: { gold: 170, wood: 45 }, ticks: 240, bonus: 2 },
-  armor: { name: 'Armor +1 defense', cost: { gold: 130, stone: 60 }, ticks: 220, bonus: 1 }
+  armor: { name: 'Armor +1 defense', cost: { gold: 130, stone: 60 }, ticks: 220, bonus: 1 },
+  precision: { name: 'Ranged precision +2 damage', cost: { gold: 155, wood: 75 }, ticks: 250, bonus: 2 },
+  vitality: { name: 'Troop vitality +12 HP', cost: { gold: 145, stone: 55 }, ticks: 250, bonus: 12 }
 }
 
-export const training: Record<UnitKind, { gold: number, ticks: number, population: number }> = {
-  transport: { gold: 230, ticks: 220, population: 3 },
-  warship: { gold: 320, ticks: 270, population: 4 },
+export const MAX_UPGRADE_LEVEL = 5
+export const structureUpgrade = (kind: 'tower' | 'wall', level: number) => ({
+  cost: kind === 'tower' ? { gold: 45 * level, wood: 30 * level, stone: 50 * level } : { stone: 65 * level, wood: 15 * level },
+  ticks: 75 + level * 35
+})
+
+export const training: Record<UnitKind, { gold: number, wood?: number, ticks: number, population: number }> = {
+  transport: { gold: 160, wood: 130, ticks: 220, population: 3 },
+  warship: { gold: 230, wood: 185, ticks: 270, population: 4 },
   scout: { gold: 85, ticks: 110, population: 1 },
   worker: { gold: 60, ticks: 95, population: 1 },
   blade: { gold: 75, ticks: 95, population: 1 },
@@ -56,6 +64,8 @@ const production: Partial<Record<EntityKind, readonly UnitKind[]>> = {
   elite: ['heavy'],
   port: ['transport', 'warship']
 }
+
+export const trainingCost = (kind: UnitKind): Cost => ({ gold: training[kind].gold, ...(training[kind].wood ? { wood: training[kind].wood } : {}) })
 
 export const trainedAt = (building: EntityKind) => production[building] ?? []
 
