@@ -40,3 +40,22 @@ test('buildings use smaller footprints while headquarters remain full size', () 
   const at = cellCenter(45, 15)
   assert.ok(validPlacement({ ...match.map, tiles: match.map.tiles.map(() => 'grass' as const) }, 'barracks', at, []))
 })
+
+test('workers can place a building in explored fog without current vision', () => {
+  const match = new Match()
+  const checkpoint = match.checkpoint()
+  const size = match.map.width * match.map.height
+  checkpoint.fog.human = (size * 3 + 1).toString(36)
+  const restored = Match.restore(checkpoint, match.map)
+  const worker = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'worker')!
+  let site
+  for (let y = 3; y < match.map.height - 3 && !site; y++) {
+    for (let x = 3; x < match.map.width - 3; x++) {
+      const at = cellCenter(x, y)
+      if (validPlacement(match.map, 'farm', at, restored.units.values())) { site = at; break }
+    }
+  }
+  assert.ok(site)
+  assert.equal(restored.command('human', [worker.id], { kind: 'build', building: 'farm', at: site }), true)
+  assert.ok(restored.checkpoint().units.some(unit => unit.kind === 'farm' && unit.faction === 'human'))
+})
