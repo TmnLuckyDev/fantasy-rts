@@ -61,7 +61,7 @@ test('blacksmith research has five levels for each upgrade and no sixth level', 
   checkpoint.units.push(smith)
   checkpoint.resources.human = { gold: 10000, wood: 10000, stone: 10000 }
   const game = Match.restore(checkpoint)
-  for (const kind of ['weapons', 'armor'] as const) {
+  for (const kind of ['weapons', 'armor', 'precision', 'vitality'] as const) {
     for (let level = 1; level <= MAX_UPGRADE_LEVEL; level++) {
       assert.equal(game.command('human', [smith.id], { kind: 'upgrade', upgrade: kind }), true)
       advance(game, upgrades[kind].ticks)
