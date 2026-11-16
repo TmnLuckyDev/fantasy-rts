@@ -11,8 +11,8 @@ export type UnitStats = {
 }
 
 const economyStats = {
-  vanguard: { health: 220, damage: 27, armor: 6, range: 30, speed: 86, cooldown: 18, radius: 12 },
-  pathfinder: { health: 150, damage: 19, armor: 3, range: 149, speed: 83, cooldown: 18, radius: 10 },
+  vanguard: { health: 360, damage: 39, armor: 7, range: 30, speed: 86, cooldown: 18, radius: 15 },
+  pathfinder: { health: 265, damage: 30, armor: 4, range: 158, speed: 87, cooldown: 18, radius: 13 },
   scout: { health: 48, damage: 0, armor: 0, range: 0, speed: 148, cooldown: 0, radius: 7 },
   worker: { health: 55, damage: 0, armor: 0, range: 0, speed: 86, cooldown: 0, radius: 8 },
   barracks: { health: 550, damage: 0, armor: 3, range: 0, speed: 0, cooldown: 0, radius: 25 },

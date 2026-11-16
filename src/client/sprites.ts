@@ -230,12 +230,6 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   } else if (kind === 'marksman' && human) {
     block(oak, 22, 16, 11, 3, 2)
     poly(steel[0], 25, 17, 28, 12, 31, 11, 29, 17, 31, 22, 28, 21)
-  } else if (kind === 'scout') {
-    // Unarmed, lightweight explorer with a travel pack and pennant.
-    block(leather, 5, 18, 6, 9, 3)
-    rect(brass[0], 7, 19, 2, 3)
-    rect(oak[1], 25, 6, 2, 22)
-    poly(team[0], 27, 7, 33, 10, 27, 14)
   } else if (kind === 'polearm' || kind === 'ranged') {
     poly(oak[1], 21, 28, 20, 27, 30, 7, 32, 7)
     poly(steel[0], 28, 8, 32, 2, 34, 5, 32, 10)
@@ -257,6 +251,20 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
     rect(brass[0], 19, 15, 2, 5)
     rect(brass[1], 14, 21, 5, 2)
     rect(team[0], 16, 21, 1, 1)
+    if (kind === 'vanguard') {
+      poly(team[0], 8, 11, 12, 3, 17, 6, 22, 2, 25, 12)
+      block(armor, 3, 13, 8, 8, 4)
+      block(armor, 22, 12, 8, 8, 4)
+      poly(team[2], 1, 18, 8, 15, 13, 21, 9, 29, 2, 27)
+      rect(brass[0], 5, 20, 3, 4)
+    } else {
+      poly(team[2], 9, 12, 12, 2, 19, 0, 24, 11)
+      poly(team[0], 6, 16, 10, 12, 9, 29, 3, 29)
+      block(oak, 2, 14, 5, 14, 3)
+      rect(brass[0], 3, 17, 2, 7)
+      poly(brass[0], 26, 4, 33, 12, 34, 20, 29, 29)
+      rect('#fff5ce', 31, 11, 1, 12)
+    }
   }
   return surface
 }
