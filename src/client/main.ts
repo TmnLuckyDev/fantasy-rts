@@ -4,7 +4,7 @@ import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, Globa
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
-import { hasHero, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
+import { hasHero, heroAbilities, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
 import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
 import { MatchSettingsMenu, clockText, drawMatchStats } from './match-settings.ts'
 import { unitStats } from '../shared/units.ts'
@@ -411,6 +411,16 @@ function drawSelection(entities: Entity[], interactive = false) {
   formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   button('explore').hidden = !entities.some(entity => entity.kind === 'scout')
+  const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
+  const heroSkillButton = button('hero-skill')
+  heroSkillButton.hidden = !selectedHero
+  if (selectedHero) {
+    const ability = heroAbilities[selectedHero.kind as keyof typeof heroAbilities]
+    const remaining = Math.max(0, (selectedHero.abilityReadyAt ?? 0) - currentTick)
+    heroSkillButton.textContent = remaining ? ability.name + ' · ' + Math.ceil(remaining / TICKS_PER_SECOND) + 's' : ability.name
+    heroSkillButton.disabled = remaining > 0
+    heroSkillButton.title = ability.passive
+  }
   const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').disabled = !movable
   button('halt').disabled = !movable
@@ -636,6 +646,7 @@ economyAction.onclick = () => {
 }
 
 button('explore').onclick = () => scene?.explore()
+button('hero-skill').onclick = () => scene?.castHeroAbility()
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
 button('cancel-placement').onclick = () => scene?.place(null)
