@@ -241,6 +241,11 @@ export class BattleScene extends Phaser.Scene {
       if (!this.selected.size) this.selectedGroup = null
     }
     this.selectionChanged()
+    if (this.selectedResource !== null) {
+      const site = snapshot.deposits?.find(item => item.index === this.selectedResource)
+      const kind = resourceAt(this.map, cellCenter(this.selectedResource % this.map.width, Math.floor(this.selectedResource / this.map.width)))
+      if (site && kind) this.actions.resource(kind, site.remaining)
+    }
   }
 
   private spreadCrowds() {
