@@ -165,6 +165,10 @@ function createIslands(): BattleMap {
       tiles[(cy + dy) * width + cx + dx] = tile
     }
   }
+  // Preserve the mirrored terrain invariant used by every multiplayer battlefield.
+  for (let y = 0; y < height; y++) for (let x = 0; x < width / 2; x++) {
+    tiles[(height - 1 - y) * width + (width - 1 - x)] = tiles[y * width + x]
+  }
   return { id: 'shattered-isles', name: 'Shattered Isles', width, height, tiles,
     bases: mirroredBases(width, height, 24, 48) }
 }
