@@ -44,7 +44,7 @@ test('transport capacity is exactly 30 population and unloading restores passeng
   const ship = { ...base, id: ++checkpoint.sequence, kind: 'transport' as const,
     ...cellCenter(shipX, shipY), hp: 550, maxHp: 550, passengers: [] as number[] }
   checkpoint.units.push(ship)
-  const passengers = []
+  const passengers: number[] = []
   for (let i = 0; i < 31; i++) {
     const unit = { ...base, id: ++checkpoint.sequence, kind: 'blade' as const,
       ...cellCenter(49, 45 + i % 7), hp: 96, maxHp: 96 }
