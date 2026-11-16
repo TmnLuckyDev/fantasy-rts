@@ -1,7 +1,7 @@
 import { buildings, canAfford, upgrades } from '../shared/economy.ts'
 import { TILE, cellCenter, distance, isWalkable, resourceAt } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { isUnitKind, opposite } from '../shared/protocol.ts'
+import { isHeroKind, isUnitKind, opposite } from '../shared/protocol.ts'
 import type { BuildingKind, Difficulty, Entity, Faction, Point, ResourceKind, Snapshot, UnitKind } from '../shared/protocol.ts'
 import { TICK_HZ } from './match.ts'
 import type { Match } from './match.ts'
@@ -108,6 +108,9 @@ export class ComputerOpponent {
       }
     }
     const army = own.filter(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
+    if (army.length >= 8 && workers.length >= 4 && !hall.training && !army.some(unit => isHeroKind(unit.kind))) {
+      match.command(this.faction, [hall.id], { kind: 'train', unit: this.strategy === 'counter' ? 'pathfinder' : 'vanguard' })
+    }
     this.trainArmy(match, army, structures, view)
     this.maneuver(match, view, army)
   }

@@ -11,6 +11,8 @@ export type UnitStats = {
 }
 
 const economyStats = {
+  vanguard: { health: 220, damage: 27, armor: 6, range: 30, speed: 86, cooldown: 18, radius: 12 },
+  pathfinder: { health: 150, damage: 19, armor: 3, range: 149, speed: 83, cooldown: 18, radius: 10 },
   worker: { health: 55, damage: 0, armor: 0, range: 0, speed: 86, cooldown: 0, radius: 8 },
   barracks: { health: 550, damage: 0, armor: 3, range: 0, speed: 0, cooldown: 0, radius: 25 },
   range: { health: 490, damage: 0, armor: 2, range: 0, speed: 0, cooldown: 0, radius: 24 },
@@ -32,9 +34,9 @@ export const unitStats: Record<Faction, Record<EntityKind, UnitStats>> = {
     ...economyStats
   },
   orc: {
-    blade: { health: 95, damage: 15, armor: 2, range: 23, speed: 74, cooldown: 12, radius: 9 },
+    blade: { health: 94, damage: 15, armor: 2, range: 23, speed: 74, cooldown: 12, radius: 9 },
     ranged: { health: 66, damage: 13, armor: 1, range: 118, speed: 76, cooldown: 18, radius: 9 },
-    polearm: { health: 118, damage: 19, armor: 3, range: 31, speed: 74, cooldown: 16, radius: 10 },
+    polearm: { health: 118, damage: 19, armor: 3, range: 34, speed: 74, cooldown: 15, radius: 10 },
     marksman: { health: 82, damage: 24, armor: 1, range: 136, speed: 67, cooldown: 23, radius: 10 },
     heavy: { health: 240, damage: 34, armor: 6, range: 28, speed: 81, cooldown: 20, radius: 13 },
     headquarters: { health: 1500, damage: 0, armor: 5, range: 0, speed: 0, cooldown: 0, radius: 30 },

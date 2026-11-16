@@ -4,7 +4,10 @@ export type Difficulty = typeof difficulties[number]
 export type Faction = typeof factions[number]
 export type Point = { x: number, y: number }
 export const combatKinds = ['blade', 'polearm', 'ranged', 'marksman', 'heavy'] as const
-export const unitKinds = [...combatKinds, 'worker'] as const
+export const heroKinds = ['vanguard', 'pathfinder'] as const
+export type HeroKind = typeof heroKinds[number]
+export const isHeroKind = (kind: unknown): kind is HeroKind => kind === 'vanguard' || kind === 'pathfinder'
+export const unitKinds = [...combatKinds, ...heroKinds, 'worker'] as const
 export const buildingKinds = ['barracks', 'range', 'elite', 'farm', 'wall', 'tower', 'smithy'] as const
 export const entityKinds = [...unitKinds, 'headquarters', ...buildingKinds] as const
 export type UnitKind = typeof unitKinds[number]
@@ -22,11 +25,13 @@ export const factionNames: Record<Faction, string> = { human: 'Human Kingdoms', 
 export const entityNames: Record<Faction, Record<EntityKind, string>> = {
   human: {
     blade: 'Footman', polearm: 'Pikeman', ranged: 'Archer', marksman: 'Crossbowman', heavy: 'Knight',
+    vanguard: 'Aldren the Warden', pathfinder: 'Nera the Pathfinder',
     headquarters: 'Town Hall', worker: 'Peasant', barracks: 'Barracks', range: 'Archery Range',
     elite: 'Stables', farm: 'Farm', wall: 'Stone Wall', tower: 'Guard Tower', smithy: 'Blacksmith'
   },
   orc: {
     blade: 'Grunt', polearm: 'Cleaver', ranged: 'Spearman', marksman: 'Axe Thrower', heavy: 'Ogre',
+    vanguard: 'Gorak Ironhand', pathfinder: 'Vesha Emberbow',
     headquarters: 'Great Hall', worker: 'Peon', barracks: 'War Barracks', range: 'Hunting Grounds',
     elite: 'Ogre Den', farm: 'Boar Farm', wall: 'Stone Rampart', tower: 'Watch Tower', smithy: 'War Forge'
   }
@@ -49,6 +54,7 @@ export type Entity = Point & {
   constructionStatus?: 'queued' | 'building' | 'paused'
   research?: { kind: UpgradeKind, progress: number }
   training?: { kind: UnitKind, progress: number, remaining: number, queue?: Array<{ kind: UnitKind, count: number }>, seconds?: number }
+  experience?: number
   repairing?: boolean
   carrying?: ResourceKind
   idle?: boolean

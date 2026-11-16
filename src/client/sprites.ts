@@ -1,5 +1,5 @@
 import type { EntityKind, Faction, UnitKind, BuildingKind } from '../shared/protocol.ts'
-import { isUnitKind } from '../shared/protocol.ts'
+import { isHeroKind, isUnitKind } from '../shared/protocol.ts'
 import { brush, canvas } from './voxel.ts'
 import type { Faces } from './voxel.ts'
 
@@ -179,7 +179,7 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   const skin = human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : green
   const worker = kind === 'worker'
   const heavy = kind === 'heavy'
-  const ranged = kind === 'ranged' || kind === 'marksman'
+  const ranged = kind === 'ranged' || kind === 'marksman' || kind === 'pathfinder'
   const step = frame ? 2 : 0
   const head = heavy ? 7 : ranged || worker ? 10 : 8
   shadow(17, 29, heavy ? 14 : 11, 4)
@@ -218,7 +218,7 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   if (worker) {
     rect(oak[1], 26, 12, 2, 15)
     poly(steel[0], 21, 11, 26, 7, 32, 10, 32, 13, 26, 10, 21, 14)
-  } else if (kind === 'ranged' && human) {
+  } else if ((kind === 'ranged' && human) || kind === 'pathfinder') {
     poly(brass[1], 25, 9, 30, 12, 32, 17, 31, 22, 27, 27, 25, 27, 29, 22, 30, 17, 28, 13)
     rect('#f3dfb5', 25, 11, 1, 15)
   } else if (kind === 'marksman' && human) {
@@ -238,6 +238,13 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
     rect(oak[1], 26, 10, 2, 15)
     block(heavy ? timber : iron, 25, heavy ? 6 : 9, heavy ? 7 : 5, heavy ? 8 : 6, 3)
     rect(heavy ? brass[1] : steel[0], 29, heavy ? 7 : 10, 2, 4)
+  }
+  if (isHeroKind(kind)) {
+    poly(brass[0], 11, head + 1, 10, head - 3, 14, head - 1, 16, head - 5, 19, head - 1, 22, head - 3, 21, head + 1)
+    rect(brass[0], 11, 15, 2, 5)
+    rect(brass[0], 19, 15, 2, 5)
+    rect(brass[1], 14, 21, 5, 2)
+    rect(team[0], 16, 21, 1, 1)
   }
   return surface
 }
