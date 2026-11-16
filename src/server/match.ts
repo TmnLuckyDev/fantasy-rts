@@ -299,6 +299,12 @@ export class Match {
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
     if (order.kind === 'cancel-build') return units.length === 1 && this.cancelConstruction(units[0])
+    if (order.kind === 'dismiss') {
+      // Only your own peasants and scouts can be deliberately dismissed.
+      if (units.some(unit => (unit.kind !== 'worker' && unit.kind !== 'scout') || unit.embarkedOn)) return false
+      for (const unit of units) this.destroy(unit)
+      return true
+    }
     if (order.kind === 'demolish') {
       const [building] = units
       if (units.length !== 1 || building.kind === 'headquarters' || isUnitKind(building.kind) || building.buildDuration) return false
@@ -540,7 +546,7 @@ export class Match {
         for (const queued of unit.queue) reserved += training[queued.kind].population * (queued.count ?? 1)
       }
     }
-    return { used, reserved, limit }
+    return { used, reserved, limit: Math.min(limit, this.settings.populationCap ?? 500) }
   }
 
   trainGlobally(faction: Faction, kind: UnitKind, count: number): string | null {
@@ -1149,9 +1155,16 @@ export class Match {
     if (depleted.size && depleted.size !== this.visibleDepletion[faction]?.length) this.visibleDepletion[faction] = [...depleted]
     const knownDepletion = this.visibleDepletion[faction]
     const alerts = this.attackAlerts[faction].current
+    const deposits = this.map.tiles.flatMap((tile, index) => {
+      if (tile !== 'forest' && tile !== 'mine' && tile !== 'quarry') return []
+      if (!visible(cellCenter(index % this.map.width, Math.floor(index / this.map.width)))) return []
+      const resource = tile === 'forest' ? 'wood' : tile === 'mine' ? 'gold' : 'stone'
+      const stock = this.settings.sources[resource].stock
+      return [{ index, remaining: stock === null ? null : Math.max(0, stock - (this.extracted.get(index) ?? 0)) }]
+    })
     return {
       type: 'snapshot', tick: world.tick, fog, ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
-      resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction],
+      resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction], deposits,
       entities: world.entities.flatMap(entity => {
         if (entity.embarkedOn) return []
         if (entity.faction === faction) return [entity]
