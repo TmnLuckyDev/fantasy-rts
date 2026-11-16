@@ -159,3 +159,21 @@ test('all races keep equal tower and warship reach and their naval cost changes'
   assert.equal(trainingRule('warship', 'undead').gold, 207)
   assert.equal(trainingRule('warship', 'undead').wood, 167)
 })
+
+test('expired summons release population and never leave a corpse', () => {
+  const match = arena({ human: 'undead', orc: 'elf' })
+  const caster = match['spawn']('human', 'support', cellCenter(20, 11))
+  const victim = match['spawn']('orc', 'blade', cellCenter(21, 11))
+  match['spawn']('human', 'farm', cellCenter(18, 12))
+  match.step()
+  victim.hp = 0
+  match['destroy'](victim)
+  assert.ok(match.command('human', [caster.id], { kind: 'unit-ability' }))
+  const summon = [...match.units.values()].find(unit => unit.summonedUntil)!
+  const expiresAt = summon.summonedUntil!
+  assert.equal(match.view('human').population.used, 11)
+  while (match.tick < expiresAt) match.step()
+  assert.equal(match.units.has(summon.id), false)
+  assert.equal(match.view('human').population.used, 10)
+  assert.ok(!match.view('human').corpses?.length)
+})

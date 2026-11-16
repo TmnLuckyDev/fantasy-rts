@@ -15,8 +15,10 @@ test('desktop and landscape touch can choose the same race and play', async ({ b
     await expect(code).toHaveText(/^[A-Z2-9]{5}$/)
     const guest = await mobile.newPage()
     await guest.goto(baseURL + '/?room=' + await code.innerText())
-    await guest.locator('[data-faction="elf"]').tap()
+    await guest.locator('[data-faction="dwarf"]').tap()
     await guest.getByRole('button', { name: 'Join', exact: true }).tap()
+    await expect(page.locator('#seats')).toContainText('Ironbound Clans')
+    await guest.locator('[data-faction="elf"]').tap()
     for (const client of [page, guest]) {
       await expect(client.locator('#seats')).toContainText('Sylvan Covenant')
       await expect(client.locator('#seats')).toContainText('Sylvan Covenant · You')

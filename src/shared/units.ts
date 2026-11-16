@@ -56,9 +56,9 @@ function roster(changes: Partial<Record<EntityKind, Partial<UnitStats>>>) {
 }
 
 const elf = roster({
-  blade: { armor: 1, damage: 18 }, polearm: { armor: 2, damage: 19 },
+  blade: { armor: 1, damage: 20 }, polearm: { armor: 2, damage: 19 },
   heavy: { armor: 4, damage: 29 }, marksman: { damage: 24, cooldown: 21 },
-  ranged: { damage: 17, cooldown: 15 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
+  ranged: { damage: 20, cooldown: 15 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
   pathfinder: { range: 165, health: 240, speed: 94 }, warship: { health: 585, speed: 90.2 }
 })
 for (const kind of ['blade', 'polearm', 'heavy', 'ranged', 'marksman', 'scout', 'support'] as const) {

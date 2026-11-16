@@ -4,7 +4,8 @@ import { WebSocket } from 'ws'
 import { startArmyRoom } from './army-room.ts'
 import { applyDelta, deltaProtocol } from '../src/shared/snapshot-delta.ts'
 
-const room = await startArmyRoom(process.env.BENCH_SOURCE)
+const lineup = process.env.BENCH_RACES?.split(',')
+const room = await startArmyRoom(process.env.BENCH_SOURCE, lineup && { human: lineup[0], orc: lineup[1] })
 const target = Number(process.env.BENCH_FRAMES ?? 80)
 const peers = []
 try {

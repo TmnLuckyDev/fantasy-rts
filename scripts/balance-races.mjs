@@ -1,15 +1,16 @@
 import { performance } from 'node:perf_hooks'
+import { unitStats } from '../src/shared/units.ts'
 import { ComputerOpponent } from '../src/server/computer.ts'
 import { Match, TICK_HZ } from '../src/server/match.ts'
-import { ashfordMap, cellCenter, isWalkable, isWater, tileAt } from '../src/shared/map.ts'
+import { ashfordMap, cellCenter, distance, isWalkable, isWater, resourceAt, tileAt } from '../src/shared/map.ts'
 import { defaultMatchSettings } from '../src/shared/match-settings.ts'
-import { trainingRule } from '../src/shared/economy.ts'
-import { factions, isUnitKind, races } from '../src/shared/protocol.ts'
+import { trainingCost, trainingRule } from '../src/shared/economy.ts'
+import { factions, isUnitKind, races, resourceKinds } from '../src/shared/protocol.ts'
 
 const mode = process.argv[2] ?? 'skirmish'
 const games = Number(process.argv[3] ?? (mode === 'bots' ? 2 : 100))
-if (!['bots', 'skirmish'].includes(mode) || !Number.isSafeInteger(games) || games < 1) {
-  throw new Error('Usage: node scripts/balance-races.mjs [skirmish|bots] [games per matchup and map]')
+if (!['bots', 'skirmish', 'economy'].includes(mode) || !Number.isSafeInteger(games) || games < 1) {
+  throw new Error('Usage: node scripts/balance-races.mjs [skirmish|bots|economy] [games per matchup and map]')
 }
 
 function random(seed) {
@@ -20,6 +21,8 @@ function random(seed) {
 }
 
 const maps = ['pinewatch-vale', 'ironbreak-pass', 'shattered-isles']
+const selectedMap = process.env.BALANCE_MAP
+if (selectedMap && !maps.includes(selectedMap)) throw Error('Unknown BALANCE_MAP: ' + selectedMap)
 const botMinutes = Number(process.env.BALANCE_MINUTES ?? 5)
 if (![5, 10, 20].includes(botMinutes)) throw new Error('BALANCE_MINUTES must be 5, 10 or 20')
 const landArmy = ['blade', 'blade', 'ranged', 'ranged', 'polearm', 'heavy']
@@ -85,7 +88,45 @@ function runBots(map, lineup, seed) {
   return { winner: match.result.winner, match }
 }
 
-for (const id of maps) {
+function measureEconomy() {
+  const settings = { ...defaultMatchSettings('pinewatch-vale'), randomStarts: false }
+  const map = Match.configured(settings).map
+  const base = map.bases.human
+  const deposits = map.tiles.map((_, i) => cellCenter(i % map.width, Math.floor(i / map.width)))
+    .filter(at => resourceAt(map, at)).sort((a, b) => distance(a, base) - distance(b, base))
+  for (const race of races) {
+    const match = new Match(map, settings, { human: race, orc: 'human' })
+    const workers = [...match.units.values()].filter(unit => unit.faction === 'human' && unit.kind === 'worker')
+    for (const [i, resource] of resourceKinds.entries()) {
+      const at = deposits.find(point => resourceAt(map, point) === resource && match.availableDeposit('human', point))
+      if (!at || !match.command('human', [workers[i].id], { kind: 'gather', at })) throw Error('Unreachable benchmark deposit: ' + resource)
+    }
+    const gathered = {}
+    for (const minutes of [5, 10, 20]) {
+      while (match.tick < minutes * 60 * TICK_HZ) match.step()
+      gathered[minutes] = { ...match.report().sides.human.gathered }
+    }
+    const kinds = ['blade', 'polearm', 'ranged', 'marksman', 'heavy', 'warship']
+    if (race === 'dwarf') kinds.push('siege')
+    const roster = kinds.map(kind => {
+      const { health, armor, damage, cooldown, speed, range } = unitStats[race][kind]
+      const { ticks, population } = trainingRule(kind, race)
+      const dps = damage * TICK_HZ / cooldown
+      // Effective HP against repeat hits of 20 damage before armor and active abilities.
+      const effectiveHp = Math.ceil(health / Math.max(1, 20 - armor)) * 20
+      return { kind, dps, effectiveHp, healthPerPopulation: health / population, cost: trainingCost(kind, race),
+        trainingSeconds: ticks / TICK_HZ, speed, range, damagePerHitAgainstUnarmoredBuilding: damage + (kind === 'siege' ? 10 : 0) }
+    })
+    console.log(JSON.stringify({ mode, race, gathered, roster }))
+  }
+}
+
+if (mode === 'economy') {
+  measureEconomy()
+  process.exit(0)
+}
+
+for (const id of selectedMap ? [selectedMap] : maps) {
   const map = ashfordMap(id)
   const front = mode === 'skirmish' ? battlefront(map) : undefined
   for (let i = 0; i < races.length; i++) for (let j = i; j < races.length; j++) {

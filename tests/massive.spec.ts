@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 import { startArmyRoom } from '../scripts/army-room.ts'
 import { applyDelta } from '../src/shared/snapshot-delta.ts'
 import type { SnapshotDelta } from '../src/shared/snapshot-delta.ts'
-import { inTroopGroup } from '../src/shared/protocol.ts'
+import { entityNames, inTroopGroup } from '../src/shared/protocol.ts'
 import type { ClientMessage, Snapshot } from '../src/shared/protocol.ts'
 
 function observe(page: Page, faction: 'human' | 'orc') {
@@ -54,7 +54,8 @@ function frameSample(page: Page) {
 
 test('two browser players issue orders to 500 troops each and receive authoritative combat', async ({ browser }) => {
   test.setTimeout(75_000)
-  const fixture = await startArmyRoom(process.env.BENCH_SOURCE)
+  const races = process.env.BENCH_SOURCE ? undefined : { human: 'undead', orc: 'elf' } as const
+  const fixture = await startArmyRoom(process.env.BENCH_SOURCE, races)
   const isWebKit = process.env.MOBILE_BROWSER === 'webkit'
   const phone = devices[isWebKit ? 'iPhone 14' : 'Pixel 7']
   const engine = isWebKit ? await webkit.launch() : browser
@@ -70,8 +71,9 @@ test('two browser players issue orders to 500 troops each and receive authoritat
       await expect(page.locator('#battlefield canvas')).toBeVisible()
       await expect.poll(() => state[i].snapshot()?.entities.filter(entity =>
         entity.faction === fixture.seats[i].faction && entity.kind !== 'headquarters').length).toBe(500)
-      if (!process.env.BENCH_SOURCE) {
-        const subgroup = page.getByRole('button', { name: i ? 'Grunt' : 'Footman', exact: true })
+      if (races) {
+        const race = races[fixture.seats[i].faction]
+        const subgroup = page.getByRole('button', { name: entityNames[race].blade, exact: true })
         if (i) await subgroup.tap()
         else await subgroup.click()
         await expect(page.locator('#selection-name')).toHaveText('100 troops selected')
@@ -112,7 +114,7 @@ test('two browser players issue orders to 500 troops each and receive authoritat
       expect(snap.tick).toBeGreaterThan(first[i].tick)
       expect(new Set(snap.entities.map(entity => entity.id)).size).toBe(snap.entities.length)
       console.log('ASH_BROWSER_BENCH ' + JSON.stringify({
-        player: fixture.seats[i].faction, mobileEngine: isWebKit ? 'webkit' : 'chromium',
+        player: fixture.seats[i].faction, race: races?.[fixture.seats[i].faction], mobileEngine: isWebKit ? 'webkit' : 'chromium',
         ...frames[i], bytes: state[i].bytes(), shots: state[i].shots(), tick: snap.tick
       }))
     }

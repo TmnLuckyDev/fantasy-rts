@@ -10,11 +10,12 @@ import { Match } from '../src/server/match.ts'
 import { cellCenter, isWalkable, TILE, tileAt } from '../src/shared/map.ts'
 import { combatKinds, factions } from '../src/shared/protocol.ts'
 import { unitStats } from '../src/shared/units.ts'
+import type { PlayerRaces } from '../src/shared/protocol.ts'
 import type { SavedRoom } from '../src/server/rooms.ts'
 
-export async function startArmyRoom(root = process.cwd()) {
+export async function startArmyRoom(root = process.cwd(), races?: PlayerRaces) {
   const source = (path: string) => import(pathToFileURL(resolve(root, path)).href)
-  const match: Match = resolve(root) === process.cwd() ? new Match() : new (await source('src/server/match.ts')).Match()
+  const match: Match = resolve(root) === process.cwd() ? new Match(undefined, undefined, races) : new (await source('src/server/match.ts')).Match()
   const map = match.map
   const checkpoint = match.checkpoint()
   checkpoint.units = checkpoint.units.filter(unit => unit.kind === 'headquarters')
@@ -26,7 +27,7 @@ export async function startArmyRoom(root = process.cwd()) {
       let y = 7 + Math.floor(i / 48) % 10
       while (!isWalkable(tileAt(map, x, y))) y++
       const at = cellCenter(x, y)
-      const health = unitStats[faction][kind].health
+      const health = unitStats[races?.[faction] ?? faction][kind].health
       checkpoint.units.push({ ...prototype, ...at, id: ++checkpoint.sequence, kind, hp: health, maxHp: health })
     }
   }
