@@ -538,7 +538,7 @@ export class Match {
     const rule = training[kind]
     const loads = buildings.map(building => trainingTimeline(building.queue, building.queue[0]?.left ?? 0).ticks)
     const allocation = allocateTraining(loads, rule.ticks, count)
-    this.resources[faction].gold -= count * rule.gold
+    for (const resource of resourceKinds) this.resources[faction][resource] -= count * (trainingCost(kind)[resource] ?? 0)
     buildings.forEach((building, i) => {
       if (allocation[i]) this.appendTraining(building, kind, allocation[i])
     })
@@ -552,7 +552,7 @@ export class Match {
       return 'You can only have one active or queued hero.'
     }
     const rule = training[kind]
-    if (count > Math.floor(this.resources[faction].gold / rule.gold)) return 'Not enough gold.'
+    for (const resource of resourceKinds) if (count * (trainingCost(kind)[resource] ?? 0) > this.resources[faction][resource]) return `Not enough ${resource}.`
     const { used, reserved, limit } = this.population(faction)
     if (count > Math.floor((limit - used - reserved) / rule.population)) return 'Not enough population space. Build more farms.'
     return null
@@ -560,7 +560,7 @@ export class Match {
 
   private enqueue(building: Unit, kind: UnitKind, count: number) {
     if (building.buildDuration || !trainedAt(building.kind).includes(kind) || this.trainingError(building.faction, kind, count)) return false
-    this.resources[building.faction].gold -= count * training[kind].gold
+    for (const resource of resourceKinds) this.resources[building.faction][resource] -= count * (trainingCost(kind)[resource] ?? 0)
     this.appendTraining(building, kind, count)
     return true
   }
@@ -579,7 +579,7 @@ export class Match {
       const size = tail.count ?? 1
       const removed = Math.min(count, size)
       count -= removed
-      stock.gold += removed * training[tail.kind].gold
+      for (const resource of resourceKinds) stock[resource] += removed * (trainingCost(tail.kind)[resource] ?? 0)
       if (removed === size) building.queue.pop()
       else tail.count = size - removed
     }
