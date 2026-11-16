@@ -32,7 +32,9 @@ export const repairCost = (kind: EntityKind): Cost => kind === 'wall' ? { stone:
 
 export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: number, bonus: number }> = {
   weapons: { name: 'Weapons +2 damage', cost: { gold: 170, wood: 45 }, ticks: 240, bonus: 2 },
-  armor: { name: 'Armor +1 defense', cost: { gold: 130, stone: 60 }, ticks: 220, bonus: 1 }
+  armor: { name: 'Armor +1 defense', cost: { gold: 130, stone: 60 }, ticks: 220, bonus: 1 },
+  precision: { name: 'Ranged precision +2 damage', cost: { gold: 155, wood: 75 }, ticks: 250, bonus: 2 },
+  vitality: { name: 'Troop vitality +12 HP', cost: { gold: 145, stone: 55 }, ticks: 250, bonus: 12 }
 }
 
 export const MAX_UPGRADE_LEVEL = 5
