@@ -10,10 +10,10 @@ import { GATHERING } from '../src/shared/economy.ts'
 test('match settings validate per-player population cap and support older saved settings', () => {
   const settings = defaultMatchSettings()
   assert.equal(settings.populationCap, 500)
-  for (const cap of [10, 50, 250, 500, 1000]) {
+  for (const cap of [10, 50, 250, 500, 1000, 2000]) {
     assert.equal(parseMatchSettings({ ...settings, populationCap: cap })?.populationCap, cap)
   }
-  for (const cap of [0, 9, 1001, -1, 1.5, '500', null]) {
+  for (const cap of [0, 9, 2001, -1, 1.5, '500', null]) {
     assert.equal(parseMatchSettings({ ...settings, populationCap: cap }), null)
   }
   const { populationCap: _ignored, ...legacy } = settings
