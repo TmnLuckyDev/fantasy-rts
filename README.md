@@ -1,6 +1,6 @@
 # Ash & Iron
 
-A browser RTS for solo skirmishes or 1v1 multiplayer with the blue Human Kingdoms and the red Orcish Horde. Both players start with six combat units, three workers, 300 gold, 180 wood, 120 stone and a headquarters on Ashford Crossing, a 176 × 80 map mirrored by rotation. Destroy the opposing headquarters to win. New matches use the expanded map. Saved matches on the original 88 × 40 map continue there.
+A browser RTS for solo skirmishes or 1v1 multiplayer with the blue Human Kingdoms and the red Orcish Horde. Under the default rules, both players start with six combat units, three workers, 300 gold, 180 wood, 120 stone and a headquarters. Destroy the opposing headquarters to win. Ashford Crossing Expanded remains the default battlefield.
 
 ## Play
 
@@ -36,11 +36,22 @@ Select a completed building and choose **Repair** to send the closest idle worke
 - Attack alerts show where your forces took damage. Tap the alert or its minimap ping to focus the camera. Nearby alerts merge and attacks on headquarters take priority. The **Sound** button also mutes alert audio.
 - Select troops, open the formation button and choose **Line**, **Compact** or **Spread**. The next move or attack uses that formation. Melee ranks face the target with ranged ranks behind. Units take individual routes through chokepoints and form up at the destination when terrain permits.
 
+## Battlefields
+
+| Battlefield | Size | Terrain |
+| --- | --- | --- |
+| Ashford Crossing Classic | 88 × 40 | A central river and two bridges |
+| Ashford Crossing Expanded | 176 × 80 | A wider map with four bridges |
+| Pinewatch Vale | 112 × 64 | Forest pockets and broad, open lanes |
+| Ironbreak Pass | 144 × 72 | A central ridge with three passages |
+| Twinmere Basin | 160 × 88 | Lakes, a central river and three crossings |
+
 ## Match settings and results
 
 Use **Match settings** before creating an online room or starting a new solo match. The online host can also edit the settings in the lobby. Both players can review the final rules before readying up. A change in the lobby clears both ready states. Solo saves retain the settings they started with.
 
-- Choose the 88 × 40 or 176 × 80 map. Set gold mines, stone quarries and tree tiles per side. The map mirrors those placements for the two factions.
+- Select a battlefield and set the number of gold mines, stone quarries and tree tiles per side.
+- **Random starting positions** is on by default. Each new match selects a clear start on the Human side and mirrors it for the Orcs at the other end of the map. Each resource type enabled in the rules has a reachable source within 4.5 tiles of both headquarters. Turn random starts off for fixed positions. Checkpoints retain the original terrain and starting positions.
 - Set stock and active workers per source separately for gold, stone and wood. Leave either field blank for unlimited. Excess workers wait for a slot, and spent sources remain on the terrain but can no longer be harvested.
 - Set starting gold, wood and stone for both sides. Leave the time field blank for an unlimited match. For timed matches, the clock advances with the simulation and pauses with the match.
 - At the time limit, the score is one point per banked gold, wood or stone and 100 points per surviving soldier or hero. Ties draw. The loss of a headquarters still decides the game if it occurs by the last tick.

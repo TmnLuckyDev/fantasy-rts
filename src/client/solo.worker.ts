@@ -30,7 +30,7 @@ function announce() {
   if (!game) return
   const { faction, match, computer } = game
   send({ type: 'room', faction, room: {
-    code: '', map: match.map.id, settings: match.settings, report: match.result ? match.report() : undefined, mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
+    code: '', map: match.map.id, mapSeed: match.map.seed, settings: match.settings, report: match.result ? match.report() : undefined, mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
     players: [faction, computer.faction].map(side => ({ faction: side, ready: true, connected: true }))
   } })
 }
@@ -39,7 +39,7 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
   const message = event.data
   if (message.type === 'start') {
     try {
-      const match = message.save ? Match.restore(message.save.match) : Match.configured(message.settings ?? defaultMatchSettings())
+      const match = message.save ? Match.restore(message.save.match) : Match.start(message.settings ?? defaultMatchSettings())
       const faction = message.save?.faction ?? message.faction
       const computer = new ComputerOpponent(opposite(faction), match.map, message.save?.computer.difficulty ?? message.difficulty, message.save?.computer.strategy)
       if (message.save) computer.restore(message.save.computer)

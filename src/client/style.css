@@ -369,3 +369,17 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 @media (prefers-reduced-motion: reduce) {
   #minimap-pings button::after { animation: none; }
 }
+
+#settings-fields .start-option {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+#settings-fields .start-option input {
+  width: 1.25rem;
+  height: 1.25rem;
+  min-height: 0;
+  accent-color: var(--gold);
+}

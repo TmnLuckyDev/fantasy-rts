@@ -151,7 +151,7 @@ export class Rooms {
       for (const member of room.seats) member.ready = false
     }
     if (message.type === 'ready') seat.ready = message.ready
-    if (room.seats.length === 2 && room.seats.every(candidate => candidate.ready && candidate.peer)) room.match = Match.configured(room.settings)
+    if (room.seats.length === 2 && room.seats.every(candidate => candidate.ready && candidate.peer)) room.match = Match.start(room.settings)
     this.broadcastRoom(room)
     if (room.match) this.broadcastSnapshot(room)
   }
@@ -162,7 +162,7 @@ export class Rooms {
     do {
       code = Array.from({ length: 5 }, () => alphabet[randomInt(alphabet.length)]).join('')
     } while (this.rooms.has(code))
-    const match = solo ? Match.configured(settings) : null
+    const match = solo ? Match.start(settings) : null
     const computer = match ? new ComputerOpponent(opposite(faction), match.map) : null
     const room: Room = { code, seats: [], match, computer, settings, updatedAt: now, finishedAt: 0 }
     this.rooms.set(code, room)
@@ -272,6 +272,7 @@ export class Rooms {
     const state: RoomState = {
       code: room.code,
       map: room.match?.map.id,
+      mapSeed: room.match?.map.seed,
       settings: room.settings,
       host: room.seats[0]?.faction,
       report: room.match?.result ? room.match.report() : undefined,

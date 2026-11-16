@@ -12,7 +12,7 @@
       <div class="lobby-art" aria-hidden="true"></div>
       <div class="lobby-inner">
         <header class="title-block">
-          <p class="eyebrow">The Battle for Ashford Crossing</p>
+          <p class="eyebrow">Human Kingdoms vs Orcish Horde</p>
           <h1>Ash <span>&amp;</span> Iron</h1>
           <div class="ornament" aria-hidden="true"><i></i> ◆ <i></i></div>
         </header>
@@ -47,7 +47,7 @@
 
           <div id="room-actions" hidden>
             <div class="room-heading">
-              <div><span class="eyebrow">Room code</span><strong id="room-code"></strong></div>
+              <div><span class="eyebrow">Room code</span><strong id="room-code"></strong><span id="room-map"></span></div>
               <button id="copy" type="button">Copy invite</button>
             </div>
             <div id="seats" aria-live="polite"></div>
@@ -59,7 +59,7 @@
           <button id="match-settings" type="button">Match settings</button>
           <p id="lobby-message" role="status">Choose a faction to start.</p>
         </section>
-        <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Ashford Crossing</span><span>Custom match rules</span></footer>
+        <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Five battlefields</span><span>Custom match rules</span></footer>
       </div>
     </main>
 
@@ -71,13 +71,14 @@
         </header>
         <fieldset id="settings-fields">
           <div class="settings-top">
-            <label>Map size
-              <select name="map"><option value="ashford-original">Classic · 88 × 40</option><option value="ashford-expanded">Expanded · 176 × 80</option></select>
+            <label>Battlefield
+              <select name="map"></select>
             </label>
             <label>Time limit (minutes)
               <input name="minutes" type="number" inputmode="numeric" min="1" placeholder="Unlimited">
             </label>
           </div>
+          <label class="start-option"><input name="random-starts" type="checkbox" checked> Random starting positions</label>
           <p class="settings-note">Both sides start with the same resources. Blank stock, worker limit or time fields mean unlimited.</p>
           <div id="resource-settings"></div>
           <p id="score-rule" class="settings-note"></p>
@@ -144,7 +145,7 @@
         <div id="placement-tip" class="placement-tip" role="status" hidden><span id="placement-message">Choose a clear tile to build on.</span> <button id="cancel-placement" type="button">Done</button></div>
       </footer>
       <dialog id="result">
-        <p class="eyebrow">Ashford Crossing</p>
+        <p id="result-map" class="eyebrow"></p>
         <h2 id="result-title"></h2>
         <p id="result-detail"></p>
         <section id="match-stats" aria-label="Match statistics" hidden></section>

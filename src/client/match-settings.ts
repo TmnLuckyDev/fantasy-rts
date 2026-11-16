@@ -1,3 +1,4 @@
+import { mapOptions } from '../shared/map.ts'
 import { ARMY_SCORE_PER_UNIT, DEPOSIT_STOCK_MAX, MAX_DEPOSITS, STARTING_RESOURCE_MAX, TIME_LIMIT_MAX_MINUTES,
   WORKER_LIMIT_MAX, defaultMatchSettings, parseMatchSettings, treeLimit } from '../shared/match-settings.ts'
 import type { MatchReport, MatchSettings } from '../shared/match-settings.ts'
@@ -56,6 +57,13 @@ export class MatchSettingsMenu {
     document.querySelector<HTMLButtonElement>('#close-settings')!.onclick = () => this.close()
     this.reset.onclick = () => this.fill(defaultMatchSettings(this.map))
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
+    for (const map of mapOptions) {
+      const option = document.createElement('option')
+      option.value = map.id
+      const edition = map.id === 'ashford-original' ? ' Classic' : map.id === 'ashford-expanded' ? ' Expanded' : ''
+      option.textContent = map.name + edition + ' · ' + map.width + ' × ' + map.height
+      mapInput.append(option)
+    }
     mapInput.onchange = () => {
       const map = mapInput.value as MatchSettings['map']
       const defaults = defaultMatchSettings(map)
@@ -74,6 +82,7 @@ export class MatchSettingsMenu {
       if (!this.accept) return
       const settings = defaultMatchSettings(this.map)
       const number = (key: string) => this.input(key).value === '' ? null : this.input(key).valueAsNumber
+      settings.randomStarts = this.input('random-starts').checked
       settings.minutes = number('minutes')
       for (const resource of resourceKinds) {
         settings.sources[resource] = {
@@ -115,6 +124,7 @@ export class MatchSettingsMenu {
     this.map = settings.map
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
     mapInput.value = settings.map
+    this.input('random-starts').checked = settings.randomStarts !== false
     this.input('minutes').value = String(settings.minutes ?? '')
     this.input('wood-count').max = String(treeLimit(settings.map))
     for (const resource of resourceKinds) {
