@@ -1,0 +1,54 @@
+{
+  "baseline": [
+    {
+      "faction": "human",
+      "bytes": 7248552,
+      "frames": 80,
+      "seconds": 8.192976285999999,
+      "meanBytesPerSecond": 884727.5699291583,
+      "maxSnapshotGapMs": 394.982073,
+      "p95SnapshotGapMs": 108.71371999999974,
+      "lastTick": 158,
+      "shots": 1228,
+      "survivors": 435
+    },
+    {
+      "faction": "orc",
+      "bytes": 7013700,
+      "frames": 80,
+      "seconds": 8.189073261,
+      "meanBytesPerSecond": 856470.5402505496,
+      "maxSnapshotGapMs": 391.364169,
+      "p95SnapshotGapMs": 109.42175399999996,
+      "lastTick": 158,
+      "shots": 1228,
+      "survivors": 418
+    }
+  ],
+  "optimized": [
+    {
+      "faction": "human",
+      "bytes": 1659578,
+      "frames": 80,
+      "seconds": 7.925137463,
+      "meanBytesPerSecond": 209406.84092207273,
+      "maxSnapshotGapMs": 108.00188100000014,
+      "p95SnapshotGapMs": 103.89009000000078,
+      "lastTick": 158,
+      "shots": 1145,
+      "survivors": 434
+    },
+    {
+      "faction": "orc",
+      "bytes": 1663534,
+      "frames": 80,
+      "seconds": 7.923285103000001,
+      "meanBytesPerSecond": 209955.08534334257,
+      "maxSnapshotGapMs": 109.1048580000006,
+      "p95SnapshotGapMs": 104.1872970000004,
+      "lastTick": 158,
+      "shots": 1145,
+      "survivors": 409
+    }
+  ]
+}
