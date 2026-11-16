@@ -690,10 +690,9 @@ export class BattleScene extends Phaser.Scene {
           this.graphics.fillStyle(0x74d9a1, 1).fillRect(sprite.x - 14, y - 6, 30 * entity.upgradeProgress, 3)
         }
       }
-      if (isUnitKind(entity.kind) && entity.faction === this.faction && entity.kind !== 'worker' && entity.kind !== 'scout' && !isHeroKind(entity.kind)) {
-        const researched = this.newest?.upgrades ?? []
-        const weapons = researched.filter(kind => kind === 'weapons').length
-        const armor = researched.filter(kind => kind === 'armor').length
+      if (isUnitKind(entity.kind) && entity.kind !== 'worker' && entity.kind !== 'scout' && !isHeroKind(entity.kind)) {
+        const weapons = entity.weaponLevel ?? 0
+        const armor = entity.armorLevel ?? 0
         const y = sprite.y - 42
         if (weapons || armor) {
           this.graphics.fillStyle(0x2c3035, 0.9).fillRect(sprite.x - 13, y, 26, 7)
