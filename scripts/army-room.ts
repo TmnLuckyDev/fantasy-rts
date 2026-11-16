@@ -4,6 +4,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type { MatchCheckpoint } from '../src/server/match.ts'
+import type { BattleMap } from '../src/shared/map.ts'
 import { Match } from '../src/server/match.ts'
 import { cellCenter, isWalkable, TILE, tileAt } from '../src/shared/map.ts'
 import { combatKinds, factions } from '../src/shared/protocol.ts'
@@ -11,8 +13,6 @@ import { unitStats } from '../src/shared/units.ts'
 import type { SavedRoom } from '../src/server/rooms.ts'
 
 export async function startArmyRoom(root = process.cwd()) {
-  const directory = await mkdtemp(join(tmpdir(), 'ash-army-room-'))
-  const path = join(directory, 'match.json')
   const source = (path: string) => import(pathToFileURL(resolve(root, path)).href)
   const match: Match = resolve(root) === process.cwd() ? new Match() : new (await source('src/server/match.ts')).Match()
   const map = match.map
@@ -30,6 +30,12 @@ export async function startArmyRoom(root = process.cwd()) {
       checkpoint.units.push({ ...prototype, ...at, id: ++checkpoint.sequence, kind, hp: health, maxHp: health })
     }
   }
+  return startSavedRoom(checkpoint, map, root)
+}
+
+export async function startSavedRoom(checkpoint: MatchCheckpoint, map: BattleMap, root = process.cwd()) {
+  const directory = await mkdtemp(join(tmpdir(), 'ash-army-room-'))
+  const path = join(directory, 'match.json')
   const code = 'ARMY5'
   const seats = factions.map((faction, index) => ({ faction, ready: true, token: String(index + 1).repeat(64) }))
   const rooms: SavedRoom[] = [{ code, seats, match: checkpoint, finishedAt: 0 }]

@@ -124,10 +124,24 @@ test('desktop and landscape touch players can finish an authoritative match', as
     const orcTap = await screenPoint(orc, { x: firstOrc.x, y: firstOrc.y - 13 }, ashford.bases.orc)
     await orc.touchscreen.tap(orcTap.x, orcTap.y)
     await expect(orc.locator('#selection-name')).toHaveText('Grunt')
-    if (mobileBrowser === chromium) {
-      const session = await touch.newCDPSession(orc)
-      const touchEvent = (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: Point[]) =>
-        session.send('Input.dispatchTouchEvent', { type, touchPoints: touchPoints.map(({ x, y }, id) => ({ x, y, id })) })
+    {
+      const session = mobileBrowser === chromium ? await touch.newCDPSession(orc) : null
+      let lastPoints: Point[] = []
+      const touchEvent = async (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: Point[]) => {
+        if (session) {
+          await session.send('Input.dispatchTouchEvent', { type, touchPoints: touchPoints.map(({ x, y }, id) => ({ x, y, id })) })
+          return
+        }
+        // WebKit's Playwright transport exposes taps but has no multi-pointer touch API.
+        const event = type === 'touchStart' ? 'pointerdown' : type === 'touchMove' ? 'pointermove' : 'pointerup'
+        const points = touchPoints.length ? touchPoints : lastPoints
+        await orc.locator('#battlefield').evaluate((board, { event, points }) => {
+          points.forEach(({ x, y }, i) => board.dispatchEvent(new PointerEvent(event, {
+            pointerType: 'touch', pointerId: i + 10, clientX: x, clientY: y, button: 0, bubbles: true
+          })))
+        }, { event, points })
+        lastPoints = touchPoints
+      }
       const bounds = (await orc.locator('#battlefield').boundingBox())!
       const a = { x: bounds.x + bounds.width * 0.37, y: bounds.y + bounds.height * 0.44 }
       const b = { x: a.x + 100, y: a.y }
@@ -156,9 +170,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
       await touchEvent('touchStart', [boxStart])
       await touchEvent('touchMove', [boxEnd])
       await touchEvent('touchEnd', [])
-      await session.detach()
-    } else {
-      await orc.getByRole('button', { name: 'All troops' }).tap()
+      await session?.detach()
     }
     await expect(orc.locator('#selection-name')).toHaveText('6 troops selected')
     if (process.env.CAPTURE_BROWSER === '1') await orc.screenshot({ path: info.outputPath('landscape-touch.png') })

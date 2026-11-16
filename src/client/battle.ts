@@ -4,7 +4,7 @@ import type { BattleMap } from '../shared/map.ts'
 import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement } from '../shared/economy.ts'
-import type { ArmyOrder, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
+import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
@@ -60,6 +60,7 @@ export class BattleScene extends Phaser.Scene {
   private hasSnapshot = false
   private lastMiniDraw = 0
   advanceMode = false
+  formation: Formation = 'line'
   private placing: BuildingKind | null = null
   private pointer: Point | null = null
 
@@ -497,6 +498,13 @@ export class BattleScene extends Phaser.Scene {
   private issue(order: Order, point?: Point) {
     if (!this.selected.size) return
     if (point) this.markers.push({ point, color: order.kind === 'move' ? 0xadd995 : 0xffa36b, born: this.time.now })
+    const military = this.selectedGroup || [...this.selected].some(id => {
+      const kind = this.visuals.get(id)?.entity.kind
+      return isUnitKind(kind) && kind !== 'worker'
+    })
+    if (military && (order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack')) {
+      order = { ...order, formation: this.formation }
+    }
     if (this.selectedGroup && isArmyOrder(order)) this.actions.groupOrder(this.selectedGroup, order)
     else {
       const ids = this.mobileUnits()

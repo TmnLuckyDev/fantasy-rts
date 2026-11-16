@@ -11,6 +11,7 @@ import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.t
 import type { Obstacle } from './navigation.ts'
 import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
 import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
+import { formationSlots } from './formations.ts'
 import { AttackAlerts } from './attack-alerts.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
@@ -34,6 +35,7 @@ type Defense = { targetId: number, at: Point, until: number }
 type Unit = Entity & {
   order: Order | null
   assigned: Point | null
+  flank?: number
   nextStrike: number
   nextPath: number
   path: Point[]
@@ -238,6 +240,21 @@ export class Match {
 
     const troops = order.kind === 'attack' ? units.filter(unit => unit.kind !== 'worker') : units
     if (!troops.length) return false
+    if ((order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack') && order.formation) {
+      const anchor = order.kind === 'attack' ? this.units.get(order.target)! : order.to
+      for (const { unit, at, flank } of formationSlots(troops, anchor, order.formation)) {
+        this.resetOrders(unit)
+        unit.order = order
+        if (order.kind === 'attack') {
+          unit.lastTarget = { x: anchor.x, y: anchor.y }
+          if (flank) unit.flank = flank
+        } else {
+          unit.assigned = this.fitFormationSlot(unit, at, anchor)
+          if (order.kind === 'advance' && flank) unit.flank = flank
+        }
+      }
+      return true
+    }
     const rowSize = Math.ceil(Math.sqrt(troops.length))
     troops.sort((a, b) => Number(isRanged(a.kind)) - Number(isRanged(b.kind)) || a.y - b.y)
     troops.forEach((unit, i) => {
@@ -261,6 +278,15 @@ export class Match {
     return true
   }
 
+  private fitFormationSlot(unit: Unit, at: Point, anchor: Point) {
+    const radius = unitStats[unit.faction][unit.kind].radius
+    for (const scale of [1, 0.75, 0.5, 0.25]) {
+      const point = { x: anchor.x + (at.x - anchor.x) * scale, y: anchor.y + (at.y - anchor.y) * scale }
+      if (canStand(this.map, point, [], radius)) return point
+    }
+    return anchor
+  }
+
   private resetOrders(unit: Unit) {
     this.routes.delete(unit)
     unit.order = null
@@ -273,6 +299,7 @@ export class Match {
     unit.nextPath = this.tick
     unit.blockedTicks = 0
     unit.assigned = null
+    unit.flank = undefined
   }
 
   private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' | 'repair' }>) {
@@ -676,9 +703,17 @@ export class Match {
       if (target && (defenderTarget || unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
         const range = unitStats[unit.faction][unit.kind].range + unitStats[target.faction][target.kind].radius - 4
         const separation = distance(unit, target) || 1
-        destination = {
-          x: target.x + (unit.x - target.x) * range / separation,
-          y: target.y + (unit.y - target.y) * range / separation
+        if (unit.flank && (unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
+          const bearing = Math.atan2(unit.y - target.y, unit.x - target.x) + unit.flank
+          const flanked = { x: target.x + Math.cos(bearing) * range, y: target.y + Math.sin(bearing) * range }
+          if (canStand(this.map, flanked, obstacles, stats.radius)) destination = flanked
+          else unit.flank = undefined
+        }
+        if (!unit.flank || defenderTarget || !destination) {
+          destination = {
+            x: target.x + (unit.x - target.x) * range / separation,
+            y: target.y + (unit.y - target.y) * range / separation
+          }
         }
       }
       if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
@@ -748,7 +783,17 @@ export class Match {
         checked.add(unit.faction)
       }
       const path = findPath(this.map, unit, destination, blockers, unitStats[unit.faction][unit.kind].radius, cached?.grid)
-      this.setRoute(unit, destination, path)
+      const order = unit.order
+      if (path.length === 0 && (order?.kind === 'move' || order?.kind === 'advance') && order.formation &&
+          unit.assigned && squaredDistance(unit.assigned, order.to) > 4) {
+        unit.assigned = order.to
+        unit.pursued = null
+        unit.path = []
+      } else if (path.length === 0 && unit.flank) {
+        unit.flank = undefined
+        unit.pursued = null
+        unit.path = []
+      } else this.setRoute(unit, destination, path)
       if (++processed === routesPerTick) break
     }
   }

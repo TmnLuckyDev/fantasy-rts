@@ -122,11 +122,17 @@
           <button id="idle-worker" type="button" title="Cycle through idle workers (I)" disabled>Idle worker <span id="idle-count">0</span></button>
           <button id="workers" type="button" title="Select all workers">Workers</button>
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
+          <button id="formation" type="button" aria-label="Army formation" aria-expanded="false" aria-controls="formation-options" hidden>Line</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
           <button id="halt" type="button" title="Stop (S)">Stop</button>
           <button id="global-train-toggle" type="button" aria-expanded="false" aria-controls="global-train-panel">Recruit</button>
           <button id="production-toggle" type="button" aria-expanded="false" aria-controls="production-panel">Queues <span id="production-count">0</span></button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
+        </div>
+        <div id="formation-options" role="group" aria-label="Formation options" hidden>
+          <button type="button" data-formation="line" aria-pressed="true">Line</button>
+          <button type="button" data-formation="compact" aria-pressed="false">Compact</button>
+          <button type="button" data-formation="spread" aria-pressed="false">Spread</button>
         </div>
         <div id="worker-actions" class="economy-menu worker-actions" role="group" aria-label="Gather resources" hidden></div>
         <div id="economy-menu" class="economy-menu" aria-label="Economy commands" hidden></div>

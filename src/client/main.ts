@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
-import type { AttackAlert, ArmyOrder, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, formations, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
@@ -62,6 +62,34 @@ const globalProduction = new GlobalProduction(globalTrainPanel, (unit, count) =>
   else client.send(message)
 }, paintPortrait)
 const placementTip = element('placement-tip')
+const formationButton = button('formation')
+const formationOptions = element('formation-options')
+const formationChoices = [...formationOptions.querySelectorAll<HTMLButtonElement>('[data-formation]')]
+formationButton.onclick = () => toggleFormation(formationOptions.hidden)
+for (const option of formationChoices) {
+  option.onclick = () => {
+    const choice = formations.find(kind => kind === option.dataset.formation)
+    if (!scene || !choice) return
+    scene.formation = choice
+    drawFormation(choice)
+    toggleFormation(false)
+  }
+}
+
+function drawFormation(formation: Formation) {
+  formationButton.textContent = formation[0].toUpperCase() + formation.slice(1)
+  for (const choice of formationChoices) choice.setAttribute('aria-pressed', String(choice.dataset.formation === formation))
+}
+
+function toggleFormation(open: boolean) {
+  formationOptions.hidden = !open
+  formationButton.setAttribute('aria-expanded', String(open))
+  if (open) {
+    toggleGlobalTrain(false)
+    toggleProduction(false)
+    closeEconomyMenu()
+  }
+}
 const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
 const audio = new BattleAudio()
 const settingsMenu = new MatchSettingsMenu()
@@ -243,6 +271,8 @@ function showBattle() {
   button('idle-worker').disabled = true
   setText('idle-count', '0')
   scene.advanceMode = false
+  drawFormation(scene.formation)
+  toggleFormation(false)
   resources = { gold: 0, wood: 0, stone: 0 }
   ownEntities = []
   researched = []
@@ -360,6 +390,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   const label = element('selection-name')
   const detail = element('selection-detail')
   const meter = element<HTMLMeterElement>('selection-health')
+  formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
+  if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').disabled = !movable
   button('halt').disabled = !movable
@@ -612,6 +644,7 @@ function toggleGlobalTrain(open: boolean) {
   globalTrainPanel.hidden = !open
   globalTrainToggle.setAttribute('aria-expanded', String(open))
   if (!open) return
+  toggleFormation(false)
   toggleProduction(false)
   closeEconomyMenu()
   scene?.place(null)
@@ -626,6 +659,7 @@ function toggleProduction(open: boolean) {
   productionToggle.setAttribute('aria-expanded', String(open))
   syncWorkerActions()
   if (open) {
+    toggleFormation(false)
     toggleGlobalTrain(false)
     closeEconomyMenu()
     drawProduction()

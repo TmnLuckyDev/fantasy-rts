@@ -70,7 +70,20 @@ test('two browser players issue orders to 500 troops each and receive authoritat
       await expect(page.locator('#battlefield canvas')).toBeVisible()
       await expect.poll(() => state[i].snapshot()?.entities.filter(entity =>
         entity.faction === fixture.seats[i].faction && entity.kind !== 'headquarters').length).toBe(500)
-      await page.getByRole('button', { name: 'All troops', exact: true }).click()
+      if (!process.env.BENCH_SOURCE) {
+        const subgroup = page.getByRole('button', { name: i ? 'Grunt' : 'Footman', exact: true })
+        if (i) await subgroup.tap()
+        else await subgroup.click()
+        await expect(page.locator('#selection-name')).toHaveText('100 troops selected')
+        await expect(subgroup).toHaveAttribute('aria-pressed', 'true')
+      }
+      const all = page.getByRole('button', { name: 'All troops', exact: true })
+      if (i) await all.tap()
+      else await all.click()
+      if (!process.env.BENCH_SOURCE) {
+        await page.getByRole('button', { name: 'Army formation' }).click()
+        await page.getByRole('button', { name: i ? 'Compact' : 'Spread', exact: true }).click()
+      }
       await expect(page.locator('#selection-name')).toHaveText('500 troops selected')
       const map = (await page.locator('#minimap').boundingBox())!
       const focus = { x: map.x + map.width * .50, y: map.y + map.height * 384 / fixture.worldHeight }

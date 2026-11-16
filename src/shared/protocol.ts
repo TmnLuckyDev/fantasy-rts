@@ -93,9 +93,12 @@ export type RoomState = {
   paused?: boolean
 }
 
+export const formations = ['line', 'compact', 'spread'] as const
+export type Formation = typeof formations[number]
+
 export type Order =
-  | { kind: 'move' | 'advance', to: Point }
-  | { kind: 'attack', target: number }
+  | { kind: 'move' | 'advance', to: Point, formation?: Formation }
+  | { kind: 'attack', target: number, formation?: Formation }
   | { kind: 'halt' }
   | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }

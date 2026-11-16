@@ -310,3 +310,28 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   font-size: 0.78rem;
 }
 #attack-alerts button[data-severity="base"] { color: #fff6cc; background: #773627; border-color: #ffb57e; }
+
+#formation {
+  min-height: 36px;
+  padding-inline: 0.4rem;
+  color: var(--pale);
+  background: #253330;
+  border: 1px solid var(--team);
+  border-radius: 3px;
+  font-size: 0.82rem;
+  flex: 0 0 auto;
+}
+#formation-options {
+  position: absolute;
+  z-index: 2;
+  right: 0.5rem;
+  bottom: calc(100% + 2.65rem);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.35rem;
+  background: #1b2629;
+  border: 1px solid var(--edge);
+}
+#formation-options button { min-height: 39px; }
+#formation-options button[aria-pressed="true"] { background: #415244; border-color: var(--team); }
