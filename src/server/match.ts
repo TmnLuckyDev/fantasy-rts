@@ -1,17 +1,19 @@
-import { TILE, ashford, ashfordMap, distance, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
+import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
 import { MAX_SELECTION, factions, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
 import type { Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
-import { BASE_POPULATION, FARM_POPULATION, GATHERING, STARTING_RESOURCES,
+import { BASE_POPULATION, FARM_POPULATION, GATHERING,
   buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
+import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
+import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
 
-export const TICK_HZ = 20
+export const TICK_HZ = TICKS_PER_SECOND
 const spacing = 30
 const maxRadius = Math.max(...Object.values(unitStats).flatMap(stats => Object.values(stats).map(unit => unit.radius)))
 const defenseRadius = 5 * TILE
@@ -39,6 +41,7 @@ type Unit = Entity & {
   blockedTicks: number
   job: WorkerJob | null
   cargo: ResourceKind | null
+  cargoAmount?: number
   queue: Array<{ kind: UnitKind, left: number, count?: number }>
   buildTicks: number
   buildDuration: number
@@ -54,6 +57,10 @@ type Missile = { attacker: Unit, targetId: number, arrives: number }
 
 export type MatchCheckpoint = {
   map?: MapId
+  settings?: MatchSettings
+  stats?: Record<Faction, MatchStats>
+  extracted?: Array<[number, number]>
+  knownDepletion?: Partial<Record<Faction, number[]>>
   tick: number
   result: Result | null
   sequence: number
@@ -68,6 +75,7 @@ export type MatchCheckpoint = {
 export class Match {
   readonly units = new Map<number, Unit>()
   readonly map: BattleMap
+  readonly settings: MatchSettings
   private readonly nearby = { human: new SpatialIndex<Unit>(), orc: new SpatialIndex<Unit>() }
   private readonly activeHeroes: Partial<Record<Faction, Unit>> = {}
   private readonly heroExperience: Record<Faction, Partial<Record<HeroKind, number>>> = { human: {}, orc: {} }
@@ -75,17 +83,23 @@ export class Match {
   private readonly navigation: Partial<Record<Faction, { key: string, grid: NavigationGrid }>> = {}
   tick = 0
   result: Result | null = null
-  private readonly resources: Record<Faction, Resources> = {
-    human: { ...STARTING_RESOURCES }, orc: { ...STARTING_RESOURCES }
-  }
+  private readonly resources: Record<Faction, Resources>
+  private readonly stats = { human: emptyMatchStats(), orc: emptyMatchStats() }
+  private readonly extracted = new Map<number, number>()
+  private readonly harvesting = new Map<number, number>()
+  private readonly depletion = { human: new Set<number>(), orc: new Set<number>() }
+  private readonly visibleDepletion: Partial<Record<Faction, number[]>> = {}
+  private readonly exhausted = new Set<number>()
   private readonly upgrades: Record<Faction, UpgradeKind[]> = { human: [], orc: [] }
   private sequence = 0
   private effects: Effect[] = []
   private missiles: Missile[] = []
   private readonly visibility: Visibility
 
-  constructor(map: BattleMap = ashford) {
+  constructor(map: BattleMap = ashford, settings = defaultMatchSettings(map.id)) {
     this.map = map
+    this.settings = settings
+    this.resources = { human: { ...settings.starting }, orc: { ...settings.starting } }
     this.visibility = new Visibility(map)
     for (const faction of factions) {
       const base = map.bases[faction]
@@ -109,8 +123,22 @@ export class Match {
     this.visibility.update(this.units.values())
   }
 
-  static restore(checkpoint: MatchCheckpoint, map: BattleMap = ashfordMap(checkpoint.map ?? 'ashford-original')) {
-    const match = new Match(map)
+  static configured(settings: MatchSettings) {
+    return new Match(mapForSettings(settings), settings)
+  }
+
+  static restore(checkpoint: MatchCheckpoint, map = checkpoint.settings
+    ? mapForSettings(checkpoint.settings) : ashfordMap(checkpoint.map ?? 'ashford-original')) {
+    const match = new Match(map, checkpoint.settings)
+    Object.assign(match.stats, checkpoint.stats)
+    for (const [index, amount] of checkpoint.extracted ?? []) {
+      match.extracted.set(index, amount)
+      const resource = resourceAt(map, cellCenter(index % map.width, Math.floor(index / map.width)))
+      if (resource && amount >= (match.settings.sources[resource].stock ?? Infinity)) match.exhausted.add(index)
+    }
+    for (const faction of factions) {
+      for (const index of checkpoint.knownDepletion?.[faction] ?? []) match.depletion[faction].add(index)
+    }
     match.tick = checkpoint.tick
     match.result = checkpoint.result
     match.sequence = checkpoint.sequence
@@ -139,7 +167,8 @@ export class Match {
 
   checkpoint(): MatchCheckpoint {
     return {
-      map: this.map.id, tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
+      map: this.map.id, settings: this.settings, stats: this.stats, extracted: [...this.extracted],
+      knownDepletion: this.visibleDepletion, tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
       units: [...this.units.values()], missiles: this.missiles, upgrades: this.upgrades,
       heroExperience: this.heroExperience,
       fog: { human: this.visibility.mask('human'), orc: this.visibility.mask('orc') }
@@ -237,7 +266,7 @@ export class Match {
     if (!workers.length) return false
     if (order.kind === 'gather') {
       const resource = resourceAt(this.map, order.at)
-      if (!resource || !this.visibility.at(faction, order.at)) return false
+      if (!resource || !this.availableDeposit(faction, order.at)) return false
       const at = snapToCell(order.at)
       for (const worker of workers) {
         this.resetOrders(worker)
@@ -415,6 +444,8 @@ export class Match {
       next.left = training[next.kind].ticks
     }
     this.spawn(building.faction, next.kind, spawnPoint)
+    this.stats[building.faction].unitsTrained++
+    if (next.kind !== 'worker') this.stats[building.faction].troopsTrained++
   }
 
   private work(worker: Unit, obstacles: Obstacle[]) {
@@ -460,6 +491,7 @@ export class Match {
       site.hp = Math.min(site.maxHp, site.hp + addedHealth(site.buildTicks + 1) - addedHealth(site.buildTicks))
       if (++site.buildTicks >= site.buildDuration) {
         site.buildDuration = 0
+        this.stats[site.faction].buildingsBuilt++
         this.nextConstruction(worker)
       }
       return
@@ -468,20 +500,71 @@ export class Match {
       const base = [...this.units.values()].find(unit => unit.faction === worker.faction && unit.kind === 'headquarters')
       if (!base) return
       if (distance(worker, base) <= unitStats[base.faction].headquarters.radius + 26) {
-        this.resources[worker.faction][worker.cargo] += GATHERING[worker.cargo].amount
+        const amount = worker.cargoAmount ?? GATHERING[worker.cargo].amount
+        this.resources[worker.faction][worker.cargo] += amount
+        this.stats[worker.faction].gathered[worker.cargo] += amount
         worker.cargo = null
+        worker.cargoAmount = undefined
       } else this.approach(worker, base, obstacles, true)
-    } else if (distance(worker, job.at) < 49) {
-      if (++job.workTicks >= GATHERING[job.resource].ticks) {
-        worker.cargo = job.resource
-        job.workTicks = 0
+    } else {
+      this.harvest(worker, job, obstacles)
+    }
+  }
+
+  private depositIndex(point: Point) {
+    return Math.floor(point.y / TILE) * this.map.width + Math.floor(point.x / TILE)
+  }
+
+  availableDeposit(faction: Faction, point: Point) {
+    return this.visibility.at(faction, point) > 0 && !this.exhausted.has(this.depositIndex(point))
+  }
+
+  private harvest(worker: Unit, job: Extract<WorkerJob, { kind: 'gather' }>, obstacles: Obstacle[]) {
+    const index = this.depositIndex(job.at)
+    if (this.exhausted.has(index)) {
+      this.resetOrders(worker)
+      return
+    }
+    if (distance(worker, job.at) >= 49) {
+      this.approach(worker, job.at, obstacles, true)
+      return
+    }
+    const { stock, workers } = this.settings.sources[job.resource]
+    if (workers !== null) {
+      const active = this.harvesting.get(index) ?? 0
+      if (active >= workers) return
+      this.harvesting.set(index, active + 1)
+    }
+    if (++job.workTicks < GATHERING[job.resource].ticks) return
+    const extracted = this.extracted.get(index) ?? 0
+    const amount = Math.min(GATHERING[job.resource].amount, (stock ?? Infinity) - extracted)
+    worker.cargo = job.resource
+    worker.cargoAmount = amount
+    job.workTicks = 0
+    if (stock !== null) {
+      this.extracted.set(index, extracted + amount)
+      if (extracted + amount >= stock) this.exhausted.add(index)
+    }
+  }
+
+  report(): MatchReport {
+    const sides = {} as Record<Faction, FinalStats>
+    for (const faction of factions) {
+      const bank = { ...this.resources[faction] }
+      let army = 0
+      for (const unit of this.units.values()) {
+        if (unit.faction === faction && isUnitKind(unit.kind) && unit.kind !== 'worker') army++
       }
-    } else this.approach(worker, job.at, obstacles, true)
+      const score = bank.gold + bank.wood + bank.stone + army * ARMY_SCORE_PER_UNIT
+      sides[faction] = { ...this.stats[faction], gathered: { ...this.stats[faction].gathered }, bank, army, score }
+    }
+    return { elapsedSeconds: Math.floor(this.tick / TICK_HZ), sides }
   }
 
   step() {
     if (this.result) return
     this.tick++
+    this.harvesting.clear()
     for (const faction of factions) this.nearby[faction].reset([])
     for (const unit of this.units.values()) this.nearby[unit.faction].update(unit)
     const incoming: Missile[] = []
@@ -563,6 +646,10 @@ export class Match {
     this.visibility.update(this.units.values())
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
+    else if (this.settings.minutes !== null && this.tick >= this.settings.minutes * 60 * TICK_HZ) {
+      const { sides: { human, orc } } = this.report()
+      this.result = { winner: human.score === orc.score ? null : human.score > orc.score ? 'human' : 'orc', reason: 'time' }
+    }
   }
 
   private defendedAgainst(unit: Unit) {
@@ -665,6 +752,9 @@ export class Match {
       faction: attacker.faction, entityKind: attacker.kind
     })
     if (!target.hp) {
+      const stats = this.stats[attacker.faction]
+      if (isUnitKind(target.kind)) stats.enemiesKilled++
+      else stats.buildingsRazed++
       this.awardHeroExperience(attacker.faction, target)
       this.destroy(target)
     }
@@ -685,6 +775,8 @@ export class Match {
   }
 
   private destroy(target: Unit) {
+    if (isUnitKind(target.kind)) this.stats[target.faction].unitsLost++
+    else this.stats[target.faction].buildingsLost++
     this.units.delete(target.id)
     if (this.activeHeroes[target.faction] === target) delete this.activeHeroes[target.faction]
     this.nearby[target.faction].remove(target)
@@ -729,8 +821,14 @@ export class Match {
 
   view(faction: Faction, world = this.snapshot(), fog = this.visibility.mask(faction)): Snapshot {
     const visible = (point: Point) => this.visibility.at(faction, point) === 2
+    const depleted = this.depletion[faction]
+    for (const index of this.exhausted) {
+      if (!depleted.has(index) && visible(cellCenter(index % this.map.width, Math.floor(index / this.map.width)))) depleted.add(index)
+    }
+    if (depleted.size && depleted.size !== this.visibleDepletion[faction]?.length) this.visibleDepletion[faction] = [...depleted]
+    const knownDepletion = this.visibleDepletion[faction]
     return {
-      type: 'snapshot', tick: world.tick, fog,
+      type: 'snapshot', tick: world.tick, fog, ...(knownDepletion ? { depleted: knownDepletion } : {}),
       resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction],
       entities: world.entities.flatMap(entity => {
         if (entity.faction === faction) return [entity]

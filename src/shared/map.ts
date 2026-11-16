@@ -1,3 +1,4 @@
+import type { MatchSettings } from './match-settings.ts'
 import type { Faction, Point, ResourceKind } from './protocol.ts'
 
 export const TILE = 32
@@ -87,6 +88,50 @@ export const ashford = createAshford('ashford-expanded')
 export const riverColumn = ashford.width / 2 - 1
 
 export const ashfordMap = (id: MapId | undefined) => id === 'ashford-original' ? ashfordClassic : ashford
+
+export function mapForSettings(settings: MatchSettings): BattleMap {
+  const base = ashfordMap(settings.map)
+  const { width, height } = base
+  const half = base.tiles.length / 2
+  const tiles = [...base.tiles]
+  const mirror = (index: number, tile: Tile) => {
+    tiles[index] = tile
+    tiles[tiles.length - 1 - index] = tile
+  }
+  const coordinates = (i: number) => cellCenter(i % width, Math.floor(i / width))
+  const toBase = (i: number) => {
+    const p = coordinates(i)
+    return Math.min(distance(p, base.bases.human), distance(p, base.bases.orc))
+  }
+  const locations: Array<{ tile: Tile, count: number }> = [
+    { tile: 'forest', count: settings.sources.wood.count },
+    { tile: 'mine', count: settings.sources.gold.count },
+    { tile: 'quarry', count: settings.sources.stone.count }
+  ]
+  for (const { tile, count } of locations) {
+    const present = tiles.slice(0, half).flatMap((kind, i) => kind === tile ? [i] : [])
+    if (present.length > count) {
+      present.sort((a, b) => toBase(a) - toBase(b))
+      for (const i of present.slice(count)) mirror(i, 'grass')
+    }
+    if (present.length >= count) continue
+    const candidates = tiles.slice(0, half).flatMap((kind, i) => {
+      const x = i % width
+      const y = Math.floor(i / width)
+      return kind === 'grass' && x > 2 && x < width - 3 && y > 1 && y < height - 2 &&
+        Math.abs(x - width / 2) > 7 && toBase(i) > 7 * TILE ? [i] : []
+    })
+    // Keep roads clear and leave an approach on each side of new deposits.
+    candidates.sort((a, b) => (Math.imul(a, 0x9e3779b9) >>> 0) - (Math.imul(b, 0x9e3779b9) >>> 0))
+    let missing = count - present.length
+    for (const i of candidates) {
+      if (![i - 1, i + 1, i - width, i + width].every(index => isWalkable(tiles[index]))) continue
+      mirror(i, tile)
+      if (--missing === 0) break
+    }
+  }
+  return { ...base, tiles }
+}
 
 export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return

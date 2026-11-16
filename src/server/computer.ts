@@ -35,7 +35,7 @@ export class ComputerOpponent {
   readonly faction: Faction
   private readonly home: Point
   private readonly enemyBase: Point
-  private readonly gatherSites: Partial<Record<ResourceKind, Point>> = {}
+  private readonly gatherSites: Record<ResourceKind, Point[]> = { gold: [], wood: [], stone: [] }
   private readonly constructionSites = new Map<BuildingKind, Point[]>()
   private readonly attacking = new Set<number>()
   private nextAssault: number
@@ -56,11 +56,10 @@ export class ComputerOpponent {
       const point = cellCenter(i % map.width, Math.floor(i / map.width))
       const gap = distance(point, this.home)
       const resource = resourceAt(map, point)
-      if (resource && (!this.gatherSites[resource] || gap < distance(this.gatherSites[resource], this.home))) {
-        this.gatherSites[resource] = point
-      }
+      if (resource) this.gatherSites[resource].push(point)
       if (gap >= 3 * TILE && gap <= 9 * TILE && isWalkable(map.tiles[i])) land.push(point)
     }
+    for (const sites of Object.values(this.gatherSites)) sites.sort((a, b) => distance(a, this.home) - distance(b, this.home))
     const direction = faction === 'human' ? 1 : -1
     for (const [kind, offset] of Object.entries(sites) as Array<[BuildingKind, Point]>) {
       const preferred = { x: this.home.x + offset.x * TILE * direction, y: this.home.y + offset.y * TILE * direction }
@@ -92,13 +91,23 @@ export class ComputerOpponent {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
     if (builder) this.build(match, view, builder, structures)
+    const assigned = new Map<string, number>()
     workers.forEach((worker, index) => {
       const job = match.units.get(worker.id)?.job
+      if (job && job.kind !== 'gather') return
       const resource = resourceAssignments[index] ?? 'gold'
-      const at = this.gatherSites[resource]
-      if (at && (!job || (job.kind === 'gather' && job.resource !== resource))) {
-        match.command(this.faction, [worker.id], { kind: 'gather', at })
+      const key = (at: Point) => at.x + ',' + at.y
+      const available = (at: Point, kind: ResourceKind) => match.availableDeposit(this.faction, at) &&
+        (assigned.get(key(at)) ?? 0) < (match.settings.sources[kind].workers ?? Infinity)
+      const preferred = this.gatherSites[resource].find(at => available(at, resource))
+      const at = preferred ?? (job && available(job.at, job.resource) ? job.at :
+        Object.entries(this.gatherSites).flatMap(([kind, sites]) =>
+          sites.find(at => available(at, kind as ResourceKind)) ?? []).at(0))
+      if (!at) return
+      if (!job || key(job.at) !== key(at)) {
+        if (!match.command(this.faction, [worker.id], { kind: 'gather', at })) return
       }
+      assigned.set(key(at), (assigned.get(key(at)) ?? 0) + 1)
     })
     const smith = structures.find(unit => unit.kind === 'smithy' && unit.construction === undefined && !unit.research)
     if (smith) {

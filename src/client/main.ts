@@ -3,8 +3,10 @@ import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnit
 import type { Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
-import { ashfordMap, distance } from '../shared/map.ts'
+import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
 import { hasHero, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
+import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
+import { MatchSettingsMenu, clockText, drawMatchStats } from './match-settings.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
 import { BattleScene } from './battle.ts'
@@ -33,6 +35,9 @@ const productionToggle = button('production-toggle')
 const placementTip = element('placement-tip')
 const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
 const audio = new BattleAudio()
+const settingsMenu = new MatchSettingsMenu()
+let matchSettings = settingsMenu.load()
+const clock = element('match-clock')
 const touch = matchMedia('(pointer: coarse)').matches
 
 let faction: Faction = 'human'
@@ -81,7 +86,7 @@ function updateBanner(online: boolean) {
   if (!online && !solo.active) banner.textContent = 'Reconnecting to match…'
   else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
   else banner.textContent = factionNames[faction] + (room?.mode === 'solo' ? ' vs Computer' : '') +
-    ' · Destroy the enemy headquarters'
+    (room?.settings?.minutes ? ' · Destroy the enemy headquarters or win on score' : ' · Destroy the enemy headquarters')
 }
 
 function setFaction(choice: Faction) {
@@ -91,6 +96,8 @@ function setFaction(choice: Faction) {
 
 function showLobby() {
   result.close()
+  settingsMenu.close()
+  button('match-settings').textContent = 'Match settings'
   game?.destroy(true)
   game = null
   scene = null
@@ -121,7 +128,9 @@ function receive(message: ServerMessage) {
         if (room.result) drawResult(room.result)
       }
       break
-    case 'snapshot':
+    case 'snapshot': {
+      const minutes = room?.settings?.minutes
+      if (minutes) setText('match-clock', clockText(Math.max(0, minutes * 60 - Math.floor(message.tick / TICKS_PER_SECOND))))
       resources = message.resources
       population = message.population
       ownEntities = message.entities.filter(entity => entity.faction === faction)
@@ -133,6 +142,7 @@ function receive(message: ServerMessage) {
       setText('idle-count', String(idle))
       scene?.snapshot(message)
       break
+    }
     case 'error':
       if (message.resetSession) showLobby()
       if (scene) {
@@ -150,6 +160,7 @@ function drawLobby() {
   element('room-actions').hidden = false
   element('lobby-title').textContent = 'War room'
   element('room-code').textContent = room.code
+  button('match-settings').textContent = room.host === faction ? 'Edit match settings' : 'View match settings'
   for (const item of factionButtons) item.disabled = room.players.length > 1
   const mine = room.players.find(seat => seat.faction === faction)
   button('ready').textContent = mine?.ready ? 'Cancel ready' : 'Ready'
@@ -168,11 +179,15 @@ function drawLobby() {
 }
 
 function showBattle() {
+  settingsMenu.close()
   lobby.hidden = true
   match.hidden = false
+  const minutes = room?.settings?.minutes
+  clock.hidden = !minutes
+  if (minutes) setText('match-clock', clockText(minutes * 60))
   match.dataset.faction = faction
   button('advance').setAttribute('aria-pressed', 'false')
-  scene = new BattleScene(faction, ashfordMap(room?.map), battlefield, minimap, {
+  scene = new BattleScene(faction, room?.settings ? mapForSettings(room.settings) : ashfordMap(room?.map), battlefield, minimap, {
     order: issueOrder,
     selection: drawSelection,
     placement: (kind, blocked, segmentCount) => {
@@ -555,9 +570,17 @@ productionToggle.onclick = () => toggleProduction(productionPanel.hidden)
 
 function drawResult(outcome: NonNullable<RoomState['result']>) {
   element('result-title').textContent = !outcome.winner ? 'Draw' : outcome.winner === faction ? 'Victory' : 'Defeat'
-  element('result-detail').textContent = outcome.reason === 'headquarters'
-    ? outcome.winner ? factionNames[opposite(outcome.winner)] + ' lost their headquarters.' : 'Both headquarters fell.'
-    : outcome.winner ? factionNames[outcome.winner] + ' won by forfeit.' : 'Both players disconnected.'
+  let detail: string
+  if (outcome.reason === 'time') {
+    setText('match-clock', '0:00')
+    detail = outcome.winner ? 'Time expired. ' + factionNames[outcome.winner] + ' finished with the higher score.' : 'Time expired with equal scores.'
+  } else if (outcome.reason === 'headquarters') {
+    detail = outcome.winner ? factionNames[opposite(outcome.winner)] + ' lost their headquarters.' : 'Both headquarters fell.'
+  } else {
+    detail = outcome.winner ? factionNames[outcome.winner] + ' won by forfeit.' : 'Both players disconnected.'
+  }
+  element('result-detail').textContent = detail
+  drawMatchStats(element('match-stats'), room?.report)
   if (!result.open) result.showModal()
 }
 
@@ -585,9 +608,21 @@ for (const item of factionButtons) {
   }
 }
 button('solo').onclick = () => {
-  if (!client.hasSeat) solo.start(faction, solo.saved, element<HTMLSelectElement>('solo-difficulty').value as Difficulty)
+  if (!client.hasSeat) solo.start(faction, solo.saved, element<HTMLSelectElement>('solo-difficulty').value as Difficulty, matchSettings)
 }
-button('create').onclick = () => client.send({ type: 'create', faction })
+button('create').onclick = () => client.send({ type: 'create', faction, settings: matchSettings })
+button('match-settings').onclick = () => {
+  if (room) {
+    settingsMenu.show(room.settings ?? matchSettings, room.host === faction ? settings => {
+      client.send({ type: 'settings', settings })
+    } : undefined)
+  } else {
+    settingsMenu.show(matchSettings, settings => {
+      matchSettings = settings
+      settingsMenu.remember(settings)
+    })
+  }
+}
 element<HTMLFormElement>('join-form').onsubmit = event => {
   event.preventDefault()
   client.send({ type: 'join', code: joinCode.value.trim().toUpperCase(), faction })

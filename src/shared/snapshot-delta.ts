@@ -10,7 +10,7 @@ export type SnapshotDelta = {
   pose?: Pose[]
   upsert?: Entity[]
   removed?: number[]
-} & Partial<Pick<Snapshot, 'fog' | 'effects' | 'resources' | 'population' | 'upgrades'>>
+} & Partial<Pick<Snapshot, 'fog' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted'>>
 
 function sameTraining(a: Entity['training'], b: Entity['training']) {
   return a === b || Boolean(a && b && a.kind === b.kind && a.progress === b.progress &&
@@ -46,6 +46,9 @@ export function makeDelta(previous: Snapshot, next: Snapshot): SnapshotDelta {
   const p = previous.population, q = next.population
   if (p.used !== q.used || p.limit !== q.limit || p.reserved !== q.reserved) delta.population = q
   if (next.upgrades?.join() !== previous.upgrades?.join()) delta.upgrades = next.upgrades ?? []
+  if (next.depleted !== previous.depleted &&
+      (next.depleted?.length !== previous.depleted?.length ||
+      next.depleted?.some((index, i) => index !== previous.depleted?.[i]))) delta.depleted = next.depleted ?? []
   return delta
 }
 
@@ -66,6 +69,7 @@ export function applyDelta(previous: Snapshot | undefined, delta: SnapshotDelta)
   return {
     type: 'snapshot', tick: delta.tick, entities, effects: delta.effects ?? [],
     fog: delta.fog ?? previous.fog, resources: delta.resources ?? previous.resources,
-    population: delta.population ?? previous.population, upgrades: delta.upgrades ?? previous.upgrades
+    population: delta.population ?? previous.population, upgrades: delta.upgrades ?? previous.upgrades,
+    ...(delta.depleted || previous.depleted ? { depleted: delta.depleted ?? previous.depleted } : {})
   }
 }

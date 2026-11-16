@@ -1,3 +1,4 @@
+import { parseMatchSettings } from '../shared/match-settings.ts'
 import { MAX_SELECTION, isBuildingKind, isFaction, isUnitKind, upgradeKinds } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
 
@@ -18,7 +19,16 @@ export function parseMessage(raw: string): ClientMessage | null {
   const { type, faction, code, token, ready, ids, order } = value
   switch (type) {
     case 'create':
-    case 'solo':
+    case 'solo': {
+      if (!isFaction(faction)) return null
+      if (value.settings === undefined) return { type, faction }
+      const settings = parseMatchSettings(value.settings)
+      return settings ? { type, faction, settings } : null
+    }
+    case 'settings': {
+      const settings = parseMatchSettings(value.settings)
+      return settings ? { type, settings } : null
+    }
     case 'faction':
       return isFaction(faction) ? { type, faction } : null
     case 'join':

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { WebSocket } from 'ws'
-import { Match } from '../src/server/match.ts'
+import { Match, TICK_HZ } from '../src/server/match.ts'
 import { ComputerOpponent } from '../src/server/computer.ts'
 import { Rooms } from '../src/server/rooms.ts'
 import { cellCenter } from '../src/shared/map.ts'
+import { defaultMatchSettings } from '../src/shared/match-settings.ts'
 import type { ServerMessage } from '../src/shared/protocol.ts'
 
 function peer() {
@@ -61,4 +62,46 @@ test('a serialized solo match restores worker tasks, stockpiles and the computer
     restored.step()
     assert.deepEqual(restored.view('human', restored.snapshot(true)), match.view('human', match.snapshot(true)))
   }
+})
+
+test('only the host can edit settings, ready resets, and restored rooms share the timed report', () => {
+  const rooms = new Rooms()
+  const host = peer()
+  const guest = peer()
+  const now = Date.now()
+  const lastRoom = (client: ReturnType<typeof peer>) =>
+    client.messages.filter(message => message.type === 'room').at(-1)?.room
+  rooms.handle(host.socket, { type: 'create', faction: 'human' }, now)
+  const hostSeat = host.messages.find(message => message.type === 'session')!
+  rooms.handle(guest.socket, { type: 'join', faction: 'orc', code: hostSeat.code }, now)
+  const guestSeat = guest.messages.find(message => message.type === 'session')!
+  const settings = defaultMatchSettings('ashford-original')
+  settings.minutes = 1
+  settings.starting.gold = 888
+  rooms.handle(guest.socket, { type: 'settings', settings }, now)
+  assert.equal(guest.messages.at(-1)?.type, 'error')
+  assert.equal(lastRoom(host)?.settings?.starting.gold, 300)
+  rooms.handle(guest.socket, { type: 'ready', ready: true }, now)
+  rooms.handle(host.socket, { type: 'settings', settings }, now)
+  assert.deepEqual(lastRoom(guest)?.settings, settings)
+  assert.ok(lastRoom(guest)?.players.every(player => !player.ready))
+  rooms.handle(host.socket, { type: 'ready', ready: true }, now)
+  rooms.handle(guest.socket, { type: 'ready', ready: true }, now)
+  assert.equal(lastRoom(host)?.map, 'ashford-original')
+  const saved = structuredClone(rooms.checkpoint())
+  saved[0].match.tick = 60 * TICK_HZ - 1
+  const restored = new Rooms()
+  restored.restore(saved, now)
+  const returnedHost = peer()
+  const returnedGuest = peer()
+  restored.handle(returnedHost.socket, { type: 'resume', code: hostSeat.code, token: hostSeat.token }, now)
+  restored.step(now + 50)
+  assert.equal(restored.checkpoint()[0].match.tick, 60 * TICK_HZ - 1)
+  restored.handle(returnedGuest.socket, { type: 'resume', code: guestSeat.code, token: guestSeat.token }, now)
+  restored.step(now + 100)
+  const finished = lastRoom(returnedHost)!
+  assert.deepEqual(finished.result, { winner: null, reason: 'time' })
+  assert.deepEqual(finished.report, lastRoom(returnedGuest)?.report)
+  assert.equal(finished.report?.sides.human.bank.gold, 888)
+  assert.equal(finished.report?.elapsedSeconds, 60)
 })
