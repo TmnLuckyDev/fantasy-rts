@@ -124,7 +124,8 @@ export class ComputerOpponent {
     if (!hall) return
     const workers = own.filter(entity => entity.kind === 'worker')
     const builder = workers.length >= 4 ? workers.at(-1) : undefined
-    if (workers.length < plan.workers && !hall.training) {
+    const workerTarget = plan.workers + (race === 'undead' ? 1 : 0)
+    if (workers.length < workerTarget && !hall.training) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
     if (builder) this.build(match, view, builder, structures, race)
@@ -190,16 +191,26 @@ export class ComputerOpponent {
     const ranged = rangedCount * (race === 'elf' ? 2 : counter && visibleHeavy ? 4 : 3) < army.length && available.find(building => building.kind === 'range')
     const elite = army.length >= 8 && !army.some(unit => unit.kind === 'heavy') &&
       available.find(building => building.kind === 'elite')
-    const support = (race === 'elf' || race === 'undead') && !army.some(unit => unit.kind === 'support') &&
+    const supportCount = army.filter(unit => unit.kind === 'support').length
+    const support = (race === 'elf' || race === 'undead') && supportCount < (race === 'undead' && army.length >= 14 ? 2 : 1) &&
       available.find(site => trainedAt(site.kind, race).includes('support'))
     const mortar = race === 'dwarf' && !army.some(unit => unit.kind === 'siege') && available.find(site => site.kind === 'elite')
-    const building = support || mortar || ranged || elite || available.find(site => site.kind === 'barracks') || available[0]
+    const crypt = race === 'undead' && available.find(site => site.kind === 'barracks')
+    const building = support || mortar || ranged || elite || crypt || available.find(site => site.kind === 'barracks') || available[0]
     if (!building) return
-    const choices = race === 'human' || race === 'orc' ? recruit[building.kind] ?? trainedAt(building.kind, race) : trainedAt(building.kind, race)
+    const choices = crypt === building ? ['blade', 'ranged', 'blade', 'ranged', 'polearm'] as const :
+      race === 'human' || race === 'orc' ? recruit[building.kind] ?? trainedAt(building.kind, race) : trainedAt(building.kind, race)
     const preferred = support === building ? 'support' : mortar === building ? 'siege' : counter && visibleHeavy && building.kind === 'barracks' ?
       'polearm' : choices[this.recruits % choices.length]
     if (match.command(this.faction, [building.id], { kind: 'train', unit: preferred }) ||
         (preferred !== choices[0] && match.command(this.faction, [building.id], { kind: 'train', unit: choices[0] }))) this.recruits++
+    if (race === 'undead') {
+      const otherCrypt = available.find(site => site !== building && site.kind === 'barracks')
+      if (otherCrypt) {
+        const skeleton = this.recruits % 2 ? 'blade' : 'ranged'
+        if (match.command(this.faction, [otherCrypt.id], { kind: 'train', unit: skeleton })) this.recruits++
+      }
+    }
   }
 
   private build(match: Match, view: Snapshot, builder: Entity, structures: Entity[], race: Race) {
@@ -217,6 +228,8 @@ export class ComputerOpponent {
       ['farm', needsFarm && population.limit < (match.settings.populationCap ?? 500)],
       ['port', Boolean(this.landing) && !has('port')],
       ['tower', (race === 'dwarf' || this.strategy === 'defensive') && !has('tower')],
+      ['barracks', race === 'undead' && match.tick >= 30 * TICK_HZ &&
+        structures.filter(site => site.kind === 'barracks').length < 2],
       ['range', !has('range')],
       ['tower', !has('tower')],
       ['elite', match.tick >= (race === 'dwarf' ? 50 : race === 'elf' ? 65 : 90) * TICK_HZ && !has('elite')],
