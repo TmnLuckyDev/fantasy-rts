@@ -194,7 +194,7 @@ export class BattleScene extends Phaser.Scene {
       } else {
         const sprite = this.add.image(entity.x, entity.y, entity.faction + entity.kind + '0')
           .setOrigin(0.5, 0.83)
-          .setScale(isHeroKind(entity.kind) ? 1.52 : isUnitKind(entity.kind) ? 1.21 : entity.kind === 'headquarters' ? 1.55 : 1.4)
+          .setScale(isHeroKind(entity.kind) ? 1.95 : isUnitKind(entity.kind) ? 1.21 : entity.kind === 'headquarters' ? 1.55 : 1.4)
         this.visuals.set(entity.id, { entity, sprite, lastHp: entity.hp, offsetX: 0, offsetY: 0 })
       }
     }
@@ -248,6 +248,10 @@ export class BattleScene extends Phaser.Scene {
   }
 
   selectHero() { this.selectGroup('heroes', true) }
+  castHeroAbility() {
+    const heroes = [...this.selected].filter(id => isHeroKind(this.visuals.get(id)?.entity.kind))
+    if (heroes.length) this.actions.order(heroes, { kind: 'hero-ability' })
+  }
 
   private ringTexture(width: number, height: number) {
     const surface = canvas(Math.ceil(width) + 6, height + 6)
