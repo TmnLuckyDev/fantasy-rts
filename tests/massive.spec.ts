@@ -34,7 +34,9 @@ function observe(page: Page, faction: 'human' | 'orc') {
 }
 
 function frameSample(page: Page) {
-  return page.evaluate(() => new Promise<{ fps: number, p95Ms: number | null, maxMs: number | null }>(resolve => {
+  return page.evaluate(() => new Promise<{ fps: number, p95Ms: number | null, maxMs: number | null, renderer: string }>(resolve => {
+    const battlefield = document.querySelector<HTMLCanvasElement>('#battlefield canvas')
+    const renderer = battlefield?.getContext('2d') ? 'canvas2d' : 'webgl'
     const start = performance.now()
     let last = 0
     const gaps: number[] = []
@@ -46,7 +48,7 @@ function frameSample(page: Page) {
     requestAnimationFrame(frame)
     setTimeout(() => {
       const sorted = gaps.sort((a, b) => a - b)
-      resolve({ fps: gaps.length * 1000 / (performance.now() - start), p95Ms: sorted[Math.ceil(sorted.length * .95) - 1] ?? null,
+      resolve({ renderer, fps: gaps.length * 1000 / (performance.now() - start), p95Ms: sorted[Math.ceil(sorted.length * .95) - 1] ?? null,
         maxMs: sorted.at(-1) ?? null })
     }, 5500)
   }))

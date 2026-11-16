@@ -270,6 +270,17 @@ function drawLobby() {
   note(room.players.length === 1 ? 'Share the invite or room code with your opponent.' : 'The match starts when both players are ready.')
 }
 
+function preferredBattleRenderer() {
+  // A CPU-backed WebGL context can be slower than drawing this pixel art with Canvas 2D.
+  const probe = document.createElement('canvas')
+  const gl = probe.getContext('webgl', { failIfMajorPerformanceCaveat: true })
+  if (!gl) return Phaser.CANVAS
+  const info = gl.getExtension('WEBGL_debug_renderer_info')
+  const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : ''
+  gl.getExtension('WEBGL_lose_context')?.loseContext()
+  return /swiftshader|llvmpipe|software/i.test(renderer) ? Phaser.CANVAS : Phaser.AUTO
+}
+
 function showBattle() {
   settingsMenu.close()
   lobby.hidden = true
@@ -323,7 +334,7 @@ function showBattle() {
   drawTroopGroups(new Map(), null)
   drawSelection([])
   game = new Phaser.Game({
-    type: Phaser.AUTO,
+    type: preferredBattleRenderer(),
     parent: battlefield,
     width: battlefield.clientWidth,
     height: battlefield.clientHeight,
