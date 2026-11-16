@@ -169,6 +169,10 @@ export class Match {
         maxHp += (heroLevel(unit.experience) - 1) * heroHealthPerLevel
         match.activeHeroes[unit.faction] = unit
       }
+      if (unit.kind === 'wall' || unit.kind === 'tower') {
+        unit.level = Math.max(1, Math.min(MAX_UPGRADE_LEVEL, unit.level ?? 1))
+        maxHp += (unit.level - 1) * (unit.kind === 'wall' ? 100 : 85)
+      }
       unit.hp = Math.min(maxHp, Math.max(1, Math.ceil(unit.hp * maxHp / unit.maxHp)))
       unit.maxHp = maxHp
     }
@@ -1007,8 +1011,10 @@ export class Match {
 
   private heroSkillHit(attacker: Unit, target: Unit, power: number) {
     if (!this.units.has(target.id)) return
-    const damage = Math.max(1, power - unitStats[target.faction][target.kind].armor)
+    const damage = Math.max(1, power - unitStats[target.faction][target.kind].armor -
+      (target.kind === 'wall' || target.kind === 'tower' ? ((target.level ?? 1) - 1) * 2 : 0))
     target.hp = Math.max(0, target.hp - damage)
+    if (isHeroKind(attacker.kind)) this.gainHeroExperience(attacker, 3)
     this.attackAlerts[target.faction].hit(target, this.tick)
     this.effects.push({ id: ++this.sequence, kind: 'hit', at: { x: target.x, y: target.y },
       to: { x: attacker.x, y: attacker.y }, faction: attacker.faction, entityKind: attacker.kind })
@@ -1054,10 +1060,15 @@ export class Match {
     if (!hero || !isHeroKind(hero.kind) || squaredDistance(hero, defeated) > 224 ** 2) return
     const previous = hero.experience ?? 0
     const reward = defeated.kind === 'worker' ? 10 : isUnitKind(defeated.kind) ? 24 : 36
-    const gained = Math.min(heroMaxExperience, previous + reward)
+    this.gainHeroExperience(hero, reward)
+  }
+
+  private gainHeroExperience(hero: Unit, amount: number) {
+    const previous = hero.experience ?? 0
+    const gained = Math.min(heroMaxExperience, previous + amount)
     if (gained === previous) return
     hero.experience = gained
-    this.heroExperience[faction][hero.kind] = gained
+    this.heroExperience[hero.faction][hero.kind as HeroKind] = gained
     const health = (heroLevel(gained) - heroLevel(previous)) * heroHealthPerLevel
     hero.maxHp += health
     hero.hp += health
