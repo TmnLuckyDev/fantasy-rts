@@ -1109,7 +1109,7 @@ export class Match {
         if (entity.embarkedOn) return []
         if (entity.faction === faction) return [entity]
         if (!visible(entity)) return []
-        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, ...seen } = entity
+        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, passengers: _passengers, passengerPop: _passengerPop, ...seen } = entity
         return [seen]
       }),
       effects: world.effects.filter(effect => visible(effect.at) && (!effect.to || visible(effect.to)))
@@ -1138,7 +1138,10 @@ export class Match {
         const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
         const next = queue[0]
         return {
-          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, passengers: unit.passengers, embarkedOn: unit.embarkedOn, experience: unit.experience, abilityReadyAt: unit.abilityReadyAt, abilityActiveUntil: unit.abilityActiveUntil,
+          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, hp, maxHp, facing, moving, passengers: unit.passengers, passengerPop: unit.kind === 'transport' ? (unit.passengers ?? []).reduce((total, id) => {
+             const passenger = this.units.get(id)
+             return total + (passenger ? training[passenger.kind as UnitKind].population : 0)
+           }, 0) : undefined, embarkedOn: unit.embarkedOn, experience: unit.experience, abilityReadyAt: unit.abilityReadyAt, abilityActiveUntil: unit.abilityActiveUntil,
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,
