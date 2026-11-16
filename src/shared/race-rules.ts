@@ -12,8 +12,8 @@ type RaceRules = {
 }
 
 export const raceRules: Record<Race, RaceRules> = {
-  human: { description: 'Flexible infantry and ranged formations.' },
-  orc: { description: 'Strong frontline and fast ranged attacks.' },
+  human: { description: 'Flexible infantry and ranged formations.', production: { elite: ['heavy', 'siege'] } },
+  orc: { description: 'Strong frontline and fast ranged attacks.', production: { elite: ['heavy', 'siege'] } },
   dwarf: {
     description: 'Armored infantry, fortress defenses and siege. Slow to take ground.',
     production: { elite: ['heavy', 'siege'] }, stoneYield: 1.15,
@@ -21,12 +21,12 @@ export const raceRules: Record<Race, RaceRules> = {
   },
   elf: {
     description: 'Mobile archers, forest ambush and healing. Fragile in a prolonged fight.',
-    production: { elite: ['heavy', 'support'] }, scoutSight: 1.1, ambush: ['blade', 'ranged', 'marksman'],
+    production: { elite: ['heavy', 'support', 'siege'] }, scoutSight: 1.1, ambush: ['blade', 'ranged', 'marksman'],
     training: { heavy: { gold: 255 }, marksman: { gold: 150 } }
   },
   undead: {
     description: 'Cheap skeletons and corpse magic. Weak defenses and slower gathering.',
-    gathering: 0.9, production: { barracks: ['blade', 'polearm', 'ranged'], range: ['marksman'], smithy: ['support'] },
+    gathering: 0.9, production: { barracks: ['blade', 'polearm', 'ranged'], range: ['marksman'], elite: ['heavy', 'siege'], smithy: ['support'] },
     training: { blade: { gold: 60, ticks: 76 }, ranged: { gold: 72, ticks: 96 }, warship: { gold: 207, wood: 167 } }
   }
 }

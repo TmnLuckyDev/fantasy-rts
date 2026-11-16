@@ -64,14 +64,14 @@ export const entityNames: Record<Race, Record<EntityKind, string>> = {
   },
   elf: {
     blade: 'Bladedancer', polearm: 'Thorn Guard', ranged: 'Sylvan Archer', marksman: 'Forest Sentinel', heavy: 'Grove Warden',
-    siege: 'Siege Engine', support: 'Druid', scout: 'Woodland Scout', worker: 'Grove Tender',
+    siege: 'Thorn Ballista', support: 'Druid', scout: 'Woodland Scout', worker: 'Grove Tender',
     vanguard: 'Faelar Swiftwind', pathfinder: 'Aelindra Moonwhisper', headquarters: 'Ancient Grove',
     barracks: 'Blade Circle', range: 'Ranger Lodge', elite: 'Moon Sanctuary', farm: 'Sacred Tree', wall: 'Briar Wall',
     tower: 'Living Watchtower', smithy: 'Leafweave Atelier', port: 'Willow Harbor', transport: 'Leaf Ferry', warship: 'Grove Warship'
   },
   undead: {
     blade: 'Skeleton Warrior', polearm: 'Ghoul', ranged: 'Bone Archer', marksman: 'Grave Marksman', heavy: 'Abomination',
-    siege: 'Siege Engine', support: 'Necromancer', scout: 'Grave Wisp', worker: 'Thrall',
+    siege: 'Bone Catapult', support: 'Necromancer', scout: 'Grave Wisp', worker: 'Thrall',
     vanguard: 'Vorrak the Deathlord', pathfinder: 'Malachar the Lich', headquarters: 'Necropolis',
     barracks: 'Crypt', range: 'Bone Arsenal', elite: 'Fleshworks', farm: 'Graveyard', wall: 'Ossuary Wall',
     tower: 'Bone Spire', smithy: 'Dark Sanctum', port: 'Drowned Pier', transport: 'Soul Barge', warship: 'Dread Warship'
