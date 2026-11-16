@@ -1,9 +1,10 @@
-type Sound = 'order' | 'build' | 'train' | 'shot' | 'hit' | 'fallen'
+type Sound = 'order' | 'build' | 'train' | 'shot' | 'hit' | 'fallen' | 'alert'
 type Tone = readonly [OscillatorType, number, number, number, number, number]
 type Noise = readonly [BiquadFilterType, number, number, number]
 
 const preferenceKey = 'ash-and-iron-sound'
 const sounds: Record<Sound, { tones: readonly Tone[], noise?: Noise }> = {
+  alert: { tones: [['triangle', 340, 300, 0.16, 0.18, 0], ['triangle', 420, 330, 0.23, 0.16, 0.17]] },
   order: { tones: [['triangle', 265, 190, 0.07, 0.11, 0]], noise: ['bandpass', 880, 0.045, 0.10] },
   build: { tones: [['triangle', 236, 104, 0.09, 0.15, 0], ['triangle', 310, 130, 0.08, 0.09, 0.08]], noise: ['bandpass', 790, 0.072, 0.20] },
   train: { tones: [['triangle', 262, 256, 0.12, 0.14, 0], ['triangle', 393, 380, 0.16, 0.12, 0.065]] },

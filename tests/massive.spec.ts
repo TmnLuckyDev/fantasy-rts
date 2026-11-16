@@ -3,9 +3,10 @@ import type { Page } from '@playwright/test'
 import { startArmyRoom } from '../scripts/army-room.ts'
 import { applyDelta } from '../src/shared/snapshot-delta.ts'
 import type { SnapshotDelta } from '../src/shared/snapshot-delta.ts'
+import { inTroopGroup } from '../src/shared/protocol.ts'
 import type { ClientMessage, Snapshot } from '../src/shared/protocol.ts'
 
-function observe(page: Page) {
+function observe(page: Page, faction: 'human' | 'orc') {
   let snapshot: Snapshot | undefined
   let ordered = 0
   let shots = 0
@@ -14,6 +15,9 @@ function observe(page: Page) {
     socket.on('framesent', ({ payload }) => {
       const message = JSON.parse(String(payload)) as ClientMessage
       if (message.type === 'command') ordered = message.ids.length
+      if (message.type === 'group-command' && message.group === 'all') {
+        ordered = snapshot?.entities.filter(entity => entity.faction === faction && inTroopGroup(entity.kind, message.group)).length ?? 0
+      }
     })
     socket.on('framereceived', ({ payload }) => {
       const packet = JSON.parse(String(payload)) as Snapshot | SnapshotDelta
@@ -58,7 +62,7 @@ test('two browser players issue orders to 500 troops each and receive authoritat
   const guest = await engine.newContext({ ...phone, viewport: { width: phone.viewport.height, height: phone.viewport.width } })
   try {
     const clients = await Promise.all([host.newPage(), guest.newPage()])
-    const state = clients.map(observe)
+    const state = clients.map((page, i) => observe(page, fixture.seats[i].faction))
     await Promise.all(clients.map(async (page, i) => {
       await page.addInitScript(seat => sessionStorage.setItem('ash-and-iron-seat', JSON.stringify(seat)),
         { ...fixture.seats[i], code: fixture.code })
@@ -66,7 +70,20 @@ test('two browser players issue orders to 500 troops each and receive authoritat
       await expect(page.locator('#battlefield canvas')).toBeVisible()
       await expect.poll(() => state[i].snapshot()?.entities.filter(entity =>
         entity.faction === fixture.seats[i].faction && entity.kind !== 'headquarters').length).toBe(500)
-      await page.getByRole('button', { name: 'All troops', exact: true }).click()
+      if (!process.env.BENCH_SOURCE) {
+        const subgroup = page.getByRole('button', { name: i ? 'Grunt' : 'Footman', exact: true })
+        if (i) await subgroup.tap()
+        else await subgroup.click()
+        await expect(page.locator('#selection-name')).toHaveText('100 troops selected')
+        await expect(subgroup).toHaveAttribute('aria-pressed', 'true')
+      }
+      const all = page.getByRole('button', { name: 'All troops', exact: true })
+      if (i) await all.tap()
+      else await all.click()
+      if (!process.env.BENCH_SOURCE) {
+        await page.getByRole('button', { name: 'Army formation' }).click()
+        await page.getByRole('button', { name: i ? 'Compact' : 'Spread', exact: true }).click()
+      }
       await expect(page.locator('#selection-name')).toHaveText('500 troops selected')
       const map = (await page.locator('#minimap').boundingBox())!
       const focus = { x: map.x + map.width * .50, y: map.y + map.height * 384 / fixture.worldHeight }

@@ -19,11 +19,13 @@ test('all 500 troops in a single order eventually cross the river without lost u
     checkpoint.units.push({ ...prototype, ...cellCenter(x, y), id, kind: 'blade', hp: health, maxHp: health })
     army.push(id)
   }
-  const match = Match.restore(checkpoint)
-  assert.ok(match.command('human', army, { kind: 'move', to: cellCenter(riverColumn + 22, 15) }))
-  for (let tick = 0; tick < 650; tick++) match.step()
-  assert.equal(match.units.size, 502)
-  assert.equal(army.filter(id => (match.units.get(id)?.x ?? 0) > (riverColumn + 2) * TILE).length, 500)
+  for (const formation of [undefined, 'line', 'compact', 'spread'] as const) {
+    const match = Match.restore(structuredClone(checkpoint))
+    assert.ok(match.commandGroup('human', 'blade', { kind: 'move', to: cellCenter(riverColumn + 22, 15), formation }))
+    for (let tick = 0; tick < 720; tick++) match.step()
+    assert.equal(match.units.size, 502)
+    assert.equal(army.filter(id => (match.units.get(id)?.x ?? 0) > (riverColumn + 2) * TILE).length, 500, formation)
+  }
 })
 
 test('incremental fog preserves shared coverage and drops stale visibility after restore', () => {

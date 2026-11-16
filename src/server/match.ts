@@ -1,8 +1,9 @@
 import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
-import { MAX_SELECTION, factions, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
-import type { Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
+import { MAX_SELECTION, factions, inTroopGroup, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
+import type { ArmyOrder, TroopGroup, Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
+import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
   buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
@@ -10,6 +11,8 @@ import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.t
 import type { Obstacle } from './navigation.ts'
 import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
 import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
+import { formationSlots } from './formations.ts'
+import { AttackAlerts } from './attack-alerts.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
 
@@ -32,6 +35,7 @@ type Defense = { targetId: number, at: Point, until: number }
 type Unit = Entity & {
   order: Order | null
   assigned: Point | null
+  flank?: number
   nextStrike: number
   nextPath: number
   path: Point[]
@@ -76,6 +80,7 @@ export class Match {
   readonly units = new Map<number, Unit>()
   readonly map: BattleMap
   readonly settings: MatchSettings
+  private readonly attackAlerts = { human: new AttackAlerts(), orc: new AttackAlerts() }
   private readonly nearby = { human: new SpatialIndex<Unit>(), orc: new SpatialIndex<Unit>() }
   private readonly activeHeroes: Partial<Record<Faction, Unit>> = {}
   private readonly heroExperience: Record<Faction, Partial<Record<HeroKind, number>>> = { human: {}, orc: {} }
@@ -199,6 +204,16 @@ export class Match {
       if (!unit || unit.faction !== faction) return false
       units.push(unit)
     }
+    return this.issue(faction, units, order)
+  }
+
+  commandGroup(faction: Faction, group: TroopGroup, order: ArmyOrder) {
+    if (this.result) return false
+    const units = [...this.units.values()].filter(unit => unit.faction === faction && inTroopGroup(unit.kind, group))
+    return units.length > 0 && this.issue(faction, units, order)
+  }
+
+  private issue(faction: Faction, units: Unit[], order: Order) {
     if (order.kind === 'upgrade') return units.length === 1 && this.startUpgrade(units[0], order.upgrade)
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
@@ -225,6 +240,21 @@ export class Match {
 
     const troops = order.kind === 'attack' ? units.filter(unit => unit.kind !== 'worker') : units
     if (!troops.length) return false
+    if ((order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack') && order.formation) {
+      const anchor = order.kind === 'attack' ? this.units.get(order.target)! : order.to
+      for (const { unit, at, flank } of formationSlots(troops, anchor, order.formation)) {
+        this.resetOrders(unit)
+        unit.order = order
+        if (order.kind === 'attack') {
+          unit.lastTarget = { x: anchor.x, y: anchor.y }
+          if (flank) unit.flank = flank
+        } else {
+          unit.assigned = this.fitFormationSlot(unit, at, anchor)
+          if (order.kind === 'advance' && flank) unit.flank = flank
+        }
+      }
+      return true
+    }
     const rowSize = Math.ceil(Math.sqrt(troops.length))
     troops.sort((a, b) => Number(isRanged(a.kind)) - Number(isRanged(b.kind)) || a.y - b.y)
     troops.forEach((unit, i) => {
@@ -248,6 +278,15 @@ export class Match {
     return true
   }
 
+  private fitFormationSlot(unit: Unit, at: Point, anchor: Point) {
+    const radius = unitStats[unit.faction][unit.kind].radius
+    for (const scale of [1, 0.75, 0.5, 0.25]) {
+      const point = { x: anchor.x + (at.x - anchor.x) * scale, y: anchor.y + (at.y - anchor.y) * scale }
+      if (canStand(this.map, point, [], radius)) return point
+    }
+    return anchor
+  }
+
   private resetOrders(unit: Unit) {
     this.routes.delete(unit)
     unit.order = null
@@ -260,6 +299,7 @@ export class Match {
     unit.nextPath = this.tick
     unit.blockedTicks = 0
     unit.assigned = null
+    unit.flank = undefined
   }
 
   private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' | 'repair' }>) {
@@ -373,19 +413,47 @@ export class Match {
     return { used, reserved, limit }
   }
 
-  private enqueue(building: Unit, kind: UnitKind, count: number) {
-    if (building.buildDuration || !trainedAt(building.kind).includes(kind) || !Number.isSafeInteger(count) || count < 1) return false
-    if (isHeroKind(kind) && (count !== 1 || this.activeHeroes[building.faction] ||
-        building.queue.some(entry => isHeroKind(entry.kind)))) return false
+  trainGlobally(faction: Faction, kind: UnitKind, count: number): string | null {
+    if (this.result) return 'The match has ended.'
+    const buildings = [...this.units.values()].filter(building => building.faction === faction &&
+      !building.buildDuration && trainedAt(building.kind).includes(kind))
+    if (!buildings.length) return 'Build the required production building first.'
+    const error = this.trainingError(faction, kind, count)
+    if (error) return error
     const rule = training[kind]
-    const stock = this.resources[building.faction]
-    const { used, reserved, limit } = this.population(building.faction)
-    if (count > Math.floor(stock.gold / rule.gold) || count > Math.floor((limit - used - reserved) / rule.population)) return false
-    stock.gold -= count * rule.gold
+    const loads = buildings.map(building => trainingTimeline(building.queue, building.queue[0]?.left ?? 0).ticks)
+    const allocation = allocateTraining(loads, rule.ticks, count)
+    this.resources[faction].gold -= count * rule.gold
+    buildings.forEach((building, i) => {
+      if (allocation[i]) this.appendTraining(building, kind, allocation[i])
+    })
+    return null
+  }
+
+  private trainingError(faction: Faction, kind: UnitKind, count: number) {
+    if (!Number.isSafeInteger(count) || count < 1) return 'Choose a valid unit count.'
+    if (isHeroKind(kind) && (count !== 1 || this.activeHeroes[faction] ||
+        [...this.units.values()].some(unit => unit.faction === faction && unit.queue.some(entry => isHeroKind(entry.kind))))) {
+      return 'You can only have one active or queued hero.'
+    }
+    const rule = training[kind]
+    if (count > Math.floor(this.resources[faction].gold / rule.gold)) return 'Not enough gold.'
+    const { used, reserved, limit } = this.population(faction)
+    if (count > Math.floor((limit - used - reserved) / rule.population)) return 'Not enough population space. Build more farms.'
+    return null
+  }
+
+  private enqueue(building: Unit, kind: UnitKind, count: number) {
+    if (building.buildDuration || !trainedAt(building.kind).includes(kind) || this.trainingError(building.faction, kind, count)) return false
+    this.resources[building.faction].gold -= count * training[kind].gold
+    this.appendTraining(building, kind, count)
+    return true
+  }
+
+  private appendTraining(building: Unit, kind: UnitKind, count: number) {
     const tail = building.queue.at(-1)
     if (tail?.kind === kind) tail.count = (tail.count ?? 1) + count
-    else building.queue.push({ kind, left: rule.ticks, count })
-    return true
+    else building.queue.push({ kind, left: training[kind].ticks, count })
   }
 
   private cancelTraining(building: Unit, count: number) {
@@ -564,6 +632,7 @@ export class Match {
   step() {
     if (this.result) return
     this.tick++
+    for (const faction of factions) this.attackAlerts[faction].advance(this.tick)
     this.harvesting.clear()
     for (const faction of factions) this.nearby[faction].reset([])
     for (const unit of this.units.values()) this.nearby[unit.faction].update(unit)
@@ -634,9 +703,17 @@ export class Match {
       if (target && (defenderTarget || unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
         const range = unitStats[unit.faction][unit.kind].range + unitStats[target.faction][target.kind].radius - 4
         const separation = distance(unit, target) || 1
-        destination = {
-          x: target.x + (unit.x - target.x) * range / separation,
-          y: target.y + (unit.y - target.y) * range / separation
+        if (unit.flank && (unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
+          const bearing = Math.atan2(unit.y - target.y, unit.x - target.x) + unit.flank
+          const flanked = { x: target.x + Math.cos(bearing) * range, y: target.y + Math.sin(bearing) * range }
+          if (canStand(this.map, flanked, obstacles, stats.radius)) destination = flanked
+          else unit.flank = undefined
+        }
+        if (!unit.flank || defenderTarget || !destination) {
+          destination = {
+            x: target.x + (unit.x - target.x) * range / separation,
+            y: target.y + (unit.y - target.y) * range / separation
+          }
         }
       }
       if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
@@ -706,7 +783,17 @@ export class Match {
         checked.add(unit.faction)
       }
       const path = findPath(this.map, unit, destination, blockers, unitStats[unit.faction][unit.kind].radius, cached?.grid)
-      this.setRoute(unit, destination, path)
+      const order = unit.order
+      if (path.length === 0 && (order?.kind === 'move' || order?.kind === 'advance') && order.formation &&
+          unit.assigned && squaredDistance(unit.assigned, order.to) > 4) {
+        unit.assigned = order.to
+        unit.pursued = null
+        unit.path = []
+      } else if (path.length === 0 && unit.flank) {
+        unit.flank = undefined
+        unit.pursued = null
+        unit.path = []
+      } else this.setRoute(unit, destination, path)
       if (++processed === routesPerTick) break
     }
   }
@@ -745,6 +832,7 @@ export class Match {
     const damage = Math.max(1, unitStats[attacker.faction][attacker.kind].damage + attackBonus + heroBonus -
       unitStats[target.faction][target.kind].armor - armorBonus)
     target.hp = Math.max(0, target.hp - damage)
+    this.attackAlerts[target.faction].hit(target, this.tick)
     this.callDefenders(target, attacker)
     const at = { x: target.x, y: target.y }
     this.effects.push({
@@ -827,8 +915,9 @@ export class Match {
     }
     if (depleted.size && depleted.size !== this.visibleDepletion[faction]?.length) this.visibleDepletion[faction] = [...depleted]
     const knownDepletion = this.visibleDepletion[faction]
+    const alerts = this.attackAlerts[faction].current
     return {
-      type: 'snapshot', tick: world.tick, fog, ...(knownDepletion ? { depleted: knownDepletion } : {}),
+      type: 'snapshot', tick: world.tick, fog, ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
       resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction],
       entities: world.entities.flatMap(entity => {
         if (entity.faction === faction) return [entity]

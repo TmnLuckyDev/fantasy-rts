@@ -29,6 +29,13 @@ Nearby troops counterattack when an allied unit or building is hit. They break o
 
 Select a completed building and choose **Repair** to send the closest idle worker. You can also select workers and right-click or tap a damaged friendly building. Each repair step restores up to 20 HP for 1 wood and 1 stone. Walls use 1 stone per step. A worker stops when the building is fully repaired or materials run out. Choose **Demolish** to remove another completed building after confirming. Demolition has no refund. Your headquarters is protected from demolition.
 
+## Battlefield shortcuts
+
+- The troop bar follows your live army. Tap a type or **All troops** to select it. Tap the active group again to center the camera. Groups include reinforcements automatically and **All troops** excludes workers.
+- **Recruit** orders units from your finished production buildings. The server distributes them by existing workload, then applies the normal cost and population rules. Completion times are estimates. **Queues** still shows each building's work.
+- Attack alerts show where your forces took damage. Tap the alert or its minimap ping to focus the camera. Nearby alerts merge and attacks on headquarters take priority. The **Sound** button also mutes alert audio.
+- Select troops, open the formation button and choose **Line**, **Compact** or **Spread**. The next move or attack uses that formation. Melee ranks face the target with ranged ranks behind. Units take individual routes through chokepoints and form up at the destination when terrain permits.
+
 ## Match settings and results
 
 Use **Match settings** before creating an online room or starting a new solo match. The online host can also edit the settings in the lobby. Both players can review the final rules before readying up. A change in the lobby clears both ready states. Solo saves retain the settings they started with.
@@ -101,3 +108,18 @@ Each tap on a unit adds one to its building’s training queue, pays its cost an
 For multiplayer saves, set `MATCH_SAVE_FILE` to a writable file on durable storage, owned by the game server. Create its parent directory before starting. The server writes a versioned checkpoint every five seconds and flushes on graceful shutdown. An abrupt interruption can roll the game back to the latest checkpoint. Seats reconnect with their original tokens. The default Render deployment does not configure durable storage.
 
 Run `node scripts/benchmark.mjs` for the headless simulation load fixture and `node scripts/ai-league.mjs . 100 normal,normal` to compare computer opponents. The first positional argument accepts a checkout directory, so the same league can run against an earlier revision.
+
+## Quality of life load test
+
+Node simulation on the development runner, 160 ticks per case. Tick timings include simulation and per-side snapshots. These are single-run measurements. The reference is main at `5c6b548` using its previous group placement. The feature branch uses one authoritative Line order per side. Counts are total across both sides.
+
+| Troops | Move p95, main → Line | Combat p95, main → Line | Bridge p95, main → Line |
+| ---: | ---: | ---: | ---: |
+| 100 | 0.98 → 0.66 ms | 0.73 → 0.75 ms | 0.85 → 0.82 ms |
+| 250 | 0.97 → 1.07 ms | 1.14 → 1.30 ms | 2.71 → 1.80 ms |
+| 500 | 2.62 → 1.59 ms | 2.62 → 2.77 ms | 6.77 → 6.72 ms |
+| 1,000 | 3.42 → 3.76 ms | 6.65 → 6.26 ms | 22.17 → 25.23 ms |
+
+For 1,000 troops, issuing both Line commands measured 0.70–1.03 ms total. The slowest Line bridge tick was 67.20 ms (78.37 ms on main). Spread at 1,000 troops measured p95 of 9.58 ms moving, 11.01 ms fighting and 23.86 ms at the bridge. Its slowest combat tick was 88.85 ms. The 20 Hz simulation has a 50 ms budget per tick. These spike measurements and headless browser runs do not measure physical phone performance.
+
+Reproduce the Line sample with `BENCH_FORMATION=line BENCH_COUNTS=100,250,500,1000 BENCH_CASES=move,combat,bridge BENCH_TICKS=160 node --expose-gc scripts/benchmark-armies.mjs`. Omit `BENCH_FORMATION` and set `BENCH_SOURCE` to a worktree at the main reference for the baseline.

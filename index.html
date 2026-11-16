@@ -105,9 +105,22 @@
           <button id="exit" type="button">Leave</button>
         </div>
       </header>
-      <section id="battlefield" aria-label="Battlefield"></section>
+      <div class="battle-area">
+        <section id="battlefield" aria-label="Battlefield"></section>
+        <div id="attack-alerts" role="region" aria-label="Attack alerts" aria-live="polite" hidden></div>
+        <div id="formation-options" role="group" aria-label="Formation options" hidden>
+          <button type="button" data-formation="line" aria-pressed="true">Line</button>
+          <button type="button" data-formation="compact" aria-pressed="false">Compact</button>
+          <button type="button" data-formation="spread" aria-pressed="false">Spread</button>
+        </div>
+        <section id="global-train-panel" aria-label="Global production" hidden></section>
+      </div>
+      <nav id="troop-groups" aria-label="Troop groups" hidden></nav>
       <footer class="hud">
-        <button id="map-button" type="button" title="Tap or click to pan the camera" aria-label="Minimap"><canvas id="minimap" width="176" height="80"></canvas></button>
+        <div class="minimap-control">
+          <button id="map-button" type="button" title="Tap or click to pan the camera" aria-label="Minimap"><canvas id="minimap" width="176" height="80"></canvas></button>
+          <div id="minimap-pings" aria-label="Minimap attack pings"></div>
+        </div>
         <canvas id="selection-portrait" width="42" height="42" aria-hidden="true" hidden></canvas>
         <div class="selection">
           <strong id="selection-name">No units selected</strong>
@@ -118,9 +131,10 @@
           <button id="idle-worker" type="button" title="Cycle through idle workers (I)" disabled>Idle worker <span id="idle-count">0</span></button>
           <button id="workers" type="button" title="Select all workers">Workers</button>
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
-          <button id="all" type="button" title="Select all troops (Q)">All troops</button>
+          <button id="formation" type="button" aria-label="Army formation" aria-expanded="false" aria-controls="formation-options" hidden>Line</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
           <button id="halt" type="button" title="Stop (S)">Stop</button>
+          <button id="global-train-toggle" type="button" aria-expanded="false" aria-controls="global-train-panel">Recruit</button>
           <button id="production-toggle" type="button" aria-expanded="false" aria-controls="production-panel">Queues <span id="production-count">0</span></button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
         </div>

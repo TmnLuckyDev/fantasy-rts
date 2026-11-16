@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, upgradeKinds } from '../shared/protocol.ts'
-import type { Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, formations, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
@@ -9,10 +9,12 @@ import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
 import { MatchSettingsMenu, clockText, drawMatchStats } from './match-settings.ts'
 import { unitStats } from '../shared/units.ts'
 import { BattleAudio } from './audio.ts'
+import { GlobalProduction } from './global-production.ts'
 import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
 import { entityTexture } from './sprites.ts'
+import type { ArmyIndex } from './troop-groups.ts'
 import './style.css'
 
 const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
@@ -20,6 +22,24 @@ const button = (id: string) => element<HTMLButtonElement>(id)
 const lobby = element('lobby')
 const match = element('match')
 const battlefield = element('battlefield')
+const groupBar = element('troop-groups')
+const groupButtons = new Map<TroopGroup, { button: HTMLButtonElement, icon: HTMLCanvasElement, label: HTMLElement, count: HTMLElement }>()
+for (const group of troopGroups) {
+  const item = document.createElement('button')
+  item.type = 'button'
+  item.title = 'Tap again to center the camera'
+  item.onclick = () => scene?.selectGroup(group)
+  const icon = document.createElement('canvas')
+  icon.width = icon.height = 28
+  icon.setAttribute('aria-hidden', 'true')
+  const label = document.createElement('span')
+  const count = document.createElement('span')
+  count.className = 'troop-count'
+  count.setAttribute('aria-hidden', 'true')
+  item.append(icon, label, count)
+  groupBar.append(item)
+  groupButtons.set(group, { button: item, icon, label, count })
+}
 const portrait = element<HTMLCanvasElement>('selection-portrait')
 const minimap = element<HTMLCanvasElement>('minimap')
 const joinCode = element<HTMLInputElement>('join-code')
@@ -27,12 +47,50 @@ const connection = element('connection')
 const lobbyMessage = element('lobby-message')
 const result = element<HTMLDialogElement>('result')
 const banner = element('banner')
+const attackAlerts = element('attack-alerts')
+const minimapPings = element('minimap-pings')
+let shownAlerts: readonly AttackAlert[] = []
 const menu = element('economy-menu')
 const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
 const productionPanel = element('production-panel')
 const productionToggle = button('production-toggle')
+const globalTrainPanel = element('global-train-panel')
+const globalTrainToggle = button('global-train-toggle')
+const globalProduction = new GlobalProduction(globalTrainPanel, (unit, count) => {
+  const message: GlobalTrainCommand = { type: 'global-train', unit, count }
+  if (solo.active) solo.sendArmyCommand(message)
+  else client.send(message)
+}, paintPortrait)
 const placementTip = element('placement-tip')
+const formationButton = button('formation')
+const formationOptions = element('formation-options')
+const formationChoices = [...formationOptions.querySelectorAll<HTMLButtonElement>('[data-formation]')]
+formationButton.onclick = () => toggleFormation(formationOptions.hidden)
+for (const option of formationChoices) {
+  option.onclick = () => {
+    const choice = formations.find(kind => kind === option.dataset.formation)
+    if (!scene || !choice) return
+    scene.formation = choice
+    drawFormation(choice)
+    toggleFormation(false)
+  }
+}
+
+function drawFormation(formation: Formation) {
+  formationButton.textContent = formation[0].toUpperCase() + formation.slice(1)
+  for (const choice of formationChoices) choice.setAttribute('aria-pressed', String(choice.dataset.formation === formation))
+}
+
+function toggleFormation(open: boolean) {
+  formationOptions.hidden = !open
+  formationButton.setAttribute('aria-expanded', String(open))
+  if (open) {
+    toggleGlobalTrain(false)
+    toggleProduction(false)
+    closeEconomyMenu()
+  }
+}
 const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
 const audio = new BattleAudio()
 const settingsMenu = new MatchSettingsMenu()
@@ -136,16 +194,19 @@ function receive(message: ServerMessage) {
       ownEntities = message.entities.filter(entity => entity.faction === faction)
       researched = message.upgrades ?? []
       drawProduction()
+      if (!globalTrainPanel.hidden) globalProduction.update(faction, ownEntities, resources, population)
       drawEconomy()
       const idle = message.entities.filter(entity => entity.faction === faction && entity.idle).length
       button('idle-worker').disabled = idle === 0
       setText('idle-count', String(idle))
+      drawAttackAlerts(room?.result ? [] : message.alerts ?? [])
       scene?.snapshot(message)
       break
     }
     case 'error':
       if (message.resetSession) showLobby()
       if (scene) {
+        if (!globalTrainPanel.hidden) globalProduction.message(message.message)
         banner.textContent = message.message
         window.clearTimeout(orderMessageTimer)
         orderMessageTimer = window.setTimeout(() => updateBanner(client.connected), 2500)
@@ -189,6 +250,8 @@ function showBattle() {
   button('advance').setAttribute('aria-pressed', 'false')
   scene = new BattleScene(faction, room?.settings ? mapForSettings(room.settings) : ashfordMap(room?.map), battlefield, minimap, {
     order: issueOrder,
+    groupOrder: issueGroupOrder,
+    groups: drawTroopGroups,
     selection: drawSelection,
     placement: (kind, blocked, segmentCount) => {
       placing = Boolean(kind)
@@ -209,16 +272,21 @@ function showBattle() {
   button('idle-worker').disabled = true
   setText('idle-count', '0')
   scene.advanceMode = false
+  drawFormation(scene.formation)
+  toggleFormation(false)
   resources = { gold: 0, wood: 0, stone: 0 }
   ownEntities = []
   researched = []
   toggleProduction(false)
+  toggleGlobalTrain(false)
   drawProduction()
   population = { used: 0, reserved: 0, limit: 0 }
   drawEconomy()
   placementTip.hidden = true
   placing = false
   closeEconomyMenu()
+  drawAttackAlerts([])
+  drawTroopGroups(new Map(), null)
   drawSelection([])
   game = new Phaser.Game({
     type: Phaser.AUTO,
@@ -246,6 +314,65 @@ function paintPortrait(target: HTMLCanvasElement, side: Faction, kind: EntityKin
   ctx.clearRect(0, 0, target.width, target.height)
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(sprite, Math.floor((target.width - width) / 2), Math.floor((target.height - height) / 2), width, height)
+}
+
+function drawAttackAlerts(alerts: readonly AttackAlert[]) {
+  if (alerts.length === shownAlerts.length && alerts.every((alert, i) => alert.id === shownAlerts[i].id)) return
+  if (alerts.some(alert => !shownAlerts.some(previous => previous.id === alert.id))) audio.play('alert')
+  shownAlerts = alerts
+  attackAlerts.hidden = !alerts.length
+  const labels = { base: 'Base under attack', building: 'Building under attack',
+    workers: 'Workers under attack', army: 'Army under attack' }
+  const notices: HTMLButtonElement[] = []
+  const pings: HTMLButtonElement[] = []
+  for (const alert of alerts) {
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.dataset.severity = alert.kind
+    item.textContent = labels[alert.kind]
+    item.title = 'Center camera on attack'
+    item.onclick = () => scene?.focusAlert(alert.at)
+    notices.push(item)
+    const position = scene?.minimapPosition(alert.at)
+    if (!position) continue
+    const ping = document.createElement('button')
+    ping.type = 'button'
+    ping.dataset.severity = alert.kind
+    ping.setAttribute('aria-label', 'Minimap ping · ' + labels[alert.kind])
+    ping.style.left = position.x * 100 + '%'
+    ping.style.top = position.y * 100 + '%'
+    ping.onclick = item.onclick
+    pings.push(ping)
+  }
+  attackAlerts.replaceChildren(...notices)
+  minimapPings.replaceChildren(...pings)
+}
+
+function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
+  groupBar.hidden = !army.size
+  for (const [group, ui] of groupButtons) {
+    const members = army.get(group)
+    ui.button.hidden = !members?.length
+    if (!members?.length) continue
+    const kind = group === 'all' ? 'blade' : members[0].kind
+    const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Heroes' : entityNames[faction][kind]
+    if (ui.label.textContent !== label) ui.label.textContent = label
+    const count = String(members.length)
+    if (ui.count.textContent !== count) {
+      ui.count.textContent = count
+      ui.button.setAttribute('aria-description', count + ' living · Tap again to center camera')
+    }
+    const pressed = String(group === selected)
+    if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
+    paintPortrait(ui.icon, faction, kind)
+  }
+}
+
+function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
+  const message: GroupCommand = { type: 'group-command', group, order }
+  if (solo.active) solo.sendArmyCommand(message)
+  else client.send(message)
+  audio.play('order')
 }
 
 function issueOrder(ids: number[], order: Order) {
@@ -278,6 +405,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   const label = element('selection-name')
   const detail = element('selection-detail')
   const meter = element<HTMLMeterElement>('selection-health')
+  formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
+  if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').disabled = !movable
   button('halt').disabled = !movable
@@ -471,6 +600,7 @@ function buildingActions(site: Entity) {
 }
 
 function openEconomyMenu(rebuild = false) {
+  toggleGlobalTrain(false)
   if (!economyContext || placing) return
   if (rebuild) {
     if (economyContext === 'build') menu.replaceChildren(...buildChoices())
@@ -525,11 +655,27 @@ function trainingSummary(training: NonNullable<Entity['training']>) {
   return labels.length ? active + ' → ' + labels.join(', ') : active
 }
 
+function toggleGlobalTrain(open: boolean) {
+  globalTrainPanel.hidden = !open
+  globalTrainToggle.setAttribute('aria-expanded', String(open))
+  if (!open) return
+  toggleFormation(false)
+  toggleProduction(false)
+  closeEconomyMenu()
+  scene?.place(null)
+  globalProduction.message('')
+  globalProduction.update(faction, ownEntities, resources, population)
+}
+
+globalTrainToggle.onclick = () => toggleGlobalTrain(globalTrainPanel.hidden)
+
 function toggleProduction(open: boolean) {
   productionPanel.hidden = !open
   productionToggle.setAttribute('aria-expanded', String(open))
   syncWorkerActions()
   if (open) {
+    toggleFormation(false)
+    toggleGlobalTrain(false)
     closeEconomyMenu()
     drawProduction()
   }
@@ -570,6 +716,7 @@ productionToggle.onclick = () => toggleProduction(productionPanel.hidden)
 
 function drawResult(outcome: NonNullable<RoomState['result']>) {
   element('result-title').textContent = !outcome.winner ? 'Draw' : outcome.winner === faction ? 'Victory' : 'Defeat'
+  drawAttackAlerts([])
   let detail: string
   if (outcome.reason === 'time') {
     setText('match-clock', '0:00')
@@ -645,7 +792,6 @@ button('exit').onclick = () => {
   const prompt = room?.mode === 'solo' ? 'End this solo match?' : 'Leave the battle and forfeit?'
   if (room?.phase === 'finished' || window.confirm(prompt)) leave()
 }
-button('all').onclick = () => scene?.selectAll()
 button('advance').onclick = toggleAdvance
 button('halt').onclick = () => scene?.halt()
 button('home').onclick = () => scene?.home()
@@ -668,7 +814,8 @@ document.addEventListener('keydown', unlockSound, { capture: true })
 button('map-button').addEventListener('pointerdown', event => {
   const bounds = minimap.getBoundingClientRect()
   const clamp = (value: number) => Math.min(1, Math.max(0, value))
-  scene?.minimapFocus(clamp((event.clientX - bounds.left) / bounds.width), clamp((event.clientY - bounds.top) / bounds.height))
+  scene?.minimapFocus(clamp((event.clientX - bounds.left) / bounds.width),
+    clamp((event.clientY - bounds.top) / bounds.height))
 })
 button('map-button').addEventListener('click', event => {
   if (event.detail === 0) scene?.minimapFocus(0.5, 0.5)

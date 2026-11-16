@@ -10,6 +10,7 @@ const { Visibility } = await load('src/server/visibility.ts')
 const { ashford, cellCenter } = await load('src/shared/map.ts')
 const counts = (process.env.BENCH_COUNTS ?? '200,500,1000,1500,2000').split(',').map(Number)
 const cases = (process.env.BENCH_CASES ?? 'idle,move,combat,bridge,ai,churn').split(',')
+const formation = process.env.BENCH_FORMATION
 const ticks = Number(process.env.BENCH_TICKS ?? 120)
 const clearMap = { name: 'Load test', width: 88, height: 40, tiles: Array(88 * 40).fill('grass'), bases: { human: { x: 208, y: 368 }, orc: { x: 2608, y: 912 } } }
 let timings
@@ -51,12 +52,15 @@ function setup(scenario, count) {
     if (scenario === 'idle') return
     for (const faction of ['human', 'orc']) {
       if (scenario === 'ai' && faction === 'orc') continue
-      const ids = armies[faction].filter(id => match.units.has(id))
-      for (let start = 0; start < ids.length; start += 500) {
-        match.command(faction, ids.slice(start, start + 500), {
-          kind: scenario === 'move' ? 'move' : 'advance',
-          to: { x: (bridge ? ashford.width : clearMap.width) * 16 + (faction === 'human' ? 332 : -318), y: bridge ? 288 : 510 }
-        })
+      const order = {
+        kind: scenario === 'move' ? 'move' : 'advance',
+        to: { x: (bridge ? ashford.width : clearMap.width) * 16 + (faction === 'human' ? 332 : -318), y: bridge ? 288 : 510 }
+      }
+      if (formation && scenario !== 'churn' && scenario !== 'ai') {
+        match.commandGroup(faction, 'all', { ...order, formation })
+      } else {
+        const ids = armies[faction].filter(id => match.units.has(id))
+        for (let start = 0; start < ids.length; start += 500) match.command(faction, ids.slice(start, start + 500), order)
       }
     }
   }
@@ -72,7 +76,7 @@ for (const count of counts) {
     timings = {}
     const { match, armies, issue, computer } = setup(scenario, count)
     match.step()
-    issue()
+    timed('issue', issue)
     await new Promise(resolve => setImmediate(resolve))
     global.gc?.()
     const heapBefore = process.memoryUsage().heapUsed
@@ -110,7 +114,7 @@ for (const count of counts) {
     durations.sort((a, b) => a - b)
     const round = value => +value.toFixed(2)
     console.log(JSON.stringify({
-      scenario, units: count, ticks, survivors: match.units.size, effects, snapshotBytesPerTick: round(bytes / ticks),
+      scenario, ...(formation ? { formation } : {}), units: count, ticks, survivors: match.units.size, effects, snapshotBytesPerTick: round(bytes / ticks),
       p50Ms: round(durations[Math.ceil(.50 * ticks) - 1]), p95Ms: round(durations[Math.ceil(.95 * ticks) - 1]),
       maxMs: round(durations.at(-1)), cpuMs: round((used.user + used.system) / 1000), gcMs: round(garbage - gcBefore),
       heapBefore, heap, retainedHeap: process.memoryUsage().heapUsed,

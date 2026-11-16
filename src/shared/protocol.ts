@@ -18,6 +18,12 @@ export type BuildingKind = typeof buildingKinds[number]
 export type EntityKind = typeof entityKinds[number]
 export const isUnitKind = (kind: unknown): kind is UnitKind => unitKinds.some(value => value === kind)
 export const isBuildingKind = (kind: unknown): kind is BuildingKind => buildingKinds.some(value => value === kind)
+export const troopGroups = ['all', ...combatKinds, 'heroes'] as const
+export type TroopGroup = typeof troopGroups[number]
+export function inTroopGroup(kind: EntityKind, group: TroopGroup) {
+  if (group === 'all') return isUnitKind(kind) && kind !== 'worker'
+  return group === 'heroes' ? isHeroKind(kind) : group === kind
+}
 export const MAX_SELECTION = 1000
 export const resourceKinds = ['gold', 'wood', 'stone'] as const
 export type ResourceKind = typeof resourceKinds[number]
@@ -87,9 +93,12 @@ export type RoomState = {
   paused?: boolean
 }
 
+export const formations = ['line', 'compact', 'spread'] as const
+export type Formation = typeof formations[number]
+
 export type Order =
-  | { kind: 'move' | 'advance', to: Point }
-  | { kind: 'attack', target: number }
+  | { kind: 'move' | 'advance', to: Point, formation?: Formation }
+  | { kind: 'attack', target: number, formation?: Formation }
   | { kind: 'halt' }
   | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }
@@ -102,6 +111,14 @@ export type Order =
   | { kind: 'cancel-build' }
   | { kind: 'demolish' }
 
+export type ArmyOrder = Extract<Order, { kind: 'move' | 'advance' | 'attack' | 'halt' }>
+export const isArmyOrder = (order: Order): order is ArmyOrder =>
+  order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack' || order.kind === 'halt'
+
+export type GlobalTrainCommand = { type: 'global-train', unit: UnitKind, count: number }
+
+export type GroupCommand = { type: 'group-command', group: TroopGroup, order: ArmyOrder }
+
 export type ClientMessage =
   | { type: 'create' | 'solo', faction: Faction, settings?: MatchSettings }
   | { type: 'join', code: string, faction: Faction }
@@ -110,9 +127,13 @@ export type ClientMessage =
   | { type: 'faction', faction: Faction }
   | { type: 'settings', settings: MatchSettings }
   | { type: 'ready', ready: boolean }
+  | GroupCommand
+  | GlobalTrainCommand
   | { type: 'command', ids: number[], order: Order }
 
-export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[] }
+export type AttackAlert = { id: number, kind: 'base' | 'building' | 'workers' | 'army', at: Point, until: number }
+
+export type Snapshot = { type: 'snapshot', tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }
