@@ -64,6 +64,8 @@ export type Entity = Point & {
   research?: { kind: UpgradeKind, progress: number }
   training?: { kind: UnitKind, progress: number, remaining: number, queue?: Array<{ kind: UnitKind, count: number }>, seconds?: number }
   experience?: number
+  abilityReadyAt?: number
+  abilityActiveUntil?: number
   repairing?: boolean
   carrying?: ResourceKind
   idle?: boolean
@@ -102,6 +104,7 @@ export type Order =
   | { kind: 'attack', target: number, formation?: Formation }
   | { kind: 'halt' }
   | { kind: 'explore' }
+  | { kind: 'hero-ability' }
   | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }
   | { kind: 'wall-line', from: Point, to: Point }
