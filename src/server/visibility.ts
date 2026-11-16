@@ -24,36 +24,70 @@ export class Visibility {
   private readonly cells: Record<Faction, Uint8Array>
 
   private readonly map: BattleMap
+  private readonly coverage: Record<Faction, Uint32Array>
+  private previous = { human: new Set<number>(), orc: new Set<number>() }
+  private current = { human: new Set<number>(), orc: new Set<number>() }
+  private readonly encoded: Partial<Record<Faction, string>> = {}
+  private restored = false
 
   constructor(map: BattleMap) {
     this.map = map
     const size = map.width * map.height
     this.cells = { human: new Uint8Array(size), orc: new Uint8Array(size) }
+    this.coverage = { human: new Uint32Array(size), orc: new Uint32Array(size) }
   }
 
   update(units: Iterable<Entity & { buildDuration: number }>) {
     const { width, height } = this.map
-    for (const faction of factions) {
-      const cells = this.cells[faction]
-      for (let i = 0; i < cells.length; i++) if (cells[i] === 2) cells[i] = 1
-    }
-    // Units of the same faction with the same sight radius in one tile
-    // reveal exactly the same cells. Stamp that circle only once per update.
-    const stamped = new Set<number>()
+    const size = width * height
     for (const unit of units) {
       if (unit.buildDuration) continue
-      const cells = this.cells[unit.faction]
-      const cx = Math.floor(unit.x / TILE)
-      const cy = Math.floor(unit.y / TILE)
-      const radius = sight[unit.kind]
-      const key = (((unit.faction === 'orc' ? 1 : 0) * 16 + radius) * height + cy) * width + cx
-      if (stamped.has(key)) continue
-      stamped.add(key)
-      for (const offset of circles.get(radius)!) {
-        const x = cx + offset.x
-        const y = cy + offset.y
-        if (x >= 0 && x < width && y >= 0 && y < height) cells[y * width + x] = 2
+      const x = Math.floor(unit.x / TILE)
+      const y = Math.floor(unit.y / TILE)
+      if (x < 0 || x >= width || y < 0 || y >= height) continue
+      this.current[unit.faction].add(sight[unit.kind] * size + y * width + x)
+    }
+    for (const faction of factions) {
+      const next = this.current[faction]
+      const old = this.previous[faction]
+      // Identical sight circles share one contribution, even when troops stack.
+      for (const stamp of next) if (!old.has(stamp)) this.apply(faction, stamp, 1)
+      for (const stamp of old) if (!next.has(stamp)) this.apply(faction, stamp, -1)
+      if (this.restored) {
+        const cells = this.cells[faction]
+        for (let i = 0; i < cells.length; i++) {
+          if (cells[i] === 2 && !this.coverage[faction][i]) {
+            cells[i] = 1
+            delete this.encoded[faction]
+          }
+        }
       }
+      old.clear()
+    }
+    const previous = this.previous
+    this.previous = this.current
+    this.current = previous
+    this.restored = false
+  }
+
+  private apply(faction: Faction, stamp: number, change: 1 | -1) {
+    const { width, height } = this.map
+    const size = width * height
+    const origin = stamp % size
+    const cx = origin % width
+    const cy = Math.floor(origin / width)
+    const coverage = this.coverage[faction]
+    const cells = this.cells[faction]
+    for (const offset of circles.get(Math.floor(stamp / size))!) {
+      const x = cx + offset.x
+      const y = cy + offset.y
+      if (x < 0 || x >= width || y < 0 || y >= height) continue
+      const index = y * width + x
+      coverage[index] += change
+      const shade = coverage[index] ? 2 : 1
+      if (cells[index] === shade) continue
+      cells[index] = shade
+      delete this.encoded[faction]
     }
   }
 
@@ -66,10 +100,19 @@ export class Visibility {
   }
 
   restore(masks: Record<Faction, string>) {
-    for (const faction of factions) this.cells[faction].set(decodeFog(masks[faction], this.cells[faction].length))
+    for (const faction of factions) {
+      this.cells[faction].set(decodeFog(masks[faction], this.cells[faction].length))
+      this.previous[faction].clear()
+      this.current[faction].clear()
+      this.coverage[faction].fill(0)
+      this.encoded[faction] = masks[faction]
+    }
+    this.restored = true
   }
 
   mask(faction: Faction): string {
+    const cached = this.encoded[faction]
+    if (cached !== undefined) return cached
     // Run length and shade share a number: shade 0 unseen, 1 explored, 2 visible.
     const cells = this.cells[faction]
     const runs: string[] = []
@@ -79,6 +122,6 @@ export class Visibility {
       runs.push(((i - start) * 3 + cells[start]).toString(36))
       start = i
     }
-    return runs.join('.')
+    return this.encoded[faction] = runs.join('.')
   }
 }

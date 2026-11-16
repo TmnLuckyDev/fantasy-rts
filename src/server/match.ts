@@ -1,11 +1,12 @@
 import { TILE, ashford, distance, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { MAX_SELECTION, factions, isBuildingKind, isUnitKind, resourceKinds } from '../shared/protocol.ts'
+import { MAX_SELECTION, factions, isBuildingKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
 import type { Effect, Entity, EntityKind, Faction, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING, STARTING_RESOURCES,
   buildings as buildingRules, canAfford, REPAIR, repairCost, spend, trainedAt, training, upgrades, validPlacement } from '../shared/economy.ts'
-import { canStand, findPath } from './navigation.ts'
+import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
+import type { Obstacle } from './navigation.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
 
@@ -15,12 +16,15 @@ const maxRadius = Math.max(...Object.values(unitStats).flatMap(stats => Object.v
 const defenseRadius = 5 * TILE
 const defenseLeash = 8 * TILE
 const defenseDuration = 4 * TICK_HZ
+const routesPerTick = 48
+const squaredDistance = (a: Point, b: Point) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+const steering = [0, 0.54, -0.54, 1.05, -1.05, 1.4, -1.4]
+  .map(angle => ({ sin: Math.sin(angle), cos: Math.cos(angle), direct: angle === 0 }))
 const isRanged = (kind: EntityKind) => kind === 'ranged' || kind === 'marksman'
 
 type WorkerJob = { kind: 'gather', at: Point, resource: ResourceKind, workTicks: number } | { kind: 'construct', site: number }
   | { kind: 'repair', site: number, workTicks: number }
 type Defense = { targetId: number, at: Point, until: number }
-type Obstacle = Point & { radius: number }
 
 type Unit = Entity & {
   order: Order | null
@@ -61,7 +65,9 @@ export type MatchCheckpoint = {
 export class Match {
   readonly units = new Map<number, Unit>()
   readonly map: BattleMap
-  private readonly nearby = new SpatialIndex<Unit>()
+  private readonly nearby = { human: new SpatialIndex<Unit>(), orc: new SpatialIndex<Unit>() }
+  private readonly routes = new Map<Unit, Point>()
+  private readonly navigation: Partial<Record<Faction, { key: string, grid: NavigationGrid }>> = {}
   tick = 0
   result: Result | null = null
   private readonly resources: Record<Faction, Resources> = {
@@ -137,7 +143,7 @@ export class Match {
       job: null, cargo: null, queue: [], buildTicks: 0, buildDuration
     }
     this.units.set(id, unit)
-    this.nearby.update(unit)
+    this.nearby[unit.faction].update(unit)
     return unit
   }
 
@@ -199,6 +205,7 @@ export class Match {
   }
 
   private resetOrders(unit: Unit) {
+    this.routes.delete(unit)
     unit.order = null
     unit.job = null
     unit.buildQueue = undefined
@@ -376,7 +383,7 @@ export class Match {
       const point = { x: building.x + direction * Math.cos(angle) * bounds, y: building.y + Math.sin(angle) * bounds }
       if (!canStand(this.map, point, obstacles, radius)) continue
       spawnPoint ??= point
-      for (const unit of this.nearby.near(point, radius + maxRadius + 4)) {
+      for (const unit of [...this.nearby.human.near(point, radius + maxRadius + 4), ...this.nearby.orc.near(point, radius + maxRadius + 4)]) {
         if (isUnitKind(unit.kind) && distance(point, unit) < radius + unitStats[unit.faction][unit.kind].radius + 4) {
           continue spawnSlots
         }
@@ -458,7 +465,8 @@ export class Match {
   step() {
     if (this.result) return
     this.tick++
-    this.nearby.reset(this.units.values())
+    for (const faction of factions) this.nearby[faction].reset([])
+    for (const unit of this.units.values()) this.nearby[unit.faction].update(unit)
     const incoming: Missile[] = []
     for (const missile of this.missiles) {
       if (missile.arrives <= this.tick) this.hit(missile.attacker, missile.targetId)
@@ -468,7 +476,7 @@ export class Match {
     const hostileBuildings: Record<Faction, Obstacle[]> = { human: [], orc: [] }
     for (const building of this.units.values()) {
       if (isUnitKind(building.kind)) continue
-      const opponent = building.faction === 'human' ? 'orc' : 'human'
+      const opponent = opposite(building.faction)
       hostileBuildings[opponent].push({ x: building.x, y: building.y, radius: unitStats[building.faction][building.kind].radius })
     }
     for (const unit of this.units.values()) {
@@ -504,16 +512,23 @@ export class Match {
       target ??= defenderTarget
       if (automaticRange > 0 && unit.order?.kind !== 'move' && !target) {
         let nearest = automaticRange
-        for (const other of this.nearby.near(unit, automaticRange + maxRadius)) {
-          if (other.faction === unit.faction || (unit.kind === 'tower' && !isUnitKind(other.kind))) continue
-          const separation = distance(unit, other) - unitStats[other.faction][other.kind].radius
-          if ((separation < nearest || (separation === nearest && target && this.nearby.before(other, target))) && this.visibility.at(unit.faction, other) === 2) {
+        const enemies = this.nearby[opposite(unit.faction)]
+        for (const other of enemies.near(unit, automaticRange + maxRadius)) {
+          if (unit.kind === 'tower' && !isUnitKind(other.kind)) continue
+          const radius = unitStats[other.faction][other.kind].radius
+          const gap = squaredDistance(unit, other)
+          if (gap > (nearest + radius) ** 2) continue
+          const separation = Math.sqrt(gap) - radius
+          if ((separation < nearest || (separation === nearest && target && enemies.before(other, target))) && this.visibility.at(unit.faction, other) === 2) {
             nearest = separation
             target = other
           }
         }
       }
-      if (target && this.fight(unit, target)) continue
+      if (target && this.fight(unit, target)) {
+        this.routes.delete(unit)
+        continue
+      }
 
       let destination = unit.assigned
       if (target && (defenderTarget || unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
@@ -525,7 +540,9 @@ export class Match {
         }
       }
       if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
+      else this.routes.delete(unit)
     }
+    this.resolveRoutes(hostileBuildings)
     this.visibility.update(this.units.values())
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
@@ -535,8 +552,8 @@ export class Match {
     if (!unit.defense) return
     const { targetId, at, until } = unit.defense
     const attacker = this.units.get(targetId)
-    if (attacker && this.tick < until && distance(unit, at) <= defenseLeash &&
-        distance(attacker, at) <= defenseLeash && this.visibility.at(unit.faction, attacker) === 2) return attacker
+    if (attacker && this.tick < until && squaredDistance(unit, at) <= defenseLeash ** 2 &&
+        squaredDistance(attacker, at) <= defenseLeash ** 2 && this.visibility.at(unit.faction, attacker) === 2) return attacker
     unit.defense = null
   }
 
@@ -544,30 +561,62 @@ export class Match {
     if (!this.units.has(attacker.id) || this.visibility.at(victim.faction, attacker) !== 2) return
     const at = { x: victim.x, y: victim.y }
     const radius = defenseRadius + unitStats[victim.faction][victim.kind].radius
-    if (distance(at, attacker) > defenseLeash) return
-    for (const unit of this.nearby.near(at, radius)) {
-      if (unit.faction !== victim.faction || !isUnitKind(unit.kind) || !unitStats[unit.faction][unit.kind].damage ||
-          unit.order?.kind === 'move' || unit.order?.kind === 'attack' || distance(unit, at) > radius) continue
+    if (squaredDistance(at, attacker) > defenseLeash ** 2) return
+    for (const unit of this.nearby[victim.faction].near(at, radius)) {
+      if (!isUnitKind(unit.kind) || !unitStats[unit.faction][unit.kind].damage ||
+          unit.order?.kind === 'move' || unit.order?.kind === 'attack' || squaredDistance(unit, at) > radius ** 2) continue
       const current = this.defendedAgainst(unit)
-      if (current && current !== attacker && distance(unit, current) <= distance(unit, attacker)) continue
+      if (current && current !== attacker && squaredDistance(unit, current) <= squaredDistance(unit, attacker)) continue
       unit.defense = { targetId: attacker.id, at, until: this.tick + defenseDuration }
     }
   }
 
   private approach(unit: Unit, destination: Point, obstacles: Obstacle[], pursuing: boolean) {
-    if (!unit.pursued || (this.tick >= unit.nextPath &&
-        (distance(unit.pursued, destination) > 14 || unit.blockedTicks >= 8))) {
-      unit.path = findPath(this.map, unit, destination, obstacles, unitStats[unit.faction][unit.kind].radius)
-      unit.pursued = { x: destination.x, y: destination.y }
-      unit.nextPath = this.tick + 10
-      unit.blockedTicks = 0
+    const pending = this.routes.has(unit)
+    if (pending || !unit.pursued || (this.tick >= unit.nextPath &&
+        (squaredDistance(unit.pursued, destination) > 14 ** 2 || unit.blockedTicks >= 8))) {
+      const radius = unitStats[unit.faction][unit.kind].radius
+      if (!pending && clearSegment(this.map, unit, destination, obstacles, radius)) {
+        this.setRoute(unit, destination, [destination])
+      } else {
+        this.routes.set(unit, destination)
+        if (!unit.path.length) return
+      }
     }
     this.walk(unit, obstacles, pursuing)
   }
 
+  private resolveRoutes(obstacles: Record<Faction, Obstacle[]>) {
+    if (!this.routes.size) return
+    let processed = 0
+    const checked = new Set<Faction>()
+    for (const [unit, destination] of this.routes) {
+      this.routes.delete(unit)
+      if (this.units.get(unit.id) !== unit) continue
+      const blockers = obstacles[unit.faction]
+      let cached = this.navigation[unit.faction]
+      // Rebuild at most once per side per batch, and only if hostile buildings changed.
+      if (!checked.has(unit.faction)) {
+        const key = blockers.map(({ x, y, radius }) => x + ',' + y + ',' + radius).join('|')
+        if (cached?.key !== key) this.navigation[unit.faction] = cached = { key, grid: new NavigationGrid(this.map, blockers) }
+        checked.add(unit.faction)
+      }
+      const path = findPath(this.map, unit, destination, blockers, unitStats[unit.faction][unit.kind].radius, cached?.grid)
+      this.setRoute(unit, destination, path)
+      if (++processed === routesPerTick) break
+    }
+  }
+
+  private setRoute(unit: Unit, destination: Point, path: Point[]) {
+    unit.path = path
+    unit.pursued = destination
+    unit.nextPath = this.tick + 10
+    unit.blockedTicks = 0
+  }
+
   private fight(unit: Unit, target: Unit): boolean {
     const stats = unitStats[unit.faction][unit.kind]
-    if (distance(unit, target) > stats.range + unitStats[target.faction][target.kind].radius) return false
+    if (squaredDistance(unit, target) > (stats.range + unitStats[target.faction][target.kind].radius) ** 2) return false
     if (unit.nextStrike > this.tick) return true
     unit.nextStrike = this.tick + stats.cooldown
     unit.facing = target.x < unit.x ? -1 : 1
@@ -601,7 +650,8 @@ export class Match {
 
   private destroy(target: Unit) {
     this.units.delete(target.id)
-    this.nearby.remove(target)
+    this.nearby[target.faction].remove(target)
+    this.routes.delete(target)
     this.effects.push({ id: ++this.sequence, kind: 'fallen', at: { x: target.x, y: target.y },
       faction: target.faction, entityKind: target.kind })
   }
@@ -624,18 +674,17 @@ export class Match {
     const step = Math.min(remaining, stats.speed / TICK_HZ)
     const vx = (next.x - unit.x) / remaining
     const vy = (next.y - unit.y) / remaining
-    const angles = [0, 0.54, -0.54, 1.05, -1.05, 1.4, -1.4]
-    for (const angle of angles) {
-      const x = unit.x + (vx * Math.cos(angle) - vy * Math.sin(angle)) * step
-      const y = unit.y + (vx * Math.sin(angle) + vy * Math.cos(angle)) * step
+    for (const { sin, cos, direct } of steering) {
+      const x = unit.x + (vx * cos - vy * sin) * step
+      const y = unit.y + (vx * sin + vy * cos) * step
       const test = { x, y }
       if (!canStand(this.map, test, obstacles, stats.radius)) continue
       if (Math.abs(x - unit.x) > 0.8) unit.facing = x < unit.x ? -1 : 1
       unit.x = x
       unit.y = y
-      this.nearby.update(unit)
+      this.nearby[unit.faction].update(unit)
       unit.moving = true
-      unit.blockedTicks = angle ? unit.blockedTicks + 1 : 0
+      unit.blockedTicks = direct ? 0 : unit.blockedTicks + 1
       return
     }
     unit.blockedTicks++
