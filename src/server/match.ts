@@ -1051,6 +1051,7 @@ export class Match {
       unitStats[target.faction][target.kind].armor - armorBonus - (target.kind === 'wall' || target.kind === 'tower' ? ((target.level ?? 1) - 1) * 2 : 0) -
       (target.kind === 'vanguard' ? 2 : 0))
     target.hp = Math.max(0, target.hp - damage)
+    if (isHeroKind(attacker.kind)) this.gainHeroExperience(attacker, 3)
     this.attackAlerts[target.faction].hit(target, this.tick)
     this.callDefenders(target, attacker)
     const at = { x: target.x, y: target.y }
