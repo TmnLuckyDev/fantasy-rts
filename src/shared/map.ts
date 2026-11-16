@@ -169,6 +169,8 @@ function createIslands(): BattleMap {
   for (let y = 0; y < height; y++) for (let x = 0; x < width / 2; x++) {
     tiles[(height - 1 - y) * width + (width - 1 - x)] = tiles[y * width + x]
   }
+  // All maps use 180-degree rotational symmetry for fair starts and resource layouts.
+  for (let i = 0; i < tiles.length / 2; i++) tiles[tiles.length - 1 - i] = tiles[i]
   return { id: 'shattered-isles', name: 'Shattered Isles', width, height, tiles,
     bases: mirroredBases(width, height, 24, 48) }
 }
