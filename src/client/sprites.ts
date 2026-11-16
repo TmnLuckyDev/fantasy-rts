@@ -178,10 +178,11 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   const armor = human ? steel : iron
   const skin = human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : green
   const worker = kind === 'worker'
+  const scout = kind === 'scout'
   const heavy = kind === 'heavy'
   const ranged = kind === 'ranged' || kind === 'marksman' || kind === 'pathfinder'
   const step = frame ? 2 : 0
-  const head = heavy ? 7 : ranged || worker ? 10 : 8
+  const head = heavy ? 7 : ranged || worker || scout ? 10 : 8
   shadow(17, 29, heavy ? 14 : 11, 4)
 
   if (heavy && human) {
@@ -195,7 +196,7 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
     block(boot, 10 - step, 23, heavy ? 6 : 4, 6, 2)
     block(boot, 19 + step, 22, heavy ? 6 : 4, 7 - step, 2)
   }
-  const outfit = worker ? oak : ranged ? leather : armor
+  const outfit = worker ? oak : ranged || scout ? leather : armor
   block(team, 10, 16, heavy ? 13 : 10, 9, 3)
   block(outfit, heavy ? 7 : 9, 14, heavy ? 16 : 11, 6, 4)
   block(team, 12, 17, 8, 6, 2)
@@ -204,7 +205,7 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
   block(heavy && !human ? green : outfit, 21, 14, 4, 6, 3)
   block(skin, 12, head, heavy && !human ? 10 : 8, 7, 3)
   if (human) {
-    block(worker ? thatch : ranged ? team : armor, 11, head, 9, 3, 4)
+    block(worker ? thatch : ranged || scout ? team : armor, 11, head, 9, 3, 4)
     rect('#263c4f', 17, head + 4, 4, 1)
     if (kind === 'polearm') rect(team[0], 13, head - 4, 4, 2)
     if (heavy) rect(team[1], 13, head - 5, 6, 3)
@@ -215,7 +216,12 @@ function troop(faction: Faction, kind: UnitKind, frame: number) {
     if (heavy) rect(bone[0], 12, head + 5, 2, 2)
   }
 
-  if (worker) {
+  if (scout) {
+    // A lightweight hood and travel cloak distinguish scouts from frontline soldiers.
+    poly(team[2], 6, 15, 12, 12, 11, 27, 7, 29)
+    poly(team[1], 21, 12, 27, 15, 27, 29, 21, 26)
+    rect(brass[0], 25, 17, 2, 8)
+  } else if (worker) {
     rect(oak[1], 26, 12, 2, 15)
     poly(steel[0], 21, 11, 26, 7, 32, 10, 32, 13, 26, 10, 21, 14)
   } else if ((kind === 'ranged' && human) || kind === 'pathfinder') {
