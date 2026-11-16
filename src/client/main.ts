@@ -258,6 +258,7 @@ function showBattle() {
     groupOrder: issueGroupOrder,
     groups: drawTroopGroups,
     selection: drawSelection,
+    resource: showResourceInfo,
     placement: (kind, blocked, segmentCount) => {
       placing = Boolean(kind)
       placementTip.hidden = !kind
@@ -388,6 +389,12 @@ function issueOrder(ids: number[], order: Order) {
   else audio.play('order')
 }
 
+function showResourceInfo(kind: ResourceKind, remaining: number | null) {
+  drawSelection([], true)
+  element('selection-name').textContent = kind === 'wood' ? 'Tree' : kind === 'gold' ? 'Gold mine' : 'Stone quarry'
+  element('selection-detail').textContent = remaining === null ? 'Unlimited resources' : `${remaining.toLocaleString()} resources remaining`
+}
+
 function drawSelection(entities: Entity[], interactive = false) {
   selection = entities
   const selected = entities[0]
@@ -413,6 +420,7 @@ function drawSelection(entities: Entity[], interactive = false) {
   formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   button('explore').hidden = !entities.some(entity => entity.kind === 'scout')
+  button('dismiss-units').hidden = !entities.length || !entities.every(entity => entity.kind === 'worker' || entity.kind === 'scout')
   button('unload').hidden = !(entities.length === 1 && selected?.kind === 'transport')
   if (selected?.kind === 'transport') button('unload').disabled = !(selected.passengers?.length)
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
@@ -666,6 +674,12 @@ economyAction.onclick = () => {
 }
 
 button('explore').onclick = () => scene?.explore()
+button('dismiss-units').onclick = () => {
+  const ids = selection.filter(entity => entity.kind === 'worker' || entity.kind === 'scout').map(entity => entity.id)
+  if (ids.length && ids.length === selection.length && window.confirm(`Permanently dismiss ${ids.length} selected peasant(s) or scout(s)?`)) {
+    issueOrder(ids, { kind: 'dismiss' })
+  }
+}
 button('unload').onclick = () => scene?.unload()
 button('hero-skill').onclick = () => scene?.castHeroAbility()
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
