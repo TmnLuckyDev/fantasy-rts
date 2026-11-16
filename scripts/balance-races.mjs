@@ -20,6 +20,8 @@ function random(seed) {
 }
 
 const maps = ['pinewatch-vale', 'ironbreak-pass', 'shattered-isles']
+const botMinutes = Number(process.env.BALANCE_MINUTES ?? 5)
+if (![5, 10, 20].includes(botMinutes)) throw new Error('BALANCE_MINUTES must be 5, 10 or 20')
 const landArmy = ['blade', 'blade', 'ranged', 'ranged', 'polearm', 'heavy']
 const seaArmy = ['warship', 'warship', 'warship']
 const strategies = ['balanced', 'rush', 'defensive', 'counter']
@@ -63,7 +65,7 @@ function runSkirmish(map, front, lineup, rand) {
     match.command(side, army, { kind: 'advance', to: cellCenter(front.x + 4 * direction, front.y) })
   }
   let counts = [0, 0]
-  while (!match.result && match.tick < 25 * TICK_HZ) {
+  while (!match.result && match.tick < (map.id === 'shattered-isles' ? 75 : 30) * TICK_HZ) {
     match.step()
     counts = factions.map(side => [...match.units.values()].filter(unit => unit.faction === side && isUnitKind(unit.kind)).length)
     if (!counts.every(Boolean)) break
@@ -72,7 +74,7 @@ function runSkirmish(map, front, lineup, rand) {
 }
 
 function runBots(map, lineup, seed) {
-  const settings = { ...defaultMatchSettings(map.id), minutes: 5, randomStarts: true }
+  const settings = { ...defaultMatchSettings(map.id), minutes: botMinutes, randomStarts: true }
   const match = Match.configured(settings, seed, lineup)
   const bots = factions.map(side => new ComputerOpponent(side, match.map, 'normal', strategies[(seed - 1) % strategies.length]))
   while (!match.result) {
@@ -89,7 +91,8 @@ for (const id of maps) {
   for (let i = 0; i < races.length; i++) for (let j = i; j < races.length; j++) {
     const start = performance.now()
     const pair = [races[i], races[j]]
-    const wins = [0, 0], kills = [0, 0], unitsTrained = [0, 0], gathered = [0, 0]
+    const wins = [0, 0], kills = [0, 0], unitsTrained = [0, 0]
+    const gathered = pair.map(() => ({ gold: 0, wood: 0, stone: 0 }))
     let draws = 0, headquartersWins = 0, totalTicks = 0
     for (let game = 0; game < games; game++) {
       const left = game % 2, right = 1 - left
@@ -104,7 +107,7 @@ for (const id of maps) {
       for (const [side, slot] of [['human', left], ['orc', right]]) {
         kills[slot] += sides[side].enemiesKilled
         unitsTrained[slot] += sides[side].troopsTrained
-        gathered[slot] += Object.values(sides[side].gathered).reduce((sum, amount) => sum + amount, 0)
+        for (const resource of Object.keys(gathered[slot])) gathered[slot][resource] += sides[side].gathered[resource]
       }
     }
     console.log(JSON.stringify({ mode, map: id, pair, games, wins, draws, headquartersWins, kills, unitsTrained, gathered,

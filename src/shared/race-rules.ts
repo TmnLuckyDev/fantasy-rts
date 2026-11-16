@@ -3,8 +3,9 @@ import type { BuildingKind, EntityKind, Race, UnitKind } from './protocol.ts'
 type RaceRules = {
   description: string
   gathering?: number
+  stoneYield?: number
   scoutSight?: number
-  training?: Partial<Record<UnitKind, { gold?: number, ticks?: number }>>
+  training?: Partial<Record<UnitKind, { gold?: number, wood?: number, ticks?: number }>>
   production?: Partial<Record<EntityKind, readonly UnitKind[]>>
   defense?: Partial<Record<BuildingKind, number>>
   ambush?: readonly UnitKind[]
@@ -15,7 +16,8 @@ export const raceRules: Record<Race, RaceRules> = {
   orc: { description: 'Strong frontline and fast ranged attacks.' },
   dwarf: {
     description: 'Armored infantry, fortress defenses and siege. Slow to take ground.',
-    production: { elite: ['heavy', 'siege'] }, defense: { tower: 1.12, wall: 1.12 }
+    production: { elite: ['heavy', 'siege'] }, stoneYield: 1.15,
+    training: { heavy: { gold: 253 } }, defense: { tower: 1.12, wall: 1.12 }
   },
   elf: {
     description: 'Mobile archers, forest ambush and healing. Fragile in a prolonged fight.',
@@ -25,15 +27,16 @@ export const raceRules: Record<Race, RaceRules> = {
   undead: {
     description: 'Cheap skeletons and corpse magic. Weak defenses and slower gathering.',
     gathering: 0.9, production: { barracks: ['blade', 'polearm', 'ranged'], range: ['marksman'], smithy: ['support'] },
-    training: { blade: { gold: 60, ticks: 76 }, ranged: { gold: 72, ticks: 96 } }
+    training: { blade: { gold: 60, ticks: 76 }, ranged: { gold: 72, ticks: 96 }, warship: { gold: 207, wood: 167 } }
   }
 }
 
 export type RaceSkill = { name: string, description: string, cooldown: number, radius: number, duration?: number, bonus: number }
 export const raceSkills: Partial<Record<Race, Partial<Record<UnitKind, RaceSkill>>>> = {
   dwarf: {
-    vanguard: { name: 'Stoneguard', description: '+3 armor for allies nearby for 6 seconds.', cooldown: 300, radius: 128, duration: 120, bonus: 3 },
-    pathfinder: { name: 'Siege Command', description: 'Nearby mortars gain +12 building damage for 7 seconds.', cooldown: 320, radius: 152, duration: 140, bonus: 12 }
+    heavy: { name: 'Shield Wall', description: 'Reduce incoming damage by 30% for 5 seconds.', cooldown: 300, radius: 0, duration: 100, bonus: 0.3 },
+    vanguard: { name: 'Stoneheart Aura', description: '+3 armor for allies nearby for 6 seconds.', cooldown: 300, radius: 128, duration: 120, bonus: 3 },
+    pathfinder: { name: 'Siege Command', description: 'Nearby siege cannons gain +12 building damage for 7 seconds.', cooldown: 320, radius: 152, duration: 140, bonus: 12 }
   },
   elf: {
     marksman: { name: 'Steady Aim', description: '+3 attack damage for 5 seconds.', cooldown: 300, radius: 0, duration: 100, bonus: 3 },

@@ -37,10 +37,13 @@ export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: nu
   precision: { name: 'Ranged precision +2 damage', cost: { gold: 155, wood: 75 }, ticks: 250, bonus: 2 },
   vitality: { name: 'Troop vitality +12 HP', cost: { gold: 145, stone: 55 }, ticks: 250, bonus: 12 },
   range: { name: 'Ranged reach +12 range', cost: { gold: 170, wood: 90 }, ticks: 270, bonus: 12 },
-  speed: { name: 'Troop speed +5%', cost: { gold: 165, wood: 65 }, ticks: 250, bonus: 5 }
+  speed: { name: 'Troop speed +5%', cost: { gold: 165, wood: 65 }, ticks: 250, bonus: 5 },
+  fortress: { name: 'Fortress Engineering +12% defensive HP', cost: { gold: 150, stone: 115 }, ticks: 280, bonus: 12 }
 }
 
 export const MAX_UPGRADE_LEVEL = 5
+export const upgradeLevelLimit = (kind: UpgradeKind) => kind === 'fortress' ? 1 : MAX_UPGRADE_LEVEL
+export const researchSite = (kind: UpgradeKind): BuildingKind => kind === 'fortress' ? 'elite' : 'smithy'
 export const structureUpgrade = (kind: 'tower' | 'wall', level: number) => ({
   cost: kind === 'tower' ? { gold: 45 * level, wood: 30 * level, stone: 50 * level } : { stone: 65 * level, wood: 15 * level },
   ticks: 75 + level * 35

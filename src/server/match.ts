@@ -7,7 +7,7 @@ import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
-  buildings as buildingRules, buildingFootprint, canAfford, REPAIR, repairCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, buildingFootprint, canAfford, REPAIR, repairCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
 import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
@@ -189,7 +189,7 @@ export class Match {
       }
       if (unit.kind === 'wall' || unit.kind === 'tower') {
         unit.level = Math.max(1, Math.min(MAX_UPGRADE_LEVEL, unit.level ?? 1))
-        maxHp += (unit.level - 1) * match.fortificationHealth(unit)
+        maxHp = match.fortificationMaxHp(unit.faction, unit.kind, unit.level)
       }
       unit.race = match.races[unit.faction] === unit.faction ? undefined : match.races[unit.faction]
       unit.hp = Math.min(maxHp, Math.max(1, Math.ceil(unit.hp * maxHp / unit.maxHp)))
@@ -221,7 +221,7 @@ export class Match {
 
   private spawn(faction: Faction, kind: EntityKind, position: Point, buildDuration = 0) {
     const experience = isHeroKind(kind) ? this.heroExperience[faction][kind] ?? 0 : undefined
-    const health = unitStats[this.races[faction]][kind].health + (experience ? (heroLevel(experience) - 1) * heroHealthPerLevel : 0) +
+    const health = this.fortifiedHealth(faction, kind, unitStats[this.races[faction]][kind].health) + (experience ? (heroLevel(experience) - 1) * heroHealthPerLevel : 0) +
       (isUnitKind(kind) && kind !== 'worker' && kind !== 'scout' ? this.upgrades[faction].filter(value => value === 'vitality').length * upgrades.vitality.bonus : 0)
     const id = ++this.sequence
     const unit: Unit = {
@@ -537,25 +537,35 @@ export class Match {
     return true
   }
 
-  private fortificationHealth(building: Unit) {
-    const strength = raceRules[this.races[building.faction]].defense?.[building.kind as 'wall' | 'tower'] ?? 1
-    return Math.round((building.kind === 'wall' ? 100 : 85) * strength)
+  private fortifiedHealth(faction: Faction, kind: EntityKind, base: number) {
+    return this.upgrades[faction].includes('fortress') ? Math.round(base * this.fortressMultiplier(faction, kind)) : base
+  }
+
+  private fortressMultiplier(faction: Faction, kind: EntityKind) {
+    return kind === 'wall' || kind === 'tower' ? raceRules[this.races[faction]].defense?.[kind] ?? 1 : 1
+  }
+
+  private fortificationMaxHp(faction: Faction, kind: 'wall' | 'tower', level: number) {
+    const tierHealth = kind === 'wall' ? 100 : 85
+    return this.fortifiedHealth(faction, kind, unitStats[this.races[faction]][kind].health + (level - 1) * tierHealth)
   }
 
   private completeStructureUpgrade(building: Unit) {
     if (!building.structureJob || --building.structureJob.left > 0) return
     building.structureJob = undefined
     building.level = Math.min(MAX_UPGRADE_LEVEL, (building.level ?? 1) + 1)
-    const bonus = this.fortificationHealth(building)
-    building.maxHp += bonus
-    building.hp += bonus
+    if (building.kind !== 'wall' && building.kind !== 'tower') return
+    const maxHp = this.fortificationMaxHp(building.faction, building.kind, building.level)
+    building.hp += maxHp - building.maxHp
+    building.maxHp = maxHp
   }
 
   private startUpgrade(building: Unit, kind: UpgradeKind) {
     const rule = upgrades[kind]
     const stock = this.resources[building.faction]
-    if (building.kind !== 'smithy' || building.buildDuration || building.upgradeJob ||
-        this.upgrades[building.faction].filter(upgrade => upgrade === kind).length >= MAX_UPGRADE_LEVEL || !canAfford(stock, rule.cost) ||
+    if (!rule || building.kind !== researchSite(kind) || building.buildDuration || building.upgradeJob ||
+        (kind === 'fortress' && this.races[building.faction] !== 'dwarf') ||
+        this.upgrades[building.faction].filter(upgrade => upgrade === kind).length >= upgradeLevelLimit(kind) || !canAfford(stock, rule.cost) ||
         [...this.units.values()].some(unit => unit.faction === building.faction && unit.upgradeJob?.kind === kind)) return false
     spend(stock, rule.cost)
     building.upgradeJob = { kind, left: rule.ticks }
@@ -570,6 +580,14 @@ export class Match {
         if (unit.faction !== building.faction || !isUnitKind(unit.kind) || unit.kind === 'worker' || unit.kind === 'scout') continue
         unit.maxHp += upgrades.vitality.bonus
         unit.hp += upgrades.vitality.bonus
+      }
+    }
+    if (building.upgradeJob.kind === 'fortress') {
+      for (const unit of this.units.values()) {
+        if (unit.faction !== building.faction || (unit.kind !== 'wall' && unit.kind !== 'tower')) continue
+        const maxHp = this.fortifiedHealth(unit.faction, unit.kind, unit.maxHp)
+        unit.hp = Math.min(maxHp, Math.round(unit.hp / unit.maxHp * maxHp))
+        unit.maxHp = maxHp
       }
     }
     building.upgradeJob = undefined
@@ -730,7 +748,7 @@ export class Match {
       if (++job.workTicks >= REPAIR.ticks) {
         job.workTicks = 0
         spend(stock, cost)
-        site.hp = Math.min(site.maxHp, site.hp + Math.round(REPAIR.health * (raceRules[this.races[site.faction]].defense?.[site.kind as 'tower' | 'wall'] ?? 1)))
+        site.hp = Math.min(site.maxHp, site.hp + this.fortifiedHealth(site.faction, site.kind, REPAIR.health))
         if (site.hp === site.maxHp) this.resetOrders(worker)
       }
       return
@@ -759,7 +777,18 @@ export class Match {
     if (worker.cargo) {
       const base = [...this.units.values()].find(unit => unit.faction === worker.faction && unit.kind === 'headquarters')
       if (!base) return
-      if (distance(worker, base) <= unitStats[this.races[base.faction]].headquarters.radius + 26) {
+      let dropOff = base
+      if (worker.cargo === 'stone' && this.races[worker.faction] === 'dwarf') {
+        let nearest = squaredDistance(worker, base)
+        for (const mine of this.nearby[worker.faction].near(worker, 8 * TILE)) {
+          if (mine.kind !== 'farm' || mine.buildDuration) continue
+          const gap = squaredDistance(worker, mine)
+          if (gap >= nearest || gap > (8 * TILE) ** 2) continue
+          nearest = gap
+          dropOff = mine
+        }
+      }
+      if (distance(worker, dropOff) <= unitStats[this.races[base.faction]][dropOff.kind].radius + 26) {
         let amount = worker.cargoAmount ?? GATHERING[worker.cargo].amount
         if (worker.cargo === 'wood' && this.races[worker.faction] === 'elf') {
           for (const tree of this.nearby[worker.faction].near(base, 160)) {
@@ -772,7 +801,7 @@ export class Match {
         this.stats[worker.faction].gathered[worker.cargo] += amount
         worker.cargo = null
         worker.cargoAmount = undefined
-      } else this.approach(worker, base, obstacles, true)
+      } else this.approach(worker, dropOff, obstacles, true)
     } else {
       this.harvest(worker, job, obstacles)
     }
@@ -831,7 +860,9 @@ export class Match {
     }
     if (++job.workTicks < GATHERING[job.resource].ticks) return
     const extracted = this.extracted.get(index) ?? 0
-    const amount = Math.min(Math.round(GATHERING[job.resource].amount * (raceRules[this.races[worker.faction]].gathering ?? 1)), (stock ?? Infinity) - extracted)
+    const rules = raceRules[this.races[worker.faction]]
+    const yieldMultiplier = (rules.gathering ?? 1) * (job.resource === 'stone' ? rules.stoneYield ?? 1 : 1)
+    const amount = Math.min(Math.round(GATHERING[job.resource].amount * yieldMultiplier), (stock ?? Infinity) - extracted)
     worker.cargo = job.resource
     worker.cargoAmount = amount
     job.workTicks = 0
@@ -1220,9 +1251,15 @@ export class Match {
     return true
   }
 
+  private incomingDamage(target: Unit, damage: number) {
+    const shield = target.kind === 'heavy' && this.races[target.faction] === 'dwarf' && this.activeSkill(target)
+    const multiplier = shield ? 1 - raceSkills.dwarf!.heavy!.bonus : 1
+    return Math.max(1, Math.round(damage * multiplier))
+  }
+
   private heroSkillHit(attacker: Unit, target: Unit, power: number) {
     if (!this.units.has(target.id)) return
-    const damage = Math.max(1, power - unitStats[this.races[target.faction]][target.kind].armor -
+    const damage = this.incomingDamage(target, power - unitStats[this.races[target.faction]][target.kind].armor -
       (target.kind === 'wall' || target.kind === 'tower' ? ((target.level ?? 1) - 1) * 2 : 0))
     this.reveal(target)
     target.hp = Math.max(0, target.hp - damage)
@@ -1245,7 +1282,7 @@ export class Match {
       (isRanged(attacker.kind) || attacker.kind === 'warship' ? this.upgrades[attacker.faction].filter(kind => kind === 'precision').length * upgrades.precision.bonus : 0) : 0
     const armorBonus = isUnitKind(target.kind) && target.kind !== 'worker' ? this.upgrades[target.faction].filter(kind => kind === 'armor').length * upgrades.armor.bonus : 0
     const race = this.races[attacker.faction]
-    const allyArmor = this.races[target.faction] === 'dwarf' && isUnitKind(target.kind) &&
+    const allyArmor = this.races[target.faction] === 'dwarf' && isUnitKind(target.kind) && target.kind !== 'worker' && !isShipKind(target.kind) &&
       this.hasAura(target, 'vanguard', 128) ? 3 : 0
     const siegeBonus = attacker.kind === 'siege' && !isUnitKind(target.kind) ? 10 +
       (this.hasAura(attacker, 'pathfinder', 152) ? 12 : 0) : 0
@@ -1258,7 +1295,7 @@ export class Match {
       (heroLevel(attacker.experience) - 1) * heroDamagePerLevel +
       (classic && attacker.kind === 'pathfinder' ? 5 : 0) +
       (classic && attacker.kind === 'vanguard' && this.tick < (attacker.abilityActiveUntil ?? 0) ? 8 : 0)
-    const damage = Math.max(1, unitStats[this.races[attacker.faction]][attacker.kind].damage + attackBonus + heroBonus + siegeBonus + ghoulBonus + activeBonus - allyArmor + (attacker.kind === 'tower' ? ((attacker.level ?? 1) - 1) * 5 : 0) -
+    const damage = this.incomingDamage(target, unitStats[this.races[attacker.faction]][attacker.kind].damage + attackBonus + heroBonus + siegeBonus + ghoulBonus + activeBonus - allyArmor + (attacker.kind === 'tower' ? ((attacker.level ?? 1) - 1) * 5 : 0) -
       unitStats[this.races[target.faction]][target.kind].armor - armorBonus - (target.kind === 'wall' || target.kind === 'tower' ? ((target.level ?? 1) - 1) * 2 : 0) -
       (target.kind === 'vanguard' && (this.races[target.faction] === 'human' || this.races[target.faction] === 'orc') ? 2 : 0))
     this.reveal(target)

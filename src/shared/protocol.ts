@@ -41,7 +41,7 @@ export type ResourceKind = typeof resourceKinds[number]
 export type Resources = Record<ResourceKind, number>
 export type Population = { used: number, reserved: number, limit: number }
 
-export const factionNames: Record<Race, string> = { human: 'Human Kingdoms', orc: 'Orcish Horde', dwarf: 'Dwarven Holds', elf: 'Sylvan Covenant', undead: 'Hollow Legion' }
+export const factionNames: Record<Race, string> = { human: 'Human Kingdoms', orc: 'Orcish Horde', dwarf: 'Ironbound Clans', elf: 'Sylvan Covenant', undead: 'Hollow Legion' }
 export const entityNames: Record<Race, Record<EntityKind, string>> = {
   human: {
     siege: 'Siege Engine', support: 'Support', blade: 'Footman', polearm: 'Pikeman', ranged: 'Archer', marksman: 'Crossbowman', heavy: 'Knight',
@@ -56,11 +56,11 @@ export const entityNames: Record<Race, Record<EntityKind, string>> = {
     elite: 'Ogre Den', farm: 'Boar Farm', wall: 'Stone Rampart', tower: 'Watch Tower', smithy: 'War Forge', port: 'War Port'
   },
   dwarf: {
-    blade: 'Ironshield', polearm: 'Hammerguard', ranged: 'Thunderer', marksman: 'Runebolt Gunner', heavy: 'Deepwarden',
-    siege: 'Runic Mortar', support: 'Support', scout: 'Tunnel Pathfinder', worker: 'Delver',
-    vanguard: 'Thorin Stoneheart', pathfinder: 'Bromm Thunderforge', headquarters: 'Mountain Hold',
-    barracks: 'Iron Barracks', range: 'Powder Hall', elite: 'Siege Foundry', farm: 'Supply Hall', wall: 'Runestone Wall',
-    tower: 'Bastion', smithy: 'Rune Forge', port: 'Iron Dock', transport: 'Armored Ferry', warship: 'Iron Warship'
+    blade: 'Ironbreaker', polearm: 'Hammerguard', ranged: 'Thunderer', marksman: 'Runebolt Gunner', heavy: 'Stoneguard',
+    siege: 'Siege Cannon', support: 'Support', scout: 'Tunnel Pathfinder', worker: 'Delver',
+    vanguard: 'Thorin Stoneheart', pathfinder: 'Bromm Thunderforge', headquarters: 'Mountain Hall',
+    barracks: 'Iron Barracks', range: 'Powder Hall', elite: 'Foundry', farm: 'Deep Mine', wall: 'Runestone Wall',
+    tower: 'Stone Bastion', smithy: 'Rune Forge', port: 'Iron Dock', transport: 'Armored Ferry', warship: 'Iron Warship'
   },
   elf: {
     blade: 'Bladedancer', polearm: 'Thorn Guard', ranged: 'Sylvan Archer', marksman: 'Forest Sentinel', heavy: 'Grove Warden',
@@ -81,7 +81,7 @@ export const entityNames: Record<Race, Record<EntityKind, string>> = {
 export const opposite = (faction: Faction): Faction => faction === 'human' ? 'orc' : 'human'
 export const isFaction = (value: unknown): value is Faction => value === 'human' || value === 'orc'
 
-export const upgradeKinds = ['weapons', 'armor', 'precision', 'vitality', 'range', 'speed'] as const
+export const upgradeKinds = ['weapons', 'armor', 'precision', 'vitality', 'range', 'speed', 'fortress'] as const
 export type UpgradeKind = typeof upgradeKinds[number]
 export type Entity = Point & {
   id: number

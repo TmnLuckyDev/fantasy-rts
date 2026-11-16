@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
-import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../shared/economy.ts'
+import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { hasHero, heroAbilities, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
@@ -97,11 +97,19 @@ for (const race of ['dwarf', 'elf', 'undead'] as const) {
   choice.className = 'faction ' + race
   choice.type = 'button'
   choice.dataset.faction = race
+  const copy = document.createElement('span')
   const title = document.createElement('strong')
   title.textContent = factionNames[race]
   const description = document.createElement('small')
   description.textContent = raceRules[race].description
-  choice.append(title, description)
+  const icon = document.createElement('canvas')
+  icon.className = 'race-icon'
+  icon.setAttribute('aria-hidden', 'true')
+  icon.width = 48
+  icon.height = 48
+  paintPortrait(icon, race, 'headquarters')
+  copy.append(title, description)
+  choice.append(icon, copy)
   document.querySelector('.factions')!.append(choice)
 }
 const opponentChoice = element<HTMLSelectElement>('solo-race')
@@ -477,9 +485,9 @@ function drawSelection(entities: Entity[], interactive = false) {
     else if (selected.training) {
       detail.textContent = trainingSummary(selected.training)
     } else if (selected.kind === 'worker') {
-      detail.textContent = selected.carrying ? `Carrying ${selected.carrying} to the hall.` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
+      detail.textContent = selected.carrying ? `Carrying ${selected.carrying}` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
     } else if (selected.kind === 'transport') detail.textContent = `${hp}/${totalHp} HP · ${selected.passengerPop ?? 0}/30 population aboard`
-    else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP`
+    else if (selected.kind === 'farm') detail.textContent = `+${FARM_POPULATION} population · ${hp}/${totalHp} HP` + (raceOf(selected) === 'dwarf' ? ' · Stone drop-off' : '')
     else detail.textContent = (selected.level ? `Level ${selected.level}/${MAX_UPGRADE_LEVEL} · ` : '') + (stats.damage ? `${hp}/${totalHp} HP · ${stats.damage} damage` : `${hp}/${totalHp} HP`) + (selected.upgradeProgress !== undefined ? ` · Upgrading ${percentage(selected.upgradeProgress)}` : '')
   } else {
     const onlyWorkers = entities.every(entity => entity.kind === 'worker')
@@ -527,13 +535,13 @@ function updateEconomyOptions() {
     if (!rule) continue
     const needsSpace = rule.population > 0 && rule.population > available
     needsFarm ||= needsSpace
-    const unavailable = rule.upgrade && (researched.filter(kind => kind === rule.upgrade).length >= MAX_UPGRADE_LEVEL ||
+    const unavailable = rule.upgrade && (researched.filter(kind => kind === rule.upgrade).length >= upgradeLevelLimit(rule.upgrade) ||
       Boolean(selection[0]?.research) || ownEntities.some(entity => entity.research?.kind === rule.upgrade))
     if (rule.hero) heroTaken ??= hasHero(ownEntities)
     choice.disabled = Boolean(unavailable) || needsSpace || !canAfford(resources, rule.cost) ||
       Boolean(rule.hero && heroTaken)
     if (rule.hero) choice.title = heroTaken ? 'You already have a hero or one is in training.' : 'One hero per faction.'
-    if (rule.upgrade) choice.title = researched.filter(kind => kind === rule.upgrade).length >= MAX_UPGRADE_LEVEL ? 'Max level' : ''
+    if (rule.upgrade) choice.title = researched.filter(kind => kind === rule.upgrade).length >= upgradeLevelLimit(rule.upgrade) ? 'Max level' : ''
   }
   const fortify = menu.querySelector<HTMLButtonElement>('[data-fortify]')
   if (fortify) {
@@ -563,7 +571,7 @@ function economyChoice(kind: EntityKind, cost: Cost, population: number, act: ()
   choiceRules.set(choice, { cost, population, upgrade })
   const prices = resourceKinds.flatMap(kind => cost[kind] ? [`${cost[kind]} ${kind}`] : [])
   if (population > 1) prices.push(`${population} pop`)
-  const name = upgrade ? `${upgrades[upgrade].name} · Lv ${Math.min(MAX_UPGRADE_LEVEL, researched.filter(kind => kind === upgrade).length + 1)}/${MAX_UPGRADE_LEVEL}` : entityNames[chosenRace][kind]
+  const name = upgrade ? `${upgrades[upgrade].name} · Lv ${Math.min(upgradeLevelLimit(upgrade), researched.filter(kind => kind === upgrade).length + 1)}/${upgradeLevelLimit(upgrade)}` : entityNames[chosenRace][kind]
   choice.setAttribute('aria-label', [name, ...prices].join(' · '))
   const icon = document.createElement('canvas')
   icon.width = icon.height = 36
@@ -678,12 +686,16 @@ function openEconomyMenu(rebuild = false) {
       menu.replaceChildren(button, ...buildingActions(site))
     } else if (selection[0]?.kind === 'smithy') {
       const smith = selection[0]
-      menu.replaceChildren(...upgradeKinds.map(kind => economyChoice('smithy', upgrades[kind].cost, 0, () =>
+      menu.replaceChildren(...upgradeKinds.filter(kind => kind !== 'fortress').map(kind => economyChoice('smithy', upgrades[kind].cost, 0, () =>
         issueOrder([smith.id], { kind: 'upgrade', upgrade: kind }), kind)), ...productionChoices(smith), ...buildingActions(smith))
     } else {
       const building = selection[0]
       if (!building) return
       const production = trainedAt(building.kind, chosenRace).length ? productionChoices(building) : []
+      if (chosenRace === 'dwarf' && building.kind === 'elite') {
+        production.push(economyChoice('elite', upgrades.fortress.cost, 0, () =>
+          issueOrder([building.id], { kind: 'upgrade', upgrade: 'fortress' }), 'fortress'))
+      }
       menu.replaceChildren(...production, ...buildingActions(building))
     }
   }

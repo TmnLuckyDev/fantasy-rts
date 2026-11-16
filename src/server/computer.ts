@@ -135,8 +135,9 @@ export class ComputerOpponent {
     }
     const assigned = new Map<string, number>()
     workers.forEach((worker, index) => {
-      const job = match.units.get(worker.id)?.job
-      if (job && job.kind !== 'gather') return
+      const state = match.units.get(worker.id)
+      const job = state?.job
+      if (state?.assigned || (job && job.kind !== 'gather')) return
       const resource = resourceAssignments[index] ?? 'gold'
       const key = (at: Point) => at.x + ',' + at.y
       const available = (at: Point, kind: ResourceKind) => match.availableDeposit(this.faction, at) &&
@@ -157,6 +158,11 @@ export class ComputerOpponent {
         if (!view.upgrades?.includes(kind) && canAfford(view.resources, upgrades[kind].cost) &&
             match.command(this.faction, [smith.id], { kind: 'upgrade', upgrade: kind })) break
       }
+    }
+    const foundry = race === 'dwarf' && structures.find(unit =>
+      unit.kind === 'elite' && unit.construction === undefined && !unit.research)
+    if (foundry && !view.upgrades?.includes('fortress') && canAfford(view.resources, upgrades.fortress.cost)) {
+      match.command(this.faction, [foundry.id], { kind: 'upgrade', upgrade: 'fortress' })
     }
     const army = own.filter(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
     if (army.length >= 8 && workers.length >= 4 && !hall.training && !army.some(unit => isHeroKind(unit.kind))) {
@@ -207,22 +213,24 @@ export class ComputerOpponent {
     const population = view.population
     const needsFarm = population.limit - population.used - population.reserved <= (this.difficulty === 'hard' ? 3 : 1)
     const desired: Array<[BuildingKind, boolean]> = [
-      ['port', Boolean(this.landing) && !has('port') && canAfford(view.resources, buildings.port.cost)],
       ['barracks', !has('barracks')],
-      ['farm', needsFarm],
+      ['farm', needsFarm && population.limit < (match.settings.populationCap ?? 500)],
+      ['port', Boolean(this.landing) && !has('port')],
       ['tower', (race === 'dwarf' || this.strategy === 'defensive') && !has('tower')],
       ['range', !has('range')],
       ['tower', !has('tower')],
       ['elite', match.tick >= (race === 'dwarf' ? 50 : race === 'elf' ? 65 : 90) * TICK_HZ && !has('elite')],
       ['smithy', (race === 'undead' || this.difficulty !== 'easy') && match.tick >= (race === 'undead' ? 55 : 100) * TICK_HZ && !has('smithy')]
     ]
-    const kind = desired.find(([, needed]) => needed)?.[0]
-    if (!kind || !canAfford(view.resources, buildings[kind].cost)) return
-    for (const at of this.constructionSites.get(kind) ?? []) {
-      if (match.command(this.faction, [builder.id], { kind: 'build', building: kind, at })) return
-    }
-    if (kind === 'port' && this.shoreline[0] && !match.units.get(builder.id)?.assigned) {
-      match.command(this.faction, [builder.id], { kind: 'move', to: this.shoreline[0].land })
+    for (const [kind, needed] of desired) {
+      if (!needed || !canAfford(view.resources, buildings[kind].cost)) continue
+      for (const at of this.constructionSites.get(kind) ?? []) {
+        if (match.command(this.faction, [builder.id], { kind: 'build', building: kind, at })) return
+      }
+      if (kind === 'port' && this.shoreline[0] && !match.units.get(builder.id)?.assigned &&
+          distance(builder, this.shoreline[0].land) > TILE) {
+        if (match.command(this.faction, [builder.id], { kind: 'move', to: this.shoreline[0].land })) return
+      }
     }
   }
 
@@ -292,7 +300,9 @@ export class ComputerOpponent {
     const guard = plan.guard + (race === 'dwarf' ? 2 : race === 'undead' ? -1 : 0)
     const early = race === 'undead' ? 12 * TICK_HZ : 0
     if (match.tick + early < this.nextAssault || reserve.length < guard + 4) return
-    const wave = reserve.slice(0, Math.min(plan.wave, reserve.length - guard))
+    const waveSize = plan.wave + (race === 'undead' ? 3 : 0)
+    if (race === 'dwarf') reserve.sort((a, b) => Number(b.kind === 'siege') - Number(a.kind === 'siege'))
+    const wave = reserve.slice(0, Math.min(waveSize, reserve.length - guard))
     const worker = (this.strategy === 'rush' || this.difficulty === 'hard') ?
       view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'worker') : undefined
     if (match.command(this.faction, wave.map(unit => unit.id), { kind: 'advance', to: worker ?? view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'headquarters') ?? this.enemyBase })) {

@@ -57,9 +57,9 @@ function roster(changes: Partial<Record<EntityKind, Partial<UnitStats>>>) {
 
 const elf = roster({
   blade: { armor: 1, damage: 18 }, polearm: { armor: 2, damage: 19 },
-  heavy: { armor: 4, damage: 29 }, marksman: { damage: 22, cooldown: 22 },
-  ranged: { damage: 15 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
-  pathfinder: { range: 165, health: 240, speed: 94 }
+  heavy: { armor: 4, damage: 29 }, marksman: { damage: 24, cooldown: 21 },
+  ranged: { damage: 17, cooldown: 15 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
+  pathfinder: { range: 165, health: 240, speed: 94 }, warship: { health: 585, speed: 90.2 }
 })
 for (const kind of ['blade', 'polearm', 'heavy', 'ranged', 'marksman', 'scout', 'support'] as const) {
   elf[kind].speed *= 1.1
@@ -71,13 +71,13 @@ for (const kind of ['tower', 'wall'] as const) elf[kind].health = Math.round(elf
 export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
   ...original, elf,
   dwarf: roster({
-    blade: { health: 104, armor: 4, speed: 64, damage: 14 },
-    polearm: { health: 129, armor: 4, speed: 62, cooldown: 16 },
-    ranged: { health: 76, speed: 61, range: 112, cooldown: 19 },
-    marksman: { health: 92, speed: 55, range: 145, cooldown: 25 },
-    heavy: { health: 258, armor: 7, speed: 66, cooldown: 20 },
-    headquarters: { health: 1725, armor: 6 }, tower: { health: 545, armor: 4 },
-    wall: { health: 450, armor: 5 }, scout: { speed: 128 },
+    blade: { health: 101, armor: 3, speed: 65.45, damage: 14 },
+    polearm: { health: 124, armor: 5, speed: 64.6, cooldown: 17 },
+    ranged: { health: 74, damage: 17, speed: 62.05, range: 112, cooldown: 25 },
+    marksman: { health: 92, speed: 54.4, range: 145, cooldown: 25 },
+    heavy: { health: 248, armor: 8, speed: 76.5, cooldown: 21 },
+    headquarters: { health: 1725, armor: 6 }, tower: { health: 552, armor: 4 },
+    wall: { health: 432, armor: 5 }, scout: { speed: 128 }, warship: { health: 715, speed: 73.8 },
     vanguard: { health: 385, speed: 69, damage: 32 }, pathfinder: { speed: 72, damage: 26, range: 149 }
   }),
   undead: roster({
@@ -85,7 +85,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     polearm: { health: 97, speed: 105, armor: 2, damage: 15 },
     marksman: { health: 68, armor: 1, range: 143 },
     heavy: { health: 295, speed: 57, armor: 6, damage: 36, cooldown: 23 },
-    tower: { health: 390 }, wall: { health: 305 }, support: { health: 94, speed: 73 },
+    tower: { health: 390 }, wall: { health: 305 }, warship: { health: 585 }, support: { health: 94, speed: 73 },
     vanguard: { armor: 5, damage: 35 }, pathfinder: { health: 230, range: 146, damage: 26 }
   })
 }
