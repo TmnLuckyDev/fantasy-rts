@@ -41,7 +41,7 @@ export const entityNames: Record<Faction, Record<EntityKind, string>> = {
   },
   orc: {
     blade: 'Grunt', polearm: 'Cleaver', ranged: 'Spearman', marksman: 'Axe Thrower', heavy: 'Ogre',
-    vanguard: 'Gorak Ironhand', pathfinder: 'Vesha Emberbow', scout: 'Scout',
+    vanguard: 'Gorak Ironhand', pathfinder: 'Vesha Emberbow', scout: 'Scout', transport: 'Transport Ship', warship: 'Warship',
     headquarters: 'Great Hall', worker: 'Peon', barracks: 'War Barracks', range: 'Hunting Grounds',
     elite: 'Ogre Den', farm: 'Boar Farm', wall: 'Stone Rampart', tower: 'Watch Tower', smithy: 'War Forge', port: 'War Port'
   }
