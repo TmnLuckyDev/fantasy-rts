@@ -35,6 +35,7 @@ export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: nu
 }
 
 export const training: Record<UnitKind, { gold: number, ticks: number, population: number }> = {
+  scout: { gold: 85, ticks: 110, population: 1 },
   worker: { gold: 60, ticks: 95, population: 1 },
   blade: { gold: 75, ticks: 95, population: 1 },
   polearm: { gold: 105, ticks: 120, population: 1 },
@@ -46,7 +47,7 @@ export const training: Record<UnitKind, { gold: number, ticks: number, populatio
 }
 
 const production: Partial<Record<EntityKind, readonly UnitKind[]>> = {
-  headquarters: ['worker', ...heroKinds],
+  headquarters: ['worker', 'scout', ...heroKinds],
   barracks: ['blade', 'polearm'],
   range: ['ranged', 'marksman'],
   elite: ['heavy']
@@ -62,9 +63,14 @@ export function spend(resources: Resources, cost: Cost) {
   for (const kind of resourceKinds) resources[kind] -= cost[kind] ?? 0
 }
 
+export function buildingFootprint(kind: BuildingKind) {
+  // Artwork extends beyond the ground footprint. Keep HQ spacing unchanged.
+  return Math.round(unitStats.human[kind].radius * (kind === 'wall' ? 0.9 : 0.78))
+}
+
 export function validPlacement(map: BattleMap, kind: BuildingKind, position: Point, entities: Iterable<Entity>) {
   const point = snapToCell(position)
-  const radius = unitStats.human[kind].radius
+  const radius = buildingFootprint(kind)
   const edge = radius - 0.01
   for (const dx of [-edge, 0, edge]) {
     for (const dy of [-edge, 0, edge]) {
@@ -73,7 +79,8 @@ export function validPlacement(map: BattleMap, kind: BuildingKind, position: Poi
     }
   }
   for (const entity of entities) {
-    const otherRadius = unitStats[entity.faction][entity.kind].radius
+    const otherRadius = isUnitKind(entity.kind) ? unitStats[entity.faction][entity.kind].radius :
+      entity.kind === 'headquarters' ? unitStats[entity.faction][entity.kind].radius : buildingFootprint(entity.kind)
     if (distance(point, entity) < radius + otherRadius + (isUnitKind(entity.kind) ? 2 : -0.01)) return false
   }
   return true
