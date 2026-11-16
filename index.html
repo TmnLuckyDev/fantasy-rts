@@ -105,7 +105,10 @@
           <button id="exit" type="button">Leave</button>
         </div>
       </header>
-      <section id="battlefield" aria-label="Battlefield"></section>
+      <div class="battle-area">
+        <section id="battlefield" aria-label="Battlefield"></section>
+        <div id="attack-alerts" role="region" aria-label="Attack alerts" aria-live="polite" hidden></div>
+      </div>
       <nav id="troop-groups" aria-label="Troop groups" hidden></nav>
       <footer class="hud">
         <button id="map-button" type="button" title="Tap or click to pan the camera" aria-label="Minimap"><canvas id="minimap" width="176" height="80"></canvas></button>

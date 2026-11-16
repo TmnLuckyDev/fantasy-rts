@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, isFaction, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
-import type { ArmyOrder, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import type { AttackAlert, ArmyOrder, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, training, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
@@ -47,6 +47,8 @@ const connection = element('connection')
 const lobbyMessage = element('lobby-message')
 const result = element<HTMLDialogElement>('result')
 const banner = element('banner')
+const attackAlerts = element('attack-alerts')
+let shownAlerts: readonly AttackAlert[] = []
 const menu = element('economy-menu')
 const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
@@ -168,6 +170,7 @@ function receive(message: ServerMessage) {
       const idle = message.entities.filter(entity => entity.faction === faction && entity.idle).length
       button('idle-worker').disabled = idle === 0
       setText('idle-count', String(idle))
+      drawAttackAlerts(room?.result ? [] : message.alerts ?? [])
       scene?.snapshot(message)
       break
     }
@@ -251,6 +254,7 @@ function showBattle() {
   placementTip.hidden = true
   placing = false
   closeEconomyMenu()
+  drawAttackAlerts([])
   drawTroopGroups(new Map(), null)
   drawSelection([])
   game = new Phaser.Game({
@@ -279,6 +283,24 @@ function paintPortrait(target: HTMLCanvasElement, side: Faction, kind: EntityKin
   ctx.clearRect(0, 0, target.width, target.height)
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(sprite, Math.floor((target.width - width) / 2), Math.floor((target.height - height) / 2), width, height)
+}
+
+function drawAttackAlerts(alerts: readonly AttackAlert[]) {
+  if (alerts.length === shownAlerts.length && alerts.every((alert, i) => alert.id === shownAlerts[i].id)) return
+  if (alerts.some(alert => !shownAlerts.some(previous => previous.id === alert.id))) audio.play('alert')
+  shownAlerts = alerts
+  attackAlerts.hidden = !alerts.length
+  const labels = { base: 'Base under attack', building: 'Building under attack',
+    workers: 'Workers under attack', army: 'Army under attack' }
+  attackAlerts.replaceChildren(...alerts.map(alert => {
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.dataset.severity = alert.kind
+    item.textContent = labels[alert.kind]
+    item.title = 'Center camera on attack'
+    item.onclick = () => scene?.focusAlert(alert.at)
+    return item
+  }))
 }
 
 function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
@@ -645,6 +667,7 @@ productionToggle.onclick = () => toggleProduction(productionPanel.hidden)
 
 function drawResult(outcome: NonNullable<RoomState['result']>) {
   element('result-title').textContent = !outcome.winner ? 'Draw' : outcome.winner === faction ? 'Victory' : 'Defeat'
+  drawAttackAlerts([])
   let detail: string
   if (outcome.reason === 'time') {
     setText('match-clock', '0:00')
@@ -742,7 +765,8 @@ document.addEventListener('keydown', unlockSound, { capture: true })
 button('map-button').addEventListener('pointerdown', event => {
   const bounds = minimap.getBoundingClientRect()
   const clamp = (value: number) => Math.min(1, Math.max(0, value))
-  scene?.minimapFocus(clamp((event.clientX - bounds.left) / bounds.width), clamp((event.clientY - bounds.top) / bounds.height))
+  scene?.minimapFocus(clamp((event.clientX - bounds.left) / bounds.width),
+    clamp((event.clientY - bounds.top) / bounds.height), bounds.width, bounds.height)
 })
 button('map-button').addEventListener('click', event => {
   if (event.detail === 0) scene?.minimapFocus(0.5, 0.5)

@@ -11,6 +11,7 @@ import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.t
 import type { Obstacle } from './navigation.ts'
 import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
 import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
+import { AttackAlerts } from './attack-alerts.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Visibility } from './visibility.ts'
 
@@ -77,6 +78,7 @@ export class Match {
   readonly units = new Map<number, Unit>()
   readonly map: BattleMap
   readonly settings: MatchSettings
+  private readonly attackAlerts = { human: new AttackAlerts(), orc: new AttackAlerts() }
   private readonly nearby = { human: new SpatialIndex<Unit>(), orc: new SpatialIndex<Unit>() }
   private readonly activeHeroes: Partial<Record<Faction, Unit>> = {}
   private readonly heroExperience: Record<Faction, Partial<Record<HeroKind, number>>> = { human: {}, orc: {} }
@@ -603,6 +605,7 @@ export class Match {
   step() {
     if (this.result) return
     this.tick++
+    for (const faction of factions) this.attackAlerts[faction].advance(this.tick)
     this.harvesting.clear()
     for (const faction of factions) this.nearby[faction].reset([])
     for (const unit of this.units.values()) this.nearby[unit.faction].update(unit)
@@ -784,6 +787,7 @@ export class Match {
     const damage = Math.max(1, unitStats[attacker.faction][attacker.kind].damage + attackBonus + heroBonus -
       unitStats[target.faction][target.kind].armor - armorBonus)
     target.hp = Math.max(0, target.hp - damage)
+    this.attackAlerts[target.faction].hit(target, this.tick)
     this.callDefenders(target, attacker)
     const at = { x: target.x, y: target.y }
     this.effects.push({
@@ -866,8 +870,9 @@ export class Match {
     }
     if (depleted.size && depleted.size !== this.visibleDepletion[faction]?.length) this.visibleDepletion[faction] = [...depleted]
     const knownDepletion = this.visibleDepletion[faction]
+    const alerts = this.attackAlerts[faction].current
     return {
-      type: 'snapshot', tick: world.tick, fog, ...(knownDepletion ? { depleted: knownDepletion } : {}),
+      type: 'snapshot', tick: world.tick, fog, ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
       resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction],
       entities: world.entities.flatMap(entity => {
         if (entity.faction === faction) return [entity]
