@@ -1,4 +1,4 @@
-import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine } from '../shared/map.ts'
+import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine, isWalkable, tileAt } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
 import { MAX_SELECTION, factions, inTroopGroup, isBuildingKind, isHeroKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
 import type { ArmyOrder, TroopGroup, Effect, Entity, EntityKind, Faction, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
@@ -235,6 +235,7 @@ export class Match {
       return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker'), order)
     }
     if (units.some(unit => !isUnitKind(unit.kind))) return false
+    if (order.kind === 'explore' && units.some(unit => unit.kind !== 'scout')) return false
     if (order.kind === 'attack') {
       const target = this.units.get(order.target)
       if (!target || target.faction === faction || this.visibility.at(faction, target) !== 2) return false
@@ -282,6 +283,27 @@ export class Match {
       }
     })
     return true
+  }
+
+  private scoutDestination(scout: Unit): Point | null {
+    // Sample a sparse grid to avoid scanning every map tile on every simulation tick.
+    const step = 3
+    const offset = scout.id % step
+    let best: Point | null = null
+    let score = Infinity
+    for (let y = 2 + offset; y < this.map.height - 2; y += step) {
+      for (let x = 2 + offset; x < this.map.width - 2; x += step) {
+        const at = cellCenter(x, y)
+        if (this.visibility.at(scout.faction, at) !== 0 || !isWalkable(tileAt(this.map, x, y))) continue
+        const occupied = [...this.units.values()].some(unit => unit !== scout && unit.kind === 'scout' &&
+          unit.faction === scout.faction && unit.order?.kind === 'explore' && unit.assigned &&
+          squaredDistance(unit.assigned, at) < (6 * TILE) ** 2)
+        if (occupied) continue
+        const candidate = squaredDistance(scout, at)
+        if (candidate < score) { score = candidate; best = at }
+      }
+    }
+    return best
   }
 
   private fitFormationSlot(unit: Unit, at: Point, anchor: Point) {
@@ -348,7 +370,7 @@ export class Match {
     let queued = false
     for (const at of locations) {
       if (!canAfford(stock, rule.cost)) break
-      if (this.visibility.at(faction, at) !== 2 || !validPlacement(this.map, kind, at, this.units.values())) continue
+      if (this.visibility.at(faction, at) === 0 || !validPlacement(this.map, kind, at, this.units.values())) continue
       spend(stock, rule.cost)
       this.queueConstruction(this.builder(workers), this.spawn(faction, kind, snapToCell(at), rule.ticks).id)
       queued = true
@@ -659,6 +681,12 @@ export class Match {
       if (unit.buildDuration) continue
       const stats = unitStats[unit.faction][unit.kind]
       const obstacles = hostileBuildings[unit.faction]
+      if (unit.kind === 'scout' && unit.order?.kind === 'explore' &&
+          (!unit.assigned || squaredDistance(unit, unit.assigned) < (TILE * 1.5) ** 2 || this.tick % 80 === 0)) {
+        const destination = this.scoutDestination(unit)
+        if (destination) unit.assigned = destination
+        else { this.resetOrders(unit) }
+      }
       if (!isUnitKind(unit.kind)) {
         this.train(unit, obstacles)
         this.research(unit)
