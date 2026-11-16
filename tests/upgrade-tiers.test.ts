@@ -5,6 +5,7 @@ import { trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../
 import { cellCenter } from '../src/shared/map.ts'
 import { parseMessage } from '../src/server/validate.ts'
 import { heroLevel } from '../src/shared/heroes.ts'
+import { unitStats } from '../src/shared/units.ts'
 
 function advance(match: Match, ticks: number) {
   for (let i = 0; i < ticks; i++) match.step()
@@ -61,7 +62,7 @@ test('blacksmith research has five levels for each upgrade and no sixth level', 
   checkpoint.units.push(smith)
   checkpoint.resources.human = { gold: 10000, wood: 10000, stone: 10000 }
   const game = Match.restore(checkpoint)
-  for (const kind of ['weapons', 'armor', 'precision', 'vitality'] as const) {
+  for (const kind of ['weapons', 'armor', 'precision', 'vitality', 'range', 'speed'] as const) {
     for (let level = 1; level <= MAX_UPGRADE_LEVEL; level++) {
       assert.equal(game.command('human', [smith.id], { kind: 'upgrade', upgrade: kind }), true)
       advance(game, upgrades[kind].ticks)
@@ -90,4 +91,58 @@ test('hero experience levels up from combat hits without needing a killing blow'
 test('structure upgrade orders are validated', () => {
   const parsed = parseMessage(JSON.stringify({ type: 'command', ids: [1], order: { kind: 'structure-upgrade' } }))
   assert.equal(parsed?.type, 'command')
+})
+
+test('five ranged reach levels extend tower, warship and archer attacks, but not melee', () => {
+  const checkpoint = new Match().checkpoint()
+  const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
+  const smith = { ...base, id: ++checkpoint.sequence, kind: 'smithy' as const, ...cellCenter(10, 15), hp: 620, maxHp: 620 }
+  const tower = { ...base, id: ++checkpoint.sequence, kind: 'tower' as const, ...cellCenter(11, 15), hp: 460, maxHp: 460 }
+  const warship = { ...base, id: ++checkpoint.sequence, kind: 'warship' as const, ...cellCenter(12, 15), hp: 650, maxHp: 650 }
+  const archer = { ...base, id: ++checkpoint.sequence, kind: 'ranged' as const, ...cellCenter(13, 15), hp: 66, maxHp: 66 }
+  const blade = { ...base, id: ++checkpoint.sequence, kind: 'blade' as const, ...cellCenter(14, 15), hp: 96, maxHp: 96 }
+  checkpoint.units.push(smith, tower, warship, archer, blade)
+  checkpoint.resources.human = { gold: 10000, wood: 10000, stone: 10000 }
+  const game = Match.restore(checkpoint)
+  const rangeOf = (unit: { id: number }) => (game as unknown as { attackRange(unit: unknown): number }).attackRange(unit)
+  const before = [tower, warship, archer, blade].map(rangeOf)
+  for (let i = 0; i < 5; i++) {
+    assert.equal(game.command('human', [smith.id], { kind: 'upgrade', upgrade: 'range' }), true)
+    advance(game, upgrades.range.ticks)
+  }
+  assert.deepEqual([tower, warship, archer].map(rangeOf), before.slice(0, 3).map(value => value + 5 * upgrades.range.bonus))
+  assert.equal(rangeOf(blade), before[3])
+  assert.equal(game.command('human', [smith.id], { kind: 'upgrade', upgrade: 'range' }), false)
+  const restored = Match.restore(structuredClone(game.checkpoint()))
+  assert.equal(restored.view('human').entities.find(unit => unit.id === tower.id)?.rangeLevel, 5)
+  assert.equal(restored.view('human').entities.find(unit => unit.id === warship.id)?.rangeLevel, 5)
+})
+
+test('tower and warship have equal base attack reach', () => {
+  assert.equal(unitStats.human.tower.range, unitStats.human.warship.range)
+  assert.equal(unitStats.orc.tower.range, unitStats.orc.warship.range)
+})
+
+test('five speed research levels accelerate both land troops and ships without changing static buildings', () => {
+  const checkpoint = new Match().checkpoint()
+  const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
+  const smith = { ...base, id: ++checkpoint.sequence, kind: 'smithy' as const, ...cellCenter(10, 15), hp: 620, maxHp: 620 }
+  const soldier = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'blade')!
+  const ship = { ...base, id: ++checkpoint.sequence, kind: 'warship' as const, ...cellCenter(12, 15), hp: 650, maxHp: 650 }
+  checkpoint.units.push(smith, ship)
+  checkpoint.resources.human = { gold: 10000, wood: 10000, stone: 10000 }
+  const game = Match.restore(checkpoint)
+  const moveSpeed = (unit: unknown) => (game as unknown as { moveSpeed(unit: unknown): number }).moveSpeed(unit)
+  const before = [soldier, ship, smith].map(moveSpeed)
+  for (let i = 0; i < 5; i++) {
+    assert.equal(game.command('human', [smith.id], { kind: 'upgrade', upgrade: 'speed' }), true)
+    advance(game, upgrades.speed.ticks)
+  }
+  assert.equal(moveSpeed(soldier), before[0] * 1.25)
+  assert.equal(moveSpeed(ship), before[1] * 1.25)
+  assert.equal(moveSpeed(smith), 0)
+  assert.equal(game.command('human', [smith.id], { kind: 'upgrade', upgrade: 'speed' }), false)
+  const restored = Match.restore(structuredClone(game.checkpoint()))
+  assert.equal(restored.view('human').entities.find(unit => unit.id === soldier.id)?.speedLevel, 5)
+  assert.equal(restored.view('human').entities.find(unit => unit.id === ship.id)?.speedLevel, 5)
 })

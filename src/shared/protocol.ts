@@ -50,7 +50,7 @@ export const entityNames: Record<Faction, Record<EntityKind, string>> = {
 export const opposite = (faction: Faction): Faction => faction === 'human' ? 'orc' : 'human'
 export const isFaction = (value: unknown): value is Faction => value === 'human' || value === 'orc'
 
-export const upgradeKinds = ['weapons', 'armor', 'precision', 'vitality'] as const
+export const upgradeKinds = ['weapons', 'armor', 'precision', 'vitality', 'range', 'speed'] as const
 export type UpgradeKind = typeof upgradeKinds[number]
 export type Entity = Point & {
   id: number
@@ -77,6 +77,8 @@ export type Entity = Point & {
   armorLevel?: number
   precisionLevel?: number
   vitalityLevel?: number
+  rangeLevel?: number
+  speedLevel?: number
   level?: number
   upgradeProgress?: number
 }

@@ -24,7 +24,7 @@ const economyStats = {
   farm: { health: 310, damage: 0, armor: 1, range: 0, speed: 0, cooldown: 0, radius: 21 },
   wall: { health: 360, damage: 0, armor: 4, range: 0, speed: 0, cooldown: 0, radius: 16 },
   smithy: { health: 620, damage: 0, armor: 4, range: 0, speed: 0, cooldown: 0, radius: 24 },
-  tower: { health: 460, damage: 20, armor: 3, range: 160, speed: 0, cooldown: 20, radius: 17 }
+  tower: { health: 460, damage: 20, armor: 3, range: 170, speed: 0, cooldown: 20, radius: 17 }
 }
 
 export const unitStats: Record<Faction, Record<EntityKind, UnitStats>> = {
