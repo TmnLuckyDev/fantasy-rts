@@ -268,7 +268,7 @@ function showBattle() {
         return
       }
       const action = kind === 'wall' ? 'Drag to queue a wall line, or tap a tile.' : 'Tap each tile to queue another.'
-      element('placement-message').textContent = blocked ? 'Choose visible, open ground.' : entityNames[faction][kind] + ' · ' + action
+      element('placement-message').textContent = blocked ? 'Choose explored, open ground.' : entityNames[faction][kind] + ' · ' + action
     },
     effect: kind => audio.play(kind)
   })
@@ -410,6 +410,7 @@ function drawSelection(entities: Entity[], interactive = false) {
   const meter = element<HTMLMeterElement>('selection-health')
   formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
+  button('explore').hidden = !entities.some(entity => entity.kind === 'scout')
   const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').disabled = !movable
   button('halt').disabled = !movable
@@ -634,6 +635,7 @@ economyAction.onclick = () => {
   else closeEconomyMenu()
 }
 
+button('explore').onclick = () => scene?.explore()
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
 button('cancel-placement').onclick = () => scene?.place(null)
