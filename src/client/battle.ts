@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { TILE, cellCenter, distance, isWalkable, resourceAt, snapToCell, tileAt, wallLine } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
-import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isUnitKind } from '../shared/protocol.ts'
+import { MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isShipKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement, buildingFootprint } from '../shared/economy.ts'
 import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
@@ -359,6 +359,10 @@ export class BattleScene extends Phaser.Scene {
   private workerIds() { return this.selectedGroup ? [] : [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
 
   halt() { this.issue({ kind: 'halt' }) }
+  unload() {
+    const ships = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'transport')
+    if (ships.length === 1) this.actions.order(ships, { kind: 'unload' })
+  }
   explore() {
     const ids = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'scout')
     if (ids.length) this.actions.order(ids, { kind: 'explore' })
@@ -411,7 +415,7 @@ export class BattleScene extends Phaser.Scene {
       .filter(({ entity, sprite }) => {
         const dx = Math.abs(point.x - sprite.x)
         const dy = sprite.y - point.y
-        if (isUnitKind(entity.kind)) return dx < (touch ? 21 : 14) && dy > -12 && dy < 35
+        if (isUnitKind(entity.kind)) return dx < (isShipKind(entity.kind) ? 30 : touch ? 21 : 14) && dy > -12 && dy < 35
         const radius = unitStats[entity.faction][entity.kind].radius
         const height = entity.kind === 'headquarters' ? 76 : entity.kind === 'tower' ? 61 : 35
         return dx < radius + 10 && dy > -14 && dy < height
@@ -481,7 +485,9 @@ export class BattleScene extends Phaser.Scene {
       return
     }
     if (this.workOnBuilding(workers, picked)) return
-    if (picked && picked.faction !== this.faction) this.issue({ kind: 'attack', target: picked.id }, { x: picked.x, y: picked.y })
+    if (picked?.kind === 'transport' && picked.faction === this.faction && this.mobileUnits().some(id => !isShipKind(this.visuals.get(id)?.entity.kind))) {
+      this.actions.order(this.mobileUnits(), { kind: 'board', transport: picked.id })
+    } else if (picked && picked.faction !== this.faction) this.issue({ kind: 'attack', target: picked.id }, { x: picked.x, y: picked.y })
     else this.issue({ kind: this.advanceMode ? 'advance' : 'move', to: point }, point)
   }
 
