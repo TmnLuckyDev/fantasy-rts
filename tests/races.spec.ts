@@ -1,11 +1,9 @@
 import { devices, expect, test, webkit } from '@playwright/test'
 
-test('desktop and landscape touch can choose the same race and play', async ({ browser, page, baseURL }) => {
+test('desktop and portrait touch can choose the same race and play', async ({ browser, page, baseURL }) => {
   const mobileEngine = process.env.MOBILE_BROWSER === 'webkit' ? await webkit.launch() : browser
   const phone = devices[mobileEngine === browser ? 'Pixel 7' : 'iPhone 14']
-  const mobile = await mobileEngine.newContext({
-    ...phone, viewport: { width: phone.viewport.height, height: phone.viewport.width }
-  })
+  const mobile = await mobileEngine.newContext(phone)
   try {
     await page.goto(baseURL!)
     await expect(page.locator('#connection')).toHaveText('Online')

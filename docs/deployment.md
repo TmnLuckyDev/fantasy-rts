@@ -29,7 +29,7 @@ Keep the host awake and leave the server running. If the phones cannot reach the
 
 ## Physical-device check
 
-Use an iPhone on Safari in landscape and a desktop browser. Repeat with Android Chrome.
+Use an iPhone on Safari in portrait and a desktop browser. Repeat with Android Chrome.
 
 - Create the room on desktop, use the code on the phone, and ready both seats.
 - Tap an individual troop and issue a move on the phone. Confirm movement on the phone. Repeat with desktop mouse selection and right-click. Compare movement across clients once the troops are in sight of both factions.

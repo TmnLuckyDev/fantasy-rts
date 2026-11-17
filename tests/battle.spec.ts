@@ -70,17 +70,23 @@ const mobileBrowser = process.env.MOBILE_BROWSER === 'webkit' ? webkit : chromiu
 const mobileProfile = process.env.MOBILE_BROWSER === 'webkit' ? 'iPhone 14' : 'Pixel 7'
 
 // These scenarios exercise exact map coordinates for gathering and touch construction.
-const fixedAshford = { ...defaultMatchSettings(), randomStarts: false }
+const defaults = defaultMatchSettings()
+const fixedAshford = {
+  ...defaults,
+  randomStarts: false,
+  sources: {
+    ...defaults.sources,
+    gold: { ...defaults.sources.gold, stock: 600 },
+    stone: { ...defaults.sources.stone, stock: 400 }
+  }
+}
 
-test('desktop and landscape touch players can finish an authoritative match', async ({ browser, baseURL }, info) => {
+test('desktop and portrait touch players can finish an authoritative match', async ({ browser, baseURL }, info) => {
   test.setTimeout(265_000)
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 750 } })
   const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
   const phone = devices[mobileProfile]
-  const touch = await mobileEngine.newContext({
-    ...phone,
-    viewport: { width: phone.viewport.height, height: phone.viewport.width }
-  })
+  const touch = await mobileEngine.newContext(phone)
   await desktop.addInitScript(settings => localStorage.setItem('ash-and-iron-match-settings', JSON.stringify(settings)), fixedAshford)
   const human = await desktop.newPage()
   const orc = await touch.newPage()
@@ -124,6 +130,19 @@ test('desktop and landscape touch players can finish an authoritative match', as
       return Array.from(pixel.data)
     }, { x: base.x / worldWidth, y: base.y / worldHeight })
     expect(hiddenBase).toEqual([13, 19, 16, 255])
+
+    const minimapBounds = (await human.locator('#minimap').boundingBox())!
+    const mapY = minimapBounds.y + minimapBounds.height / 2
+    await human.mouse.move(minimapBounds.x + minimapBounds.width * .25, mapY)
+    await human.mouse.down()
+    try {
+      const from = await cameraBox(human)
+      await human.mouse.move(minimapBounds.x + minimapBounds.width * .75, mapY, { steps: 5 })
+      await expect.poll(async () => (await cameraBox(human)).x).toBeGreaterThan(from.x + 30)
+    } finally {
+      await human.mouse.up()
+    }
+    await panTo(human, ashford.bases.human, false)
 
     const firstOrc = unit(orcHistory, 9)!
     const orcTap = await screenPoint(orc, { x: firstOrc.x, y: firstOrc.y - 13 }, ashford.bases.orc)
@@ -178,7 +197,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
       await session?.detach()
     }
     await expect(orc.locator('#selection-name')).toHaveText('6 troops selected')
-    if (process.env.CAPTURE_BROWSER === '1') await orc.screenshot({ path: info.outputPath('landscape-touch.png') })
+    if (process.env.CAPTURE_BROWSER === '1') await orc.screenshot({ path: info.outputPath('portrait-touch.png') })
 
     const retreat = cellCenter(ashford.width - 8, ashford.height - 32)
     await panTo(orc, retreat, true)
@@ -189,8 +208,17 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.getByRole('button', { name: 'Workers', exact: true }).click()
     await expect(human.locator('#selection-name')).toHaveText('3 workers selected')
     const mine = await screenPoint(human, cellCenter(5, 18), ashford.bases.human)
-    await human.mouse.click(mine.x, mine.y, { button: 'right' })
+    await human.mouse.click(mine.x, mine.y)
+    await expect(human.locator('#selection-name')).toHaveText('Gold mine')
+    await expect(human.locator('#selection-detail')).toHaveText('600 gold remaining')
+    await human.getByRole('button', { name: 'Gather here', exact: true }).click()
+    await expect(human.locator('#selection-detail')).not.toHaveText('600 gold remaining')
     await expect.poll(() => newest(humanHistory)?.resources.gold ?? 0, { timeout: 18_000 }).toBeGreaterThan(300)
+
+    const quarry = await screenPoint(human, cellCenter(4, 15), ashford.bases.human)
+    await human.mouse.click(quarry.x, quarry.y)
+    await expect(human.locator('#selection-name')).toHaveText('Stone quarry')
+    await expect(human.locator('#selection-detail')).toHaveText('400 stone remaining')
 
     const tree = await screenPoint(human, cellCenter(6, 7), ashford.bases.human)
     await human.mouse.click(tree.x, tree.y, { button: 'right' })
@@ -202,12 +230,13 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
-    await expect(human.locator('#placement-tip')).toBeVisible()
-    await human.getByRole('button', { name: 'Done', exact: true }).click()
-    await human.getByRole('button', { name: /^Queues/ }).click()
+    await expect(human.locator('#placement-tip')).toBeHidden()
+    await human.getByRole('button', { name: 'Production', exact: true }).click()
+    await human.getByRole('button', { name: 'Queues', exact: true }).click()
     await expect(human.getByRole('region', { name: 'Production queues' })).toContainText('Barracks · Building')
     await expect.poll(() => newest(humanHistory)?.entities.some(entity =>
       entity.kind === 'barracks' && entity.construction === undefined), { timeout: 23_000 }).toBe(true)
+    await human.getByRole('button', { name: 'Close', exact: true }).click()
     await human.mouse.click(barracksSpot.x, barracksSpot.y - 20)
     await expect(human.locator('#selection-name')).toHaveText('Barracks')
     await human.getByRole('button', { name: 'Footman · 75 gold', exact: true }).click()
@@ -220,10 +249,10 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Farm · 70 wood · 20 stone', exact: true }).click()
     await human.mouse.click(farm.x, farm.y)
-    await human.getByRole('button', { name: 'Done', exact: true }).click()
     await expect(human.locator('#population')).toHaveText('10/20', { timeout: 20_000 })
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
+    await orc.getByRole('button', { name: 'Gather', exact: true }).tap()
     await orc.getByRole('button', { name: 'Quarry stone', exact: true }).tap()
     await expect.poll(() => newest(orcHistory)?.resources.stone ?? 0, { timeout: 18_000 }).toBeGreaterThan(120)
     const tower = cellCenter(ashford.width - 11, ashford.height - 14)
@@ -235,7 +264,6 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await orc.touchscreen.tap(towerSpot.x, towerSpot.y)
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
       entity.kind === 'tower' && entity.faction === 'orc')).toBe(true)
-    await orc.getByRole('button', { name: 'Done', exact: true }).tap()
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
       entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 25_000 }).toBe(true)
 
@@ -250,9 +278,14 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await human.getByRole('button', { name: 'All troops', exact: true }).click()
     if (process.env.CAPTURE_BROWSER === '1') await human.screenshot({ path: info.outputPath('battlefield.png') })
     await human.getByRole('button', { name: 'Attack move', exact: true }).click()
+    await expect(human.locator('#placement-message')).toHaveText('Choose where to attack-move.')
+    await human.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(human.locator('#placement-tip')).toBeHidden()
+    await human.getByRole('button', { name: 'Attack move', exact: true }).click()
     await panTo(human, base, false)
     const destination = await screenPoint(human, base, base)
     await human.mouse.click(destination.x, destination.y, { button: 'right' })
+    await expect(human.locator('#placement-tip')).toBeHidden()
     await expect.poll(() => distance(before, unit(humanHistory, 2) ?? before)).toBeGreaterThan(45)
     expect(unit(orcHistory, 2)).toBeUndefined()
     expect(unit(humanHistory, 8)).toBeUndefined()
@@ -286,10 +319,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
 test('a phone can resume a saved solo match and use worker commands without a server socket', async ({ browser, baseURL }) => {
   const mobileEngine = mobileBrowser === webkit ? await webkit.launch() : browser
   const phone = devices[mobileProfile]
-  const context = await mobileEngine.newContext({
-    ...phone,
-    viewport: { width: phone.viewport.height, height: phone.viewport.width }
-  })
+  const context = await mobileEngine.newContext(phone)
   await context.addInitScript(settings => localStorage.setItem('ash-and-iron-match-settings', JSON.stringify(settings)), fixedAshford)
   try {
     let page = await context.newPage()
@@ -301,6 +331,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     const hall = ashford.bases.orc
     const hallTap = await screenPoint(page, { x: hall.x, y: hall.y - 28 }, hall)
     await page.touchscreen.tap(hallTap.x, hallTap.y)
+    await page.getByRole('button', { name: 'Train', exact: true }).tap()
     const peon = page.getByRole('button', { name: 'Peon · 60 gold', exact: true })
     await expect(peon).toBeVisible()
     await expect(page.getByRole('button', { name: /^Repair ·/ })).toBeDisabled()
@@ -330,6 +361,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(idle()).toHaveText(/3/)
     await idle().tap()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
+    await page.getByRole('button', { name: 'Gather', exact: true }).tap()
     const gather = page.getByRole('group', { name: 'Gather resources' })
     for (const name of ['Mine gold', 'Chop wood', 'Quarry stone']) {
       await expect(gather.getByRole('button', { name, exact: true })).toBeVisible()
@@ -381,18 +413,20 @@ test('a phone can resume a saved solo match and use worker commands without a se
     }
     await expect(page.locator('#stone')).toHaveText('36')
     await expect(page.locator('#production-count')).toHaveText('3')
-    await page.getByRole('button', { name: 'Done', exact: true }).tap()
-    await page.getByRole('button', { name: /^Queues/ }).tap()
+    await expect(page.locator('#placement-tip')).toBeHidden()
+    await page.getByRole('button', { name: 'Production', exact: true }).tap()
+    await page.getByRole('button', { name: 'Queues', exact: true }).tap()
     await expect(page.getByRole('region', { name: 'Production queues' })).toContainText('Stone Rampart · Queued')
-    await page.getByRole('button', { name: /^Queues/ }).tap()
+    await page.getByRole('button', { name: 'Close', exact: true }).tap()
     await idle().tap()
+    await page.setViewportSize({ width: phone.viewport.height, height: phone.viewport.width })
+    await expect(page.locator('#portrait-prompt')).toBeVisible()
     await page.setViewportSize(phone.viewport)
     await expect(idle()).toBeVisible()
     await expect(page.getByRole('button', { name: 'Minimap' })).toBeVisible()
-    await expect(page.getByText('Rotate your phone', { exact: false })).toHaveCount(0)
+    await expect(page.locator('#portrait-prompt')).toBeHidden()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
-    await page.setViewportSize({ width: phone.viewport.height, height: phone.viewport.width })
-    await expect(page.locator('#selection-name')).toHaveText('Peon')
+
     page.once('dialog', dialog => dialog.accept())
     await page.getByRole('button', { name: 'Leave', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Play vs Computer', exact: true })).toBeEnabled()
@@ -405,6 +439,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     const demolishSpot = await screenPoint(page, { x: hall.x, y: hall.y - 28 }, hall)
     await page.touchscreen.tap(demolishSpot.x, demolishSpot.y)
     await expect(page.locator('#selection-name')).toHaveText('Great Hall')
+    await page.getByRole('button', { name: 'Train', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Demolish', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^Repair ·/ })).toBeVisible()
     page.once('dialog', dialog => dialog.accept())
