@@ -226,14 +226,14 @@ function structure(faction: Race, kind: BuildingKind) {
   return surface
 }
 
-function troop(faction: Race, kind: UnitKind, frame: number) {
+function troop(faction: Race, kind: UnitKind, frame: number, workerVariant = 0) {
   const surface = canvas(36, 35)
   const { rect, block, poly, shadow } = brush(surface)
   const human = faction === 'human'
   const orc = faction === 'orc'
   const team = palettes[faction]
   const armor = faction === 'dwarf' ? brass : faction === 'undead' ? bone : human ? steel : iron
-  const skin = human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : faction === 'undead' ? bone : faction === 'elf' ? sandstone : faction === 'dwarf' ? leather : green
+  const skin = human && kind === 'worker' ? (workerVariant === 1 ? ['#a86b43', '#75482f', '#4c3025'] as const : ['#553629', '#38251e', '#241a17'] as const) : human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : faction === 'undead' ? bone : faction === 'elf' ? sandstone : faction === 'dwarf' ? leather : green
   const worker = kind === 'worker'
   const scout = kind === 'scout'
   const heavy = kind === 'heavy'
@@ -381,7 +381,7 @@ function troop(faction: Race, kind: UnitKind, frame: number) {
   return surface
 }
 
-export function entityTexture(faction: Race, kind: EntityKind, frame = 0) {
-  if (isUnitKind(kind)) return troop(faction, kind, frame)
+export function entityTexture(faction: Race, kind: EntityKind, frame = 0, workerVariant = 0) {
+  if (isUnitKind(kind)) return troop(faction, kind, frame, workerVariant)
   return kind === 'headquarters' ? headquarters(faction) : structure(faction, kind)
 }
