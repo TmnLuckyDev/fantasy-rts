@@ -1,4 +1,4 @@
-import { buildings, canAfford, trainedAt, upgrades, validPlacement } from '../shared/economy.ts'
+import { buildings, canAfford, researchCost, trainedAt, upgrades, validPlacement } from '../shared/economy.ts'
 import { TILE, ashfordMap, cellCenter, distance, isWalkable, isWater, resourceAt, tileAt } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
 import { isHeroKind, isShipKind, isUnitKind, opposite } from '../shared/protocol.ts'
@@ -156,7 +156,7 @@ export class ComputerOpponent {
     const smith = structures.find(unit => unit.kind === 'smithy' && unit.construction === undefined && !unit.research)
     if (smith) {
       for (const kind of ['weapons', 'armor'] as const) {
-        if (!view.upgrades?.includes(kind) && canAfford(view.resources, upgrades[kind].cost) &&
+        if (!view.upgrades?.includes(kind) && canAfford(view.resources, researchCost(kind, 1)) &&
             match.command(this.faction, [smith.id], { kind: 'upgrade', upgrade: kind })) break
       }
     }

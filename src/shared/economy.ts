@@ -25,6 +25,7 @@ export const buildings: Record<BuildingKind, { cost: Cost, ticks: number }> = {
   wall: { cost: { stone: 28 }, ticks: 55 },
   tower: { cost: { wood: 55, stone: 85 }, ticks: 110 },
   smithy: { cost: { wood: 105, stone: 65 }, ticks: 150 },
+  settlement: { cost: { wood: 150, stone: 75 }, ticks: 160 },
   port: { cost: { wood: 145, stone: 80 }, ticks: 170 }
 }
 
@@ -48,6 +49,17 @@ export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: nu
 
 export const MAX_UPGRADE_LEVEL = 5
 export const upgradeLevelLimit = (kind: UpgradeKind) => kind === 'fortress' ? 1 : MAX_UPGRADE_LEVEL
+export function researchCost(kind: UpgradeKind, level: number): Cost {
+  const base = upgrades[kind].cost
+  if (kind === 'fortress') return base
+  const multiplier = 3 ** (level - 1)
+  const cost: Partial<Resources> = {}
+  for (const resource of resourceKinds) {
+    const amount = base[resource]
+    if (amount !== undefined) cost[resource] = Math.ceil(amount / 2) * multiplier
+  }
+  return cost
+}
 export const researchSite = (kind: UpgradeKind): BuildingKind => kind === 'fortress' ? 'elite' : 'smithy'
 export const structureUpgrade = (kind: 'tower' | 'wall', level: number) => ({
   cost: kind === 'tower' ? { gold: 45 * level, wood: 30 * level, stone: 50 * level } : { stone: 65 * level, wood: 15 * level },

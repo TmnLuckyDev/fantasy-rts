@@ -305,3 +305,26 @@ test('idle workers take waiting and unassigned construction when auto-build is e
   assert.equal(assigned.filter(id => id === queued.id).length, 1)
   assert.equal(assigned.filter(id => id === paused.id).length, 1)
 })
+
+test('workers deliver every resource to the nearest completed allied settlement on their landmass', () => {
+  const match = new Match()
+  const worker = match.units.get(15)!
+  const at = cellCenter(25, 12)
+  Object.assign(worker, at)
+  const settlement = match['spawn']('human', 'settlement', cellCenter(20, 12))
+  const nearer = match['spawn']('human', 'settlement', cellCenter(24, 12), 1000)
+  match['spawn']('orc', 'settlement', cellCenter(26, 12))
+  const original = { ...match.checkpoint().resources.human }
+  for (const resource of ['gold', 'wood', 'stone'] as const) {
+    Object.assign(worker, at)
+    worker.pursued = null
+    worker.job = { kind: 'gather', at, resource, workTicks: 0 }
+    worker.cargo = resource
+    worker.cargoAmount = 7
+    for (let i = 0; i < 100 && worker.cargo; i++) match.step()
+    assert.equal(worker.cargo, null)
+    assert.equal(match.checkpoint().resources.human[resource], original[resource] + 7)
+    assert.ok(distance(worker, settlement) < 52)
+    assert.ok(distance(worker, nearer) > 52)
+  }
+})

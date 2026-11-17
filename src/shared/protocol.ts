@@ -21,7 +21,7 @@ export const heroKinds = ['vanguard', 'pathfinder'] as const
 export type HeroKind = typeof heroKinds[number]
 export const isHeroKind = (kind: unknown): kind is HeroKind => kind === 'vanguard' || kind === 'pathfinder'
 export const unitKinds = [...combatKinds, ...heroKinds, 'siege', 'support', 'scout', 'worker', 'transport', 'warship'] as const
-export const buildingKinds = ['barracks', 'range', 'elite', 'farm', 'wall', 'tower', 'smithy', 'port'] as const
+export const buildingKinds = ['barracks', 'range', 'elite', 'farm', 'wall', 'tower', 'smithy', 'port', 'settlement'] as const
 export const entityKinds = [...unitKinds, 'headquarters', ...buildingKinds] as const
 export type UnitKind = typeof unitKinds[number]
 export type BuildingKind = typeof buildingKinds[number]
@@ -46,33 +46,33 @@ export const entityNames: Record<Race, Record<EntityKind, string>> = {
   human: {
     siege: 'Siege Engine', support: 'Support', blade: 'Footman', polearm: 'Pikeman', ranged: 'Archer', marksman: 'Crossbowman', heavy: 'Knight',
     vanguard: 'Aldren the Warden', pathfinder: 'Nera the Pathfinder', scout: 'Scout', transport: 'Transport Ship', warship: 'Warship',
-    headquarters: 'Town Hall', worker: 'Peasant', barracks: 'Barracks', range: 'Archery Range',
+    settlement: 'Settlement', headquarters: 'Town Hall', worker: 'Peasant', barracks: 'Barracks', range: 'Archery Range',
     elite: 'Stables', farm: 'Farm', wall: 'Stone Wall', tower: 'Guard Tower', smithy: 'Blacksmith', port: 'Harbor'
   },
   orc: {
     siege: 'Siege Engine', support: 'Support', blade: 'Grunt', polearm: 'Cleaver', ranged: 'Spearman', marksman: 'Axe Thrower', heavy: 'Ogre',
     vanguard: 'Gorak Ironhand', pathfinder: 'Vesha Emberbow', scout: 'Scout', transport: 'Transport Ship', warship: 'Warship',
-    headquarters: 'Great Hall', worker: 'Peon', barracks: 'War Barracks', range: 'Hunting Grounds',
+    settlement: 'Settlement', headquarters: 'Great Hall', worker: 'Peon', barracks: 'War Barracks', range: 'Hunting Grounds',
     elite: 'Ogre Den', farm: 'Boar Farm', wall: 'Stone Rampart', tower: 'Watch Tower', smithy: 'War Forge', port: 'War Port'
   },
   dwarf: {
     blade: 'Ironbreaker', polearm: 'Hammerguard', ranged: 'Thunderer', marksman: 'Runebolt Gunner', heavy: 'Stoneguard',
     siege: 'Siege Cannon', support: 'Support', scout: 'Tunnel Pathfinder', worker: 'Delver',
-    vanguard: 'Thorin Stoneheart', pathfinder: 'Bromm Thunderforge', headquarters: 'Mountain Hall',
+    vanguard: 'Thorin Stoneheart', pathfinder: 'Bromm Thunderforge', headquarters: 'Mountain Hall', settlement: 'Settlement',
     barracks: 'Iron Barracks', range: 'Powder Hall', elite: 'Foundry', farm: 'Deep Mine', wall: 'Runestone Wall',
     tower: 'Stone Bastion', smithy: 'Rune Forge', port: 'Iron Dock', transport: 'Armored Ferry', warship: 'Iron Warship'
   },
   elf: {
     blade: 'Bladedancer', polearm: 'Thorn Guard', ranged: 'Sylvan Archer', marksman: 'Forest Sentinel', heavy: 'Grove Warden',
     siege: 'Thorn Ballista', support: 'Druid', scout: 'Woodland Scout', worker: 'Grove Tender',
-    vanguard: 'Faelar Swiftwind', pathfinder: 'Aelindra Moonwhisper', headquarters: 'Ancient Grove',
+    vanguard: 'Faelar Swiftwind', pathfinder: 'Aelindra Moonwhisper', headquarters: 'Ancient Grove', settlement: 'Settlement',
     barracks: 'Blade Circle', range: 'Ranger Lodge', elite: 'Moon Sanctuary', farm: 'Sacred Tree', wall: 'Briar Wall',
     tower: 'Living Watchtower', smithy: 'Leafweave Atelier', port: 'Willow Harbor', transport: 'Leaf Ferry', warship: 'Grove Warship'
   },
   undead: {
     blade: 'Skeleton Warrior', polearm: 'Ghoul', ranged: 'Bone Archer', marksman: 'Grave Marksman', heavy: 'Abomination',
     siege: 'Bone Catapult', support: 'Necromancer', scout: 'Grave Wisp', worker: 'Thrall',
-    vanguard: 'Vorrak the Deathlord', pathfinder: 'Malachar the Lich', headquarters: 'Necropolis',
+    vanguard: 'Vorrak the Deathlord', pathfinder: 'Malachar the Lich', headquarters: 'Necropolis', settlement: 'Settlement',
     barracks: 'Crypt', range: 'Bone Arsenal', elite: 'Fleshworks', farm: 'Graveyard', wall: 'Ossuary Wall',
     tower: 'Bone Spire', smithy: 'Dark Sanctum', port: 'Drowned Pier', transport: 'Soul Barge', warship: 'Dread Warship'
   }

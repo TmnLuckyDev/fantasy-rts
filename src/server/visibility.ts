@@ -7,7 +7,7 @@ import type { Entity, EntityKind, Faction, Point } from '../shared/protocol.ts'
 
 const sight: Record<EntityKind, number> = {
   headquarters: 10, support: 7, siege: 8, scout: 13, transport: 9, warship: 10, worker: 6, blade: 7, polearm: 7, ranged: 8, marksman: 8, heavy: 8, vanguard: 8, pathfinder: 9,
-  barracks: 5, range: 5, elite: 5, farm: 4, wall: 2, tower: 9, smithy: 5, port: 7
+  barracks: 5, range: 5, elite: 5, farm: 4, wall: 2, tower: 9, smithy: 5, port: 7, settlement: 6
 }
 
 const circles = new Map<number, Point[]>()

@@ -7,7 +7,7 @@ import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
-  buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, researchCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
 import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
@@ -674,11 +674,14 @@ export class Match {
   private startUpgrade(building: Unit, kind: UpgradeKind) {
     const rule = upgrades[kind]
     const stock = this.resources[building.faction]
+    const level = this.upgrades[building.faction].filter(upgrade => upgrade === kind).length + 1
     if (!rule || building.kind !== researchSite(kind) || building.buildDuration || building.upgradeJob ||
         (kind === 'fortress' && this.races[building.faction] !== 'dwarf') ||
-        this.upgrades[building.faction].filter(upgrade => upgrade === kind).length >= upgradeLevelLimit(kind) || !canAfford(stock, rule.cost) ||
+        level > upgradeLevelLimit(kind) ||
         [...this.units.values()].some(unit => unit.faction === building.faction && unit.upgradeJob?.kind === kind)) return false
-    spend(stock, rule.cost)
+    const cost = researchCost(kind, level)
+    if (!canAfford(stock, cost)) return false
+    spend(stock, cost)
     building.upgradeJob = { kind, left: rule.ticks }
     return true
   }
@@ -837,7 +840,7 @@ export class Match {
     if (next.kind !== 'worker') this.stats[building.faction].troopsTrained++
   }
 
-  private work(worker: Unit, obstacles: Obstacle[]) {
+  private work(worker: Unit, obstacles: Obstacle[], dropOffs: readonly Unit[]) {
     const job = worker.job
     if (!job) return
     if (job.kind === 'repair') {
@@ -886,24 +889,25 @@ export class Match {
       return
     }
     if (worker.cargo) {
-      const base = [...this.units.values()].find(unit => unit.faction === worker.faction && unit.kind === 'headquarters')
-      if (!base) return
-      let dropOff = base
-      if (worker.cargo === 'stone' && this.races[worker.faction] === 'dwarf') {
-        let nearest = squaredDistance(worker, base)
-        for (const mine of this.nearby[worker.faction].near(worker, 8 * TILE)) {
-          if (mine.kind !== 'farm' || mine.buildDuration) continue
-          const gap = squaredDistance(worker, mine)
-          if (gap >= nearest || gap > (8 * TILE) ** 2) continue
-          nearest = gap
-          dropOff = mine
-        }
+      const dwarfStone = worker.cargo === 'stone' && this.races[worker.faction] === 'dwarf'
+      const coast = this.coast ??= new Coast(this.map)
+      const region = coast.region(worker)
+      let dropOff: Unit | undefined
+      let nearest = Infinity
+      for (const site of dropOffs) {
+        if (this.units.get(site.id) !== site || coast.region(site) !== region) continue
+        const gap = squaredDistance(worker, site)
+        if (site.kind === 'farm' && (!dwarfStone || gap > (8 * TILE) ** 2)) continue
+        if (gap >= nearest) continue
+        nearest = gap
+        dropOff = site
       }
-      if (distance(worker, dropOff) <= unitStats[this.races[base.faction]][dropOff.kind].radius + 26) {
+      if (!dropOff) return
+      if (distance(worker, dropOff) <= unitStats[this.races[worker.faction]][dropOff.kind].radius + 26) {
         let amount = worker.cargoAmount ?? GATHERING[worker.cargo].amount
         if (worker.cargo === 'wood' && this.races[worker.faction] === 'elf') {
-          for (const tree of this.nearby[worker.faction].near(base, 160)) {
-            if (tree.kind !== 'farm' || tree.buildDuration || squaredDistance(tree, base) > 160 ** 2) continue
+          for (const tree of this.nearby[worker.faction].near(dropOff, 160)) {
+            if (tree.kind !== 'farm' || tree.buildDuration || squaredDistance(tree, dropOff) > 160 ** 2) continue
             amount += Math.ceil(amount * 0.1)
             break
           }
@@ -1022,8 +1026,13 @@ export class Match {
     this.updatePickups()
     if (this.settings.autoBuild && this.tick % TICK_HZ === 0) this.takeQueuedConstruction()
     const hostileBuildings: Record<Faction, Obstacle[]> = { human: [], orc: [] }
+    const dropOffs: Record<Faction, Unit[]> = { human: [], orc: [] }
     for (const building of this.units.values()) {
       if (isUnitKind(building.kind)) continue
+      if (!building.buildDuration && (building.kind === 'headquarters' || building.kind === 'settlement' ||
+          (building.kind === 'farm' && this.races[building.faction] === 'dwarf'))) {
+        dropOffs[building.faction].push(building)
+      }
       const opponent = opposite(building.faction)
       hostileBuildings[opponent].push({ x: building.x, y: building.y, radius: building.kind === 'headquarters' ? unitStats[this.races[building.faction]][building.kind].radius : buildingFootprint(building.kind) })
     }
@@ -1059,7 +1068,7 @@ export class Match {
         this.research(unit)
       }
       if (unit.job) {
-        this.work(unit, obstacles)
+        this.work(unit, obstacles, dropOffs[unit.faction])
         continue
       }
       const automaticRange = stats.damage === 0 ? 0 : unit.order?.kind === 'advance' ? Math.max(180, this.attackRange(unit) + 30) : this.attackRange(unit)
