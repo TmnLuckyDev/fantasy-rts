@@ -386,3 +386,9 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .faction[aria-pressed="true"] { outline: 2px solid var(--gold); outline-offset: -3px; }
 
 .race-icon { width: 2rem; height: 2rem; object-fit: contain; image-rendering: pixelated; flex: 0 0 2rem; }
+
+.match-finished .orders,
+.match-finished #troop-groups,
+.match-finished .economy-menu,
+.match-finished #global-train-panel,
+.match-finished #formation-options { display: none; }

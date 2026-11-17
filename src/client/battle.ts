@@ -426,7 +426,7 @@ export class BattleScene extends Phaser.Scene {
   }
   unload() {
     const ships = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'transport')
-    if (ships.length === 1) this.actions.order(ships, { kind: 'unload' })
+    if (ships.length) this.actions.order(ships, { kind: 'unload' })
   }
   explore() {
     const ids = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'scout')

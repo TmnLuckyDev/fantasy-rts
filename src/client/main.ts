@@ -173,7 +173,11 @@ function note(message: string, error = false) {
 
 function updateBanner(online: boolean) {
   if (!online && !solo.active) banner.textContent = 'Reconnecting to match…'
-  else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
+  else if (room?.result) {
+    const winner = room.result.winner
+    const outcome = winner === null ? 'Draw' : winner === faction ? 'Victory' : 'Defeat'
+    banner.textContent = outcome + ' · Review the battlefield'
+  } else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
   else banner.textContent = factionNames[chosenRace] + (room?.mode === 'solo' ? ' vs Computer' : '') +
     (room?.settings?.minutes ? ' · Destroy the enemy headquarters or win on score' : ' · Destroy the enemy headquarters')
 }
@@ -192,6 +196,8 @@ function showLobby() {
   scene = null
   room = null
   match.hidden = true
+  match.classList.remove('match-finished')
+  button('view-stats').hidden = true
   lobby.hidden = false
   element('lobby-title').textContent = 'Game lobby'
   element('room-actions').hidden = true
@@ -217,7 +223,12 @@ function receive(message: ServerMessage) {
       else {
         if (!scene) showBattle()
         updateBanner(client.connected)
-        if (room.result) drawResult(room.result)
+        if (room.result) {
+          match.classList.add('match-finished')
+          button('view-stats').hidden = false
+          scene?.place(null)
+          closeEconomyMenu()
+        }
       }
       break
     case 'snapshot': {
@@ -420,6 +431,7 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
 }
 
 function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
+  if (room?.result) return
   const message: GroupCommand = { type: 'group-command', group, order }
   if (solo.active) solo.sendArmyCommand(message)
   else client.send(message)
@@ -427,6 +439,7 @@ function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
 }
 
 function issueOrder(ids: number[], order: Order) {
+  if (room?.result) return
   if (solo.active) solo.command(ids, order)
   else client.send({ type: 'command', ids, order })
   if (order.kind === 'train') audio.play('train')
@@ -468,8 +481,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   button('dismiss-units').hidden = !entities.length || !entities.every(entity => entity.kind === 'worker' || entity.kind === 'scout')
   button('board').hidden = !entities.some(entity => isUnitKind(entity.kind) && !isShipKind(entity.kind)) ||
     !ownEntities.some(entity => entity.kind === 'transport')
-  button('unload').hidden = !(entities.length === 1 && selected?.kind === 'transport')
-  if (selected?.kind === 'transport') button('unload').disabled = !(selected.passengers?.length)
+  button('unload').hidden = !entities.some(entity => entity.kind === 'transport' && entity.passengers?.length)
+  button('unload-all').hidden = !ownEntities.some(entity => entity.kind === 'transport' && entity.passengers?.length)
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
   const skill = entities.length === 1 && selected && isUnitKind(selected.kind) ? raceSkills[raceOf(selected)]?.[selected.kind] : undefined
   const heroSkillButton = button('hero-skill')
@@ -810,6 +823,10 @@ button('dismiss-units').onclick = () => {
   }
 }
 button('board').onclick = () => scene?.board()
+button('unload-all').onclick = () => {
+  const ship = ownEntities.find(entity => entity.kind === 'transport' && entity.passengers?.length)
+  if (ship) issueOrder([ship.id], { kind: 'unload-all' })
+}
 button('unload').onclick = () => scene?.unload()
 button('hero-skill').onclick = () => {
   if (selection.length === 1 && !isHeroKind(selection[0].kind)) issueOrder([selection[0].id], { kind: 'unit-ability' })
@@ -975,6 +992,10 @@ button('copy').onclick = async () => {
 }
 button('leave').onclick = leave
 button('return').onclick = leave
+button('view-stats').onclick = () => {
+  if (room?.result) drawResult(room.result)
+}
+button('review-map').onclick = () => result.close()
 button('exit').onclick = () => {
   const prompt = room?.mode === 'solo' ? 'End this solo match?' : 'Leave the battle and forfeit?'
   if (room?.phase === 'finished' || window.confirm(prompt)) leave()

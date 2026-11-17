@@ -1,4 +1,4 @@
-import { TILE, distance, snapToCell, tileAt } from './map.ts'
+import { TILE, distance, isWater, snapToCell, tileAt } from './map.ts'
 import type { BattleMap } from './map.ts'
 import { heroKinds, isUnitKind, raceOf, resourceKinds } from './protocol.ts'
 import type { BuildingKind, Race, Entity, EntityKind, Point, ResourceKind, Resources, UnitKind, UpgradeKind } from './protocol.ts'
@@ -122,6 +122,12 @@ export function validPlacement(map: BattleMap, kind: BuildingKind, position: Poi
     for (const dy of [-edge, 0, edge]) {
       const tile = tileAt(map, Math.floor((point.x + dx) / TILE), Math.floor((point.y + dy) / TILE))
       if (tile !== 'grass' && tile !== 'road') return false
+    }
+  }
+  if (kind === 'wall') {
+    const x = Math.floor(point.x / TILE), y = Math.floor(point.y / TILE)
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (isWater(tileAt(map, x + dx, y + dy))) return false
     }
   }
   if (kind === 'port') {

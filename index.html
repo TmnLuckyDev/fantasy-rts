@@ -109,6 +109,7 @@
             <div class="resource population" id="population-meter" title="Population · trained and queued"><span aria-hidden="true"></span><div><small>Population</small><output id="population" aria-label="Population">0/0</output></div></div>
           </div>
           <button id="sound" type="button" aria-label="Mute sound" aria-pressed="true">Sound on</button>
+          <button id="view-stats" type="button" class="primary" hidden>Match statistics</button>
           <button id="exit" type="button">Leave</button>
         </div>
       </header>
@@ -143,6 +144,7 @@
           <button id="hero-skill" type="button" hidden>Hero skill</button>
           <button id="dismiss-units" type="button" hidden title="Permanently dismiss selected peasants or scouts">Dismiss</button>
           <button id="board" type="button" title="Meet and board a friendly transport" hidden>Board</button>
+          <button id="unload-all" type="button" title="Unload all transports within reach of a coast" hidden>Unload all</button>
           <button id="unload" type="button" title="Unload troops at the nearest coast" hidden>Unload</button>
           <button id="explore" type="button" title="Automatically explore unexplored terrain" hidden>Explore</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
@@ -162,6 +164,7 @@
         <h2 id="result-title"></h2>
         <p id="result-detail"></p>
         <section id="match-stats" aria-label="Match statistics" hidden></section>
+        <button id="review-map" type="button">Back to map</button>
         <button id="return" type="button" class="primary">Back to lobby</button>
       </dialog>
     </main>

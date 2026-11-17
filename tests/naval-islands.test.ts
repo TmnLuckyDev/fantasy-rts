@@ -108,3 +108,36 @@ test('moving friendly ships and land units spread out without leaving navigable 
   assert.ok(ships.every(u => isWater(tileAt(map, Math.floor(u.x / 32), Math.floor(u.y / 32)))))
   assert.ok(troops.every(u => isWalkable(tileAt(map, Math.floor(u.x / 32), Math.floor(u.y / 32)))))
 })
+
+test('walls leave the coast open while inland walls remain buildable', () => {
+  const map = ashfordMap('shattered-isles')
+  const coast = map.tiles.findIndex((tile, index) => (tile === 'grass' || tile === 'road') &&
+    isWater(tileAt(map, index % map.width + 1, Math.floor(index / map.width))))
+  assert.ok(coast >= 0)
+  const beach = cellCenter(coast % map.width, Math.floor(coast / map.width))
+  assert.equal(validPlacement(map, 'wall', beach, []), false)
+  assert.equal(validPlacement(map, 'wall', cellCenter(30, 56), []), true)
+})
+
+test('unload all lands friendly transports with shore in reach on distinct tiles', () => {
+  const map = ashfordMap('shattered-isles')
+  const match = new Match(map, defaultMatchSettings('shattered-isles'))
+  const ships = [
+    match['spawn']('human', 'transport', cellCenter(54, 56)),
+    match['spawn']('human', 'transport', cellCenter(54, 55)),
+    match['spawn']('human', 'transport', cellCenter(96, 36)),
+    match['spawn']('orc', 'transport', cellCenter(54, 56))
+  ]
+  const passengers = ships.map(ship => {
+    const passenger = match['spawn'](ship.faction, 'blade', ship)
+    passenger.embarkedOn = ship.id
+    ship.passengers = [passenger.id]
+    return passenger
+  })
+  assert.ok(match.command('human', [ships[0].id], { kind: 'unload-all' }))
+  assert.equal(passengers[0].embarkedOn, undefined)
+  assert.equal(passengers[1].embarkedOn, undefined)
+  assert.notDeepEqual([passengers[0].x, passengers[0].y], [passengers[1].x, passengers[1].y])
+  assert.equal(passengers[2].embarkedOn, ships[2].id)
+  assert.equal(passengers[3].embarkedOn, ships[3].id)
+})

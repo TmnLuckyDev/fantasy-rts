@@ -1,7 +1,7 @@
 import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine, isWalkable, isWater, tileAt } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
 import { MAX_SELECTION, defaultRaces, factions, inTroopGroup, isBuildingKind, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
-import type { ArmyOrder, Corpse, TroopGroup, Effect, Entity, EntityKind, Faction, PlayerRaces, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
+import type { ArmyOrder, BuildingKind, Corpse, TroopGroup, Effect, Entity, EntityKind, Faction, PlayerRaces, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroAbilities, heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
@@ -301,28 +301,9 @@ export class Match {
       return workers.length > 0
     }
     if (order.kind === 'board') return this.board(faction, units, order.transport)
-    if (order.kind === 'unload') {
-      if (units.length !== 1 || units[0].kind !== 'transport') return false
-      const ship = units[0]
-      const passengers = (ship.passengers ?? []).map(id => this.units.get(id)).filter((unit): unit is Unit => Boolean(unit))
-      if (!passengers.length) return false
-      const x = Math.floor(ship.x / TILE), y = Math.floor(ship.y / TILE)
-      const sites: Point[] = []
-      for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
-        if (!isWalkable(tileAt(this.map, x + dx, y + dy))) continue
-        const at = cellCenter(x + dx, y + dy)
-        if (distance(ship, at) <= 7 * TILE) sites.push(at)
-      }
-      sites.sort((a, b) => distance(ship, a) - distance(ship, b))
-      if (sites.length < passengers.length) return false
-      for (let i = 0; i < passengers.length; i++) {
-        const passenger = passengers[i]
-        passenger.embarkedOn = undefined
-        Object.assign(passenger, sites[i])
-        this.nearby[faction].update(passenger)
-      }
-      ship.passengers = []
-      return true
+    if (order.kind === 'unload' || order.kind === 'unload-all') {
+      const ships = order.kind === 'unload-all' ? this.units.values() : units
+      return this.unload(faction, ships)
     }
     if (order.kind === 'bulk-structure-upgrade') return this.startBulkStructureUpgrade(faction, order.building)
     if (order.kind === 'structure-upgrade') return units.length === 1 && this.startStructureUpgrade(units[0])
@@ -492,6 +473,45 @@ export class Match {
       accepted = true
     }
     return accepted
+  }
+
+  private unload(faction: Faction, candidates: Iterable<Unit>) {
+    const occupied = new Set<number>()
+    const buildings = [...this.units.values()].filter(unit => !isUnitKind(unit.kind)).map(unit => ({
+      x: unit.x, y: unit.y, radius: unit.kind === 'headquarters' ?
+        unitStats[this.races[unit.faction]].headquarters.radius : buildingFootprint(unit.kind as BuildingKind)
+    }))
+    let unloaded = false
+    for (const ship of candidates) {
+      if (ship.kind !== 'transport' || ship.faction !== faction || !ship.passengers?.length) continue
+      const x = Math.floor(ship.x / TILE), y = Math.floor(ship.y / TILE)
+      const sites: Array<{ at: Point, cell: number, gap: number }> = []
+      for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
+        if (!isWalkable(tileAt(this.map, x + dx, y + dy))) continue
+        const at = cellCenter(x + dx, y + dy)
+        const gap = squaredDistance(ship, at)
+        if (gap <= (7 * TILE) ** 2) sites.push({ at, cell: (y + dy) * this.map.width + x + dx, gap })
+      }
+      sites.sort((a, b) => a.gap - b.gap)
+      const remaining: number[] = []
+      for (const id of ship.passengers) {
+        const passenger = this.units.get(id)
+        if (!passenger) continue
+        const radius = unitStats[this.races[faction]][passenger.kind].radius
+        const site = sites.find(({ cell, at }) => !occupied.has(cell) && canStand(this.map, at, buildings, radius))
+        if (!site) {
+          remaining.push(id)
+          continue
+        }
+        occupied.add(site.cell)
+        passenger.embarkedOn = undefined
+        Object.assign(passenger, site.at)
+        this.nearby[faction].update(passenger)
+        unloaded = true
+      }
+      ship.passengers = remaining
+    }
+    return unloaded
   }
 
   private passengerPopulation(unit?: Unit) {
@@ -1590,7 +1610,9 @@ export class Match {
   }
 
   view(faction: Faction, world = this.snapshot(), fog = this.visibility.mask(faction)): Snapshot {
-    const visible = (point: Point) => this.visibility.at(faction, point) === 2
+    const finished = this.result !== null
+    if (finished) fog = (this.map.tiles.length * 3 + 2).toString(36)
+    const visible = (point: Point) => finished || this.visibility.at(faction, point) === 2
     const depleted = this.depletion[faction]
     for (const index of this.exhausted) {
       if (!depleted.has(index) && visible(cellCenter(index % this.map.width, Math.floor(index / this.map.width)))) depleted.add(index)
@@ -1612,7 +1634,7 @@ export class Match {
       entities: world.entities.flatMap(entity => {
         if (entity.embarkedOn) return []
         if (entity.faction === faction) return [entity]
-        if (!this.canSee(faction, entity)) return []
+        if (!finished && !this.canSee(faction, entity)) return []
         const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, passengers: _passengers, passengerPop: _passengerPop, concealed: _concealed, rally: _rally, ...seen } = entity
         return [seen]
       }),
