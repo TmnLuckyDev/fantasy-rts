@@ -233,7 +233,7 @@ function troop(faction: Race, kind: UnitKind, frame: number, workerVariant = 0) 
   const orc = faction === 'orc'
   const team = palettes[faction]
   const armor = faction === 'dwarf' ? brass : faction === 'undead' ? bone : human ? steel : iron
-  const skin = human && kind === 'worker' ? (workerVariant === 1 ? ['#a86b43', '#75482f', '#4c3025'] as const : ['#553629', '#38251e', '#241a17'] as const) : human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : faction === 'undead' ? bone : faction === 'elf' ? sandstone : faction === 'dwarf' ? leather : green
+  const skin = human && kind === 'worker' ? (workerVariant === 1 ? ['#553629', '#38251e', '#241a17'] as const : ['#a86b43', '#75482f', '#4c3025'] as const) : human ? ['#ffd8a4', '#dfa476', '#a66b58'] as const : faction === 'undead' ? bone : faction === 'elf' ? sandstone : faction === 'dwarf' ? leather : green
   const worker = kind === 'worker'
   const scout = kind === 'scout'
   const heavy = kind === 'heavy'
