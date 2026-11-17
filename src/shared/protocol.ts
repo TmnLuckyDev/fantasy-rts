@@ -153,7 +153,7 @@ export type Order =
   | { kind: 'halt' }
   | { kind: 'explore' }
   | { kind: 'hero-ability' | 'unit-ability' }
-  | { kind: 'board', transport: number }
+  | { kind: 'board', transport?: number }
   | { kind: 'unload' }
   | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }

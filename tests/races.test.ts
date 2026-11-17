@@ -118,7 +118,7 @@ test('Fortress Engineering is Dwarf-only, reinforces existing and future defense
   assert.equal(match.command('human', [foundry.id], order), false)
   assert.equal(wall.maxHp, Math.round(unitStats.dwarf.wall.health * 1.12))
   assert.equal(tower.maxHp, Math.round(unitStats.dwarf.tower.health * 1.12))
-  assert.equal(match['attackRange'](tower), 170)
+  assert.equal(match['attackRange'](tower), 205)
   const fresh = match['spawn']('human', 'tower', cellCenter(7, 10))
   assert.equal(fresh.maxHp, tower.maxHp)
   const saved = Match.restore(structuredClone(match.checkpoint()), match.map)
@@ -141,15 +141,15 @@ test('Stoneguard Shield Wall is temporary and respects its cooldown', () => {
   assert.equal(guard.maxHp - guard.hp, normalDamage)
 })
 
-test('all races keep equal tower and warship reach and their naval cost changes', () => {
+test('all races keep standard tower and warship reach and their naval cost changes', () => {
   for (const race of races) {
     const match = arena({ human: race, orc: race })
     const tower = match['spawn']('human', 'tower', cellCenter(8, 8))
     const warship = match['spawn']('human', 'warship', cellCenter(9, 8))
-    assert.equal(match['attackRange'](tower), 170)
+    assert.equal(match['attackRange'](tower), 205)
     assert.equal(match['attackRange'](warship), 170)
     for (let level = 0; level < 5; level++) match['upgrades'].human.push('range')
-    assert.equal(match['attackRange'](tower), 230)
+    assert.equal(match['attackRange'](tower), 265)
     assert.equal(match['attackRange'](warship), 230)
     assert.equal(trainingRule('warship', race).population, 2)
   }

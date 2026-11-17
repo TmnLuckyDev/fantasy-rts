@@ -15,10 +15,13 @@ import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shar
 import { formationSlots } from './formations.ts'
 import { AttackAlerts } from './attack-alerts.ts'
 import { SpatialIndex } from './spatial.ts'
+import { Coast } from './coast.ts'
+import type { Landing } from './coast.ts'
 import { Visibility } from './visibility.ts'
 
 export const TICK_HZ = TICKS_PER_SECOND
-const spacing = 30
+const transportCapacity = 30
+const boardingTimeout = 180 * TICK_HZ
 const maxRadius = Math.max(...Object.values(unitStats).flatMap(stats => Object.values(stats).map(unit => unit.radius)))
 const defenseRadius = 8 * TILE
 const defenseLeash = 11 * TILE
@@ -59,6 +62,7 @@ type Unit = Entity & {
   embarkedOn?: number
   passengers?: number[]
   buildQueue?: number[]
+  pickup?: Landing & { until: number }
   upgradeJob?: { kind: UpgradeKind, left: number }
   structureJob?: { left: number, total: number }
   level?: number
@@ -99,6 +103,7 @@ export class Match {
   private readonly nearby = { human: new SpatialIndex<Unit>(), orc: new SpatialIndex<Unit>() }
   private readonly activeHeroes: Partial<Record<Faction, Unit>> = {}
   private readonly heroExperience: Record<Faction, Partial<Record<HeroKind, number>>> = { human: {}, orc: {} }
+  private coast?: Coast
   private readonly routes = new Map<Unit, Point>()
   private readonly navigation: Partial<Record<Faction, { key: string, grid: NavigationGrid }>> = {}
   tick = 0
@@ -287,26 +292,7 @@ export class Match {
       }
       return true
     }
-    if (order.kind === 'board') {
-      const ship = this.units.get(order.transport)
-      if (!ship || ship.kind !== 'transport' || ship.faction !== faction || ship.buildDuration) return false
-      const candidates = units.filter(unit => isUnitKind(unit.kind) && !isShipKind(unit.kind) &&
-        unit.kind !== 'worker' && !unit.embarkedOn && distance(unit, ship) <= 5 * TILE)
-      if (candidates.length !== units.length) return false
-      const used = (ship.passengers ?? []).reduce((total, id) => {
-        const passenger = this.units.get(id)
-        return total + (passenger ? training[passenger.kind as UnitKind].population : 0)
-      }, 0)
-      const load = candidates.reduce((total, unit) => total + training[unit.kind as UnitKind].population, 0)
-      if (used + load > 30) return false
-      ship.passengers ??= []
-      for (const unit of candidates) {
-        this.resetOrders(unit)
-        unit.embarkedOn = ship.id
-        ship.passengers.push(unit.id)
-      }
-      return true
-    }
+    if (order.kind === 'board') return this.board(faction, units, order.transport)
     if (order.kind === 'unload') {
       if (units.length !== 1 || units[0].kind !== 'transport') return false
       const ship = units[0]
@@ -350,7 +336,7 @@ export class Match {
     }
     if (order.kind === 'gather' || order.kind === 'build' || order.kind === 'wall-line' ||
         order.kind === 'resume-build' || order.kind === 'repair') {
-      return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker'), order)
+      return this.assignWorkers(faction, units.filter(unit => unit.kind === 'worker' && !unit.embarkedOn), order)
     }
     if (units.some(unit => !isUnitKind(unit.kind) || unit.embarkedOn)) return false
     if (order.kind === 'explore' && units.some(unit => unit.kind !== 'scout')) return false
@@ -368,7 +354,10 @@ export class Match {
     if (!troops.length) return false
     if ((order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack') && order.formation) {
       const anchor = order.kind === 'attack' ? this.units.get(order.target)! : order.to
-      for (const { unit, at, flank } of formationSlots(troops, anchor, order.formation)) {
+      const groups = order.kind === 'attack' ? [troops] : [
+        troops.filter(unit => !isShipKind(unit.kind)), troops.filter(unit => isShipKind(unit.kind))
+      ]
+      for (const { unit, at, flank } of groups.flatMap(group => formationSlots(group, anchor, order.formation!))) {
         this.resetOrders(unit)
         unit.order = order
         if (order.kind === 'attack') {
@@ -385,12 +374,13 @@ export class Match {
     troops.sort((a, b) => Number(isRanged(a.kind)) - Number(isRanged(b.kind)) || a.y - b.y)
     troops.forEach((unit, i) => {
       this.resetOrders(unit)
-      unit.order = order.kind === 'halt' ? null : order
+      unit.order = order
       if (order.kind === 'attack') {
         const target = this.units.get(order.target)!
         unit.lastTarget = { x: target.x, y: target.y }
       }
       if (order.kind === 'move' || order.kind === 'advance') {
+        const spacing = isShipKind(unit.kind) ? 52 : 30
         const front = faction === 'human' ? 1 : -1
         const rows = Math.ceil(troops.length / rowSize)
         const x = order.to.x + front * ((rows - 1) / 2 - Math.floor(i / rowSize)) * spacing
@@ -429,7 +419,8 @@ export class Match {
     const radius = unitStats[this.races[unit.faction]][unit.kind].radius
     for (const scale of [1, 0.75, 0.5, 0.25]) {
       const point = { x: anchor.x + (at.x - anchor.x) * scale, y: anchor.y + (at.y - anchor.y) * scale }
-      if (canStand(this.map, point, [], radius)) return point
+      if (isShipKind(unit.kind) ? isWater(tileAt(this.map, Math.floor(point.x / TILE), Math.floor(point.y / TILE))) :
+        canStand(this.map, point, [], radius)) return point
     }
     return anchor
   }
@@ -438,6 +429,7 @@ export class Match {
     this.reveal(unit)
     this.routes.delete(unit)
     unit.order = null
+    unit.pickup = undefined
     unit.job = null
     unit.buildQueue = undefined
     unit.path = []
@@ -448,6 +440,105 @@ export class Match {
     unit.blockedTicks = 0
     unit.assigned = null
     unit.flank = undefined
+  }
+
+  private board(faction: Faction, units: Unit[], transport?: number) {
+    const ships = [...this.units.values()].filter(unit => unit.kind === 'transport' && unit.faction === faction &&
+      (transport === undefined || unit.id === transport))
+    if (!ships.length || units.some(unit => !isUnitKind(unit.kind) || isShipKind(unit.kind) || unit.embarkedOn)) return false
+    const coast = this.coast ??= new Coast(this.map)
+    const selected = new Set(units)
+    const remaining = new Map(ships.map(ship => [ship, transportCapacity - (ship.passengers ?? []).reduce(
+      (total, id) => total + this.passengerPopulation(this.units.get(id)), 0)]))
+    for (const unit of this.units.values()) {
+      if (unit.order?.kind !== 'board' || selected.has(unit)) continue
+      const ship = this.units.get(unit.order.transport ?? 0)
+      if (ship?.pickup && remaining.has(ship)) remaining.set(ship, remaining.get(ship)! - this.passengerPopulation(unit))
+    }
+    let accepted = false
+    for (const unit of units) {
+      const size = this.passengerPopulation(unit)
+      let best: { ship: Unit, site: Landing, score: number } | undefined
+      for (const ship of ships) {
+        if (remaining.get(ship)! < size) continue
+        const pickup = ship.pickup
+        if (pickup && coast.region(unit) !== coast.region(pickup.land)) continue
+        const meeting = pickup ? { site: pickup, score: distance(unit, pickup.land) + distance(ship, pickup.sea) } :
+          coast.meeting(unit, ship)
+        if (meeting && (!best || meeting.score < best.score)) best = { ship, ...meeting }
+      }
+      if (!best) continue
+      const { ship, site } = best
+      remaining.set(ship, remaining.get(ship)! - size)
+      this.resetOrders(unit)
+      if (distance(ship, site.sea) <= TILE * 2 && distance(unit, site.land) <= TILE * 3 &&
+          distance(unit, ship) <= TILE * 5 && clearSegment(this.map, unit, site.land, [], 0)) {
+        this.embark(unit, ship)
+      } else {
+        if (!ship.pickup) {
+          this.resetOrders(ship)
+          ship.pickup = { ...site, until: this.tick + boardingTimeout }
+        }
+        unit.order = { kind: 'board', transport: ship.id }
+      }
+      accepted = true
+    }
+    return accepted
+  }
+
+  private passengerPopulation(unit?: Unit) {
+    return unit && isUnitKind(unit.kind) ? training[unit.kind].population : 0
+  }
+
+  private embark(unit: Unit, ship: Unit) {
+    this.resetOrders(unit)
+    unit.embarkedOn = ship.id
+    unit.moving = false
+    this.nearby[unit.faction].remove(unit)
+    const passengers = ship.passengers ??= []
+    passengers.push(unit.id)
+  }
+
+  private updatePickups() {
+    const pending = new Set<Unit>()
+    for (const unit of this.units.values()) {
+      if (unit.order?.kind !== 'board') continue
+      const ship = this.units.get(unit.order.transport ?? 0)
+      if (!ship?.pickup || this.tick >= ship.pickup.until) this.resetOrders(unit)
+      else pending.add(ship)
+    }
+    for (const ship of this.units.values()) {
+      if (ship.pickup && !pending.has(ship)) this.resetOrders(ship)
+    }
+  }
+
+  private takeQueuedConstruction() {
+    const idle = { human: [] as Unit[], orc: [] as Unit[] }
+    const active = new Set<number>()
+    const owners = new Map<number, Unit>()
+    for (const worker of this.units.values()) {
+      if (worker.kind !== 'worker' || worker.embarkedOn) continue
+      if (worker.job?.kind === 'construct') active.add(worker.job.site)
+      for (const id of worker.buildQueue ?? []) owners.set(id, worker)
+      if (!worker.job && !worker.order && !worker.assigned) idle[worker.faction].push(worker)
+    }
+    for (const site of this.units.values()) {
+      if (!site.buildDuration || active.has(site.id)) continue
+      const workers = idle[site.faction]
+      if (!workers.length) continue
+      const coast = this.coast ??= new Coast(this.map)
+      const region = coast.region(site)
+      let closest = -1
+      for (let i = 0; i < workers.length; i++) {
+        if (!region || coast.region(workers[i]) !== region) continue
+        if (closest < 0 || squaredDistance(workers[i], site) < squaredDistance(workers[closest], site)) closest = i
+      }
+      if (closest < 0) continue
+      const [worker] = workers.splice(closest, 1)
+      const owner = owners.get(site.id)
+      if (owner) owner.buildQueue = owner.buildQueue?.filter(id => id !== site.id)
+      this.queueConstruction(worker, site.id)
+    }
   }
 
   private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' | 'repair' }>) {
@@ -928,6 +1019,8 @@ export class Match {
       else incoming.push(missile)
     }
     this.missiles = incoming
+    this.updatePickups()
+    if (this.settings.autoBuild && this.tick % TICK_HZ === 0) this.takeQueuedConstruction()
     const hostileBuildings: Record<Faction, Obstacle[]> = { human: [], orc: [] }
     for (const building of this.units.values()) {
       if (isUnitKind(building.kind)) continue
@@ -941,6 +1034,20 @@ export class Match {
       if (unit.buildDuration || unit.embarkedOn) continue
       const stats = unitStats[this.races[unit.faction]][unit.kind]
       const obstacles = hostileBuildings[unit.faction]
+      if (unit.pickup) {
+        this.sail(unit, unit.pickup.sea)
+        continue
+      }
+      if (unit.order?.kind === 'board') {
+        const ship = this.units.get(unit.order.transport ?? 0)
+        const pickup = ship?.pickup
+        if (ship && pickup) {
+          if (distance(unit, pickup.land) <= TILE * 1.3 && distance(ship, pickup.sea) <= TILE * .75) this.embark(unit, ship)
+          else if (distance(unit, pickup.land) > TILE) this.approach(unit, pickup.land, obstacles, true)
+        }
+        continue
+      }
+      if (unit.order?.kind === 'halt') continue
       if (unit.kind === 'scout' && unit.order?.kind === 'explore' &&
           (!unit.assigned || squaredDistance(unit, unit.assigned) < (TILE * 1.5) ** 2 || this.tick % 80 === unit.id % 80)) {
         const destination = this.scoutDestination(unit)
@@ -988,7 +1095,9 @@ export class Match {
           }
         }
       }
-      if (target && !target.embarkedOn && stats.damage > 0 && this.fight(unit, target)) {
+      // A move order can fire at an enemy in range without pausing or pursuing it.
+      const movingOrder = unit.order?.kind === 'move'
+      if (target && !target.embarkedOn && stats.damage > 0 && this.fight(unit, target) && !movingOrder) {
         this.routes.delete(unit)
         continue
       }
@@ -1010,11 +1119,12 @@ export class Match {
           }
         }
       }
-      if (destination && stats.speed && isShipKind(unit.kind)) this.sail(unit, destination)
-      else if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target))
+      if (destination && stats.speed && isShipKind(unit.kind)) this.sail(unit, destination, !target)
+      else if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target) && !movingOrder)
       else this.routes.delete(unit)
     }
     this.resolveRoutes(hostileBuildings)
+    this.spaceMovingUnits(hostileBuildings)
     this.visibility.update(this.units.values())
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
@@ -1039,7 +1149,8 @@ export class Match {
     const radius = defenseRadius + unitStats[this.races[victim.faction]][victim.kind].radius
     if (squaredDistance(at, attacker) > defenseLeash ** 2) return
     for (const unit of this.nearby[victim.faction].near(at, radius)) {
-      if (!isUnitKind(unit.kind) || !unitStats[this.races[unit.faction]][unit.kind].damage ||
+      if (!isUnitKind(unit.kind) || unit.order?.kind === 'move' || unit.order?.kind === 'halt' || unit.order?.kind === 'board' ||
+          !unitStats[this.races[unit.faction]][unit.kind].damage ||
           (unit !== victim && unit.order?.kind === 'attack') || squaredDistance(unit, at) > radius ** 2) continue
       const current = this.defendedAgainst(unit)
       if (current && current !== attacker && squaredDistance(unit, current) <= squaredDistance(unit, attacker)) continue
@@ -1047,7 +1158,7 @@ export class Match {
     }
   }
 
-  private sail(unit: Unit, destination: Point) {
+  private sail(unit: Unit, destination: Point, clearOnArrival = false) {
     const x = Math.floor(destination.x / TILE), y = Math.floor(destination.y / TILE)
     if (!isWater(tileAt(this.map, x, y))) {
       // Warships may attack targets ashore, but must remain at sea.
@@ -1059,7 +1170,11 @@ export class Match {
       if (!candidates.length) return
       destination = candidates[0]
     }
-    if (distance(unit, destination) < TILE * .5) { unit.path = []; return }
+    if (distance(unit, destination) < TILE * .5) {
+      unit.path = []
+      if (clearOnArrival) unit.assigned = null
+      return
+    }
     const goal = Math.floor(destination.y / TILE) * this.map.width + Math.floor(destination.x / TILE)
     if (unit.pursued?.x !== goal || !unit.path.length) {
       unit.pursued = { x: goal, y: 0 }
@@ -1081,11 +1196,12 @@ export class Match {
       if (previous[goal] === -1) return
       const route: Point[] = []
       for (let at = goal; at !== start; at = previous[at]) route.push(cellCenter(at % this.map.width, Math.floor(at / this.map.width)))
-      unit.path = route.reverse()
+      unit.path = route.length ? route.reverse() : [destination]
     }
     const next = unit.path[0]
     if (!next) return
     const gap = distance(unit, next), step = this.moveSpeed(unit) / TICK_HZ
+    if (Math.abs(next.x - unit.x) > 1) unit.facing = next.x < unit.x ? -1 : 1
     if (gap <= step) {
       Object.assign(unit, next)
       unit.path.shift()
@@ -1095,6 +1211,41 @@ export class Match {
     }
     unit.moving = true
     this.nearby[unit.faction].update(unit)
+  }
+
+  private spaceMovingUnits(obstacles: Record<Faction, Obstacle[]>) {
+    const offsets: Array<{ unit: Unit, at: Point }> = []
+    for (const unit of this.units.values()) {
+      if (!unit.moving || unit.embarkedOn || unit.job) continue
+      const ship = isShipKind(unit.kind)
+      const gap = ship ? 42 : 18
+      let closest: Unit | undefined
+      let separation = gap ** 2
+      for (const other of this.nearby[unit.faction].near(unit, gap)) {
+        if (other === unit || !isUnitKind(other.kind) || isShipKind(other.kind) !== ship) continue
+        const squared = squaredDistance(unit, other)
+        if (squared >= separation) continue
+        separation = squared
+        closest = other
+        if (squared === 0) break
+      }
+      if (!closest) continue
+      const spread = Math.sqrt(separation)
+      const axis = (Math.min(unit.id, closest.id) % 16) * Math.PI / 8
+      const sign = unit.id < closest.id ? -1 : 1
+      const dx = spread ? (unit.x - closest.x) / spread : Math.cos(axis) * sign
+      const dy = spread ? (unit.y - closest.y) / spread : Math.sin(axis) * sign
+      const push = Math.min(ship ? 2.5 : 1.6, (gap - spread) / 2)
+      const at = { x: unit.x + dx * push, y: unit.y + dy * push }
+      if (ship ? isWater(tileAt(this.map, Math.floor(at.x / TILE), Math.floor(at.y / TILE))) :
+          canStand(this.map, at, obstacles[unit.faction], unitStats[this.races[unit.faction]][unit.kind].radius)) {
+        offsets.push({ unit, at })
+      }
+    }
+    for (const { unit, at } of offsets) {
+      Object.assign(unit, at)
+      this.nearby[unit.faction].update(unit)
+    }
   }
 
   private approach(unit: Unit, destination: Point, obstacles: Obstacle[], pursuing: boolean) {
@@ -1389,7 +1540,7 @@ export class Match {
     if (!next) {
       if (!pursuing) {
         unit.assigned = null
-        if (unit.order?.kind === 'move') unit.order = null
+        if (unit.kind === 'worker' && unit.order?.kind === 'move') unit.order = null
       } else unit.blockedTicks++
       return
     }
@@ -1480,7 +1631,7 @@ export class Match {
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,
           repairing: repairs.has(id) || undefined,
           carrying: cargo ?? undefined,
-          idle: kind === 'worker' ? !unit.job && !unit.assigned : undefined,
+          idle: kind === 'worker' ? !unit.job && !unit.order && !unit.assigned : undefined,
           training: next ? { kind: next.kind, progress: 1 - next.left / trainingRule(next.kind, this.races[faction]).ticks, remaining: queue.reduce((total, entry) => total + (entry.count ?? 1), 0),
             seconds: Math.ceil(next.left / TICK_HZ), queue: queue.map(entry => ({ kind: entry.kind, count: entry.count ?? 1 })) } : undefined
         }

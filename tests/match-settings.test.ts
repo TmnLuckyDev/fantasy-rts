@@ -32,10 +32,11 @@ test('custom maps preserve defaults and provide the requested rotationally symme
 test('socket rules accept unlimited values and reject unsafe or malformed settings', () => {
   const settings = defaultMatchSettings('ashford-original')
   const parse = (value: unknown) => parseMessage(JSON.stringify({ type: 'create', faction: 'human', settings: value }))
+  settings.autoBuild = true
   assert.deepEqual(parse(settings), { type: 'create', faction: 'human', settings })
   assert.deepEqual(parse(undefined), { type: 'create', faction: 'human' })
   for (const invalid of [
-    { ...settings, map: 'other' }, { ...settings, minutes: 0 }, { ...settings, minutes: 0.5 },
+    { ...settings, autoBuild: 'yes' }, { ...settings, map: 'other' }, { ...settings, minutes: 0 }, { ...settings, minutes: 0.5 },
     { ...settings, starting: { ...settings.starting, gold: -1 } },
     { ...settings, sources: { ...settings.sources, gold: { count: MAX_DEPOSITS + 1, stock: 1, workers: 4 } } },
     { ...settings, sources: { ...settings.sources, stone: { count: 2, stock: 0, workers: 0 } } },

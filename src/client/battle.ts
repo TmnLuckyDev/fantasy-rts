@@ -415,6 +415,10 @@ export class BattleScene extends Phaser.Scene {
   private workerIds() { return this.selectedGroup ? [] : [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
 
   halt() { this.issue({ kind: 'halt' }) }
+  board(transport?: number) {
+    const units = this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind))
+    if (units.length) this.actions.order(units, { kind: 'board', transport })
+  }
   unload() {
     const ships = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'transport')
     if (ships.length === 1) this.actions.order(ships, { kind: 'unload' })
@@ -480,7 +484,7 @@ export class BattleScene extends Phaser.Scene {
     if (touch && this.workOnBuilding(this.workerIds(), picked)) return
     if (touch && picked?.kind === 'transport' && picked.faction === this.faction &&
         this.mobileUnits().some(id => !isShipKind(this.visuals.get(id)?.entity.kind))) {
-      this.actions.order(this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind)), { kind: 'board', transport: picked.id })
+      this.board(picked.id)
       return
     }
     if (picked?.faction === this.faction) {
@@ -574,7 +578,7 @@ export class BattleScene extends Phaser.Scene {
     }
     if (this.workOnBuilding(workers, picked)) return
     if (picked?.kind === 'transport' && picked.faction === this.faction && this.mobileUnits().some(id => !isShipKind(this.visuals.get(id)?.entity.kind))) {
-      this.actions.order(this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind)), { kind: 'board', transport: picked.id })
+      this.board(picked.id)
     } else if (picked && picked.faction !== this.faction) this.issue({ kind: 'attack', target: picked.id }, { x: picked.x, y: picked.y })
     else this.issue({ kind: this.advanceMode ? 'advance' : 'move', to: point }, point)
   }

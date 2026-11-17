@@ -1,4 +1,4 @@
-import { raceOf } from '../shared/protocol.ts'
+import { isShipKind, raceOf } from '../shared/protocol.ts'
 import { TILE } from '../shared/map.ts'
 import type { Entity, Formation, Point } from '../shared/protocol.ts'
 import { unitStats } from '../shared/units.ts'
@@ -10,7 +10,8 @@ const layout: Record<Formation, { gap: number, width: number, arc: number }> = {
 }
 
 export function formationSlots<T extends Entity>(troops: readonly T[], target: Point, formation: Formation) {
-  const { gap, width, arc } = layout[formation]
+  const { gap: baseGap, width, arc } = layout[formation]
+  const gap = isShipKind(troops[0]?.kind) ? Math.max(52, baseGap) : baseGap
   let dx = 0
   let dy = 0
   for (const unit of troops) {

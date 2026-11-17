@@ -48,7 +48,7 @@ const original: Record<'human' | 'orc', Record<EntityKind, UnitStats>> = {
     heavy: { health: 240, damage: 34, armor: 7, range: 28, speed: 81, cooldown: 20, radius: 13 },
     headquarters: { health: 1500, damage: 0, armor: 5, range: 0, speed: 0, cooldown: 0, radius: 30 },
     ...economyStats,
-    tower: { ...economyStats.tower, range: 185 }
+    tower: { ...economyStats.tower, range: 205 }
   }
 }
 
