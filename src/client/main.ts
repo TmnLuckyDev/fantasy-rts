@@ -93,6 +93,10 @@ function toggleFormation(open: boolean) {
     closeEconomyMenu()
   }
 }
+for (const race of ['human', 'orc'] as const) {
+  const icon = document.querySelector<HTMLCanvasElement>('.faction.' + race + ' .race-icon')!
+  paintPortrait(icon, race, 'headquarters')
+}
 for (const race of ['dwarf', 'elf', 'undead'] as const) {
   const choice = document.createElement('button')
   choice.className = 'faction ' + race
