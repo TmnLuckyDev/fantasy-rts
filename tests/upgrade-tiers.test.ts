@@ -11,6 +11,32 @@ function advance(match: Match, ticks: number) {
   for (let i = 0; i < ticks; i++) match.step()
 }
 
+test('attacked melee troops and nearby moving allies counterattack then retain their move orders', () => {
+  const checkpoint = new Match().checkpoint()
+  const humanBase = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
+  const orcBase = checkpoint.units.find(unit => unit.faction === 'orc' && unit.kind === 'headquarters')!
+  const victim = { ...humanBase, id: ++checkpoint.sequence, kind: 'blade' as const, ...cellCenter(12, 12), hp: 96, maxHp: 96 }
+  const ally = { ...humanBase, id: ++checkpoint.sequence, kind: 'blade' as const, ...cellCenter(15, 12), hp: 96, maxHp: 96 }
+  const attacker = { ...orcBase, id: ++checkpoint.sequence, kind: 'ranged' as const, ...cellCenter(17, 12), hp: 66, maxHp: 66 }
+  checkpoint.units.push(victim, ally, attacker)
+  const game = Match.restore(checkpoint)
+  const destination = cellCenter(20, 20)
+  assert.equal(game.command('human', [victim.id, ally.id], { kind: 'move', to: destination }), true)
+  const internal = game as unknown as {
+    units: Map<number, { defense: { targetId: number } | null, order: { kind: string } | null }>
+    callDefenders(victim: unknown, attacker: unknown): void
+    defendedAgainst(unit: unknown): unknown
+  }
+  const ownVictim = internal.units.get(victim.id)!
+  const ownAlly = internal.units.get(ally.id)!
+  const enemy = internal.units.get(attacker.id)!
+  internal.callDefenders(ownVictim, enemy)
+  assert.equal(ownVictim.defense?.targetId, attacker.id)
+  assert.equal(ownAlly.defense?.targetId, attacker.id)
+  assert.equal(ownVictim.order?.kind, 'move')
+  assert.equal(ownAlly.order?.kind, 'move')
+})
+
 test('ships charge both gold and wood, including queued refunds', () => {
   assert.deepEqual(trainingCost('transport'), { gold: 160, wood: 130 })
   assert.deepEqual(trainingCost('warship'), { gold: 230, wood: 185 })
