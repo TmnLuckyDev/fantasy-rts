@@ -84,7 +84,6 @@ export class MatchSettingsMenu {
       if (!this.accept) return
       const settings = defaultMatchSettings(this.map)
       const number = (key: string) => this.input(key).value === '' ? null : this.input(key).valueAsNumber
-      settings.autoBuild = this.input('auto-build').checked
       settings.randomStarts = this.input('random-starts').checked
       settings.minutes = number('minutes')
       settings.populationCap = this.input('population-cap').valueAsNumber
@@ -128,7 +127,6 @@ export class MatchSettingsMenu {
     this.map = settings.map
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
     mapInput.value = settings.map
-    this.input('auto-build').checked = settings.autoBuild === true
     this.input('random-starts').checked = settings.randomStarts !== false
     this.input('minutes').value = String(settings.minutes ?? '')
     this.input('population-cap').value = String(settings.populationCap ?? defaultMatchSettings().populationCap)

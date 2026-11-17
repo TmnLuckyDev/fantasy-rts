@@ -656,6 +656,10 @@ function gatherChoice(resource: ResourceKind, label: string) {
 
 workerActions.append(gatherChoice('gold', 'Mine gold'), gatherChoice('wood', 'Chop wood'), gatherChoice('stone', 'Quarry stone'))
 
+const buildQueueAction = actionButton('Build queue', () => scene?.buildQueue())
+buildQueueAction.title = 'Build queued and unfinished structures until given another order'
+workerActions.append(buildQueueAction)
+
 function buildChoices() {
   return buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
     scene?.place(kind)

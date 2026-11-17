@@ -292,6 +292,14 @@ export class Match {
       }
       return true
     }
+    if (order.kind === 'build-queue') {
+      const workers = units.filter(unit => unit.kind === 'worker' && !unit.embarkedOn)
+      for (const worker of workers) {
+        if (worker.job?.kind !== 'construct') this.resetOrders(worker)
+        worker.order = order
+      }
+      return workers.length > 0
+    }
     if (order.kind === 'board') return this.board(faction, units, order.transport)
     if (order.kind === 'unload') {
       if (units.length !== 1 || units[0].kind !== 'transport') return false
@@ -520,7 +528,7 @@ export class Match {
       if (worker.kind !== 'worker' || worker.embarkedOn) continue
       if (worker.job?.kind === 'construct') active.add(worker.job.site)
       for (const id of worker.buildQueue ?? []) owners.set(id, worker)
-      if (!worker.job && !worker.order && !worker.assigned) idle[worker.faction].push(worker)
+      if (!worker.job && worker.order?.kind === 'build-queue') idle[worker.faction].push(worker)
     }
     for (const site of this.units.values()) {
       if (!site.buildDuration || active.has(site.id)) continue
@@ -538,6 +546,7 @@ export class Match {
       const owner = owners.get(site.id)
       if (owner) owner.buildQueue = owner.buildQueue?.filter(id => id !== site.id)
       this.queueConstruction(worker, site.id)
+      worker.order = { kind: 'build-queue' }
     }
   }
 
@@ -611,7 +620,9 @@ export class Match {
   private nextConstruction(worker: Unit) {
     const next = worker.buildQueue?.findIndex(id => this.units.get(id)?.buildDuration) ?? -1
     const remaining = next < 0 ? [] : worker.buildQueue!.slice(next)
+    const task = worker.order?.kind === 'build-queue' ? worker.order : null
     this.resetOrders(worker)
+    worker.order = task
     const site = remaining.shift()
     if (site !== undefined) {
       worker.job = { kind: 'construct', site }
@@ -1024,7 +1035,7 @@ export class Match {
     }
     this.missiles = incoming
     this.updatePickups()
-    if (this.settings.autoBuild && this.tick % TICK_HZ === 0) this.takeQueuedConstruction()
+    if (this.tick % TICK_HZ === 0) this.takeQueuedConstruction()
     const hostileBuildings: Record<Faction, Obstacle[]> = { human: [], orc: [] }
     const dropOffs: Record<Faction, Unit[]> = { human: [], orc: [] }
     for (const building of this.units.values()) {

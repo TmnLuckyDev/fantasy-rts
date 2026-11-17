@@ -151,6 +151,7 @@ export type Order =
   | { kind: 'move' | 'advance', to: Point, formation?: Formation }
   | { kind: 'attack', target: number, formation?: Formation }
   | { kind: 'halt' }
+  | { kind: 'build-queue' }
   | { kind: 'explore' }
   | { kind: 'hero-ability' | 'unit-ability' }
   | { kind: 'board', transport?: number }

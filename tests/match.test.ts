@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { TILE, ashford, ashfordClassic, cellCenter, distance, isWalkable, riverColumn, tileAt } from '../src/shared/map.ts'
 import { decodeFog } from '../src/shared/fog.ts'
-import { defaultMatchSettings } from '../src/shared/match-settings.ts'
 import { Match } from '../src/server/match.ts'
 import { canStand, findPath } from '../src/server/navigation.ts'
 import { unitStats } from '../src/shared/units.ts'
@@ -289,21 +288,26 @@ test('fog visibility remains identical when same-faction units overlap a tile', 
   assert.ok(baseline.length > 0)
 })
 
-test('idle workers take waiting and unassigned construction when auto-build is enabled', () => {
+test('assigned workers build queued and unfinished sites until stopped', () => {
   const map = ashford
-  const game = new Match(map, { ...defaultMatchSettings(), autoBuild: true })
+  const game = new Match(map)
   const worker = game.units.get(15)!
   const working = game['spawn']('human', 'farm', cellCenter(16, 14), 1000)
   const queued = game['spawn']('human', 'farm', cellCenter(17, 14), 1000)
   const paused = game['spawn']('human', 'farm', cellCenter(18, 14), 1000)
   worker.job = { kind: 'construct', site: working.id }
   worker.buildQueue = [queued.id]
+  assert.equal(game.command('human', [2], { kind: 'build-queue' }), false)
+  assert.equal(game.command('human', [16, 17], { kind: 'build-queue' }), true)
   for (let i = 0; i < 20; i++) game.step()
   assert.equal(worker.job?.site, working.id)
   assert.deepEqual(worker.buildQueue, [])
   const assigned = [...game.units.values()].flatMap(unit => unit.job?.kind === 'construct' ? [unit.job.site] : [])
   assert.equal(assigned.filter(id => id === queued.id).length, 1)
   assert.equal(assigned.filter(id => id === paused.id).length, 1)
+  assert.equal(game.command('human', [16], { kind: 'halt' }), true)
+  assert.equal(game.units.get(16)?.order?.kind, 'halt')
+  assert.equal(game.units.get(16)?.job, null)
 })
 
 test('workers deliver every resource to the nearest completed allied settlement on their landmass', () => {

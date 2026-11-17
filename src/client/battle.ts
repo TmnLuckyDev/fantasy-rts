@@ -386,6 +386,11 @@ export class BattleScene extends Phaser.Scene {
     this.selectionChanged(true)
   }
 
+  buildQueue() {
+    const ids = this.workerIds()
+    if (ids.length) this.actions.order(ids, { kind: 'build-queue' })
+  }
+
   gatherNearest(resource: ResourceKind) {
     const ids = this.workerIds()
     const worker = this.visuals.get(ids[0])?.entity
