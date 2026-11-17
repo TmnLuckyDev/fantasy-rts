@@ -305,7 +305,7 @@ function troop(faction: Race, kind: UnitKind, frame: number, workerVariant = 0) 
     rect('#33293b', 19, head + 2, 2, 2)
     rect(bone[1], 15, head + 7, 5, 2)
   } else if (human) {
-    block(worker ? thatch : ranged || scout ? team : armor, 11, head, 9, 3, 4)
+    block(worker ? (workerVariant === 1 ? ['#493126', '#30221c', '#201915'] : ['#9b6a42', '#70482f', '#493122']) as Faces : ranged || scout ? team : armor, 11, head, 9, 3, 4)
     rect('#263c4f', 17, head + 4, 4, 1)
     if (kind === 'polearm') rect(team[0], 13, head - 4, 4, 2)
     if (heavy) rect(team[1], 13, head - 5, 6, 3)
