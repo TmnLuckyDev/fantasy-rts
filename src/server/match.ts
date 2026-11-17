@@ -20,8 +20,8 @@ import { Visibility } from './visibility.ts'
 export const TICK_HZ = TICKS_PER_SECOND
 const spacing = 30
 const maxRadius = Math.max(...Object.values(unitStats).flatMap(stats => Object.values(stats).map(unit => unit.radius)))
-const defenseRadius = 5 * TILE
-const defenseLeash = 8 * TILE
+const defenseRadius = 8 * TILE
+const defenseLeash = 11 * TILE
 const defenseDuration = 4 * TICK_HZ
 const routesPerTick = 48
 const corpseLifetime = 34 * TICK_HZ
