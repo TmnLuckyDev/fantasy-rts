@@ -118,10 +118,10 @@ test('five ranged reach levels extend tower, warship and archer attacks, but not
   assert.equal(restored.view('human').entities.find(unit => unit.id === warship.id)?.rangeLevel, 5)
 })
 
-test('all races have tower reach equal to their siege weapons at base and maximum ranged research', () => {
+test('all races reach 265 tower range after five research levels', () => {
   for (const race of ['human', 'orc', 'dwarf', 'elf', 'undead'] as const) {
-    assert.equal(unitStats[race].tower.range, unitStats[race].siege.range)
-    assert.equal(unitStats[race].tower.range + 5 * upgrades.range.bonus, unitStats[race].siege.range + 5 * upgrades.range.bonus)
+    assert.equal(unitStats[race].tower.range, 205)
+    assert.equal(unitStats[race].tower.range + 5 * upgrades.range.bonus, 265)
   }
 })
 
