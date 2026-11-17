@@ -52,11 +52,11 @@ export const upgradeLevelLimit = (kind: UpgradeKind) => kind === 'fortress' ? 1 
 export function researchCost(kind: UpgradeKind, level: number): Cost {
   const base = upgrades[kind].cost
   if (kind === 'fortress') return base
-  const multiplier = 2 ** (level - 2)
+  const multiplier = 3 ** (level - 1)
   const cost: Partial<Resources> = {}
   for (const resource of resourceKinds) {
     const amount = base[resource]
-    if (amount !== undefined) cost[resource] = Math.ceil(amount * multiplier)
+    if (amount !== undefined) cost[resource] = Math.ceil(amount / 2) * multiplier
   }
   return cost
 }
