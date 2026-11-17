@@ -414,7 +414,10 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(page.locator('#stone')).toHaveText('36')
     await expect(page.locator('#production-count')).toHaveText('3')
     await expect(page.locator('#placement-tip')).toBeHidden()
-    await page.getByRole('button', { name: 'Production', exact: true }).tap()
+    // The drag above uses raw CDP touch events on Chromium. Use the mouse here
+    // so its gesture recognizer cannot swallow an immediate synthesized tap.
+    await page.getByRole('button', { name: 'Production', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Production', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Queues', exact: true }).tap()
     await expect(page.getByRole('region', { name: 'Production queues' })).toContainText('Stone Rampart · Queued')
     await page.getByRole('button', { name: 'Close', exact: true }).tap()
