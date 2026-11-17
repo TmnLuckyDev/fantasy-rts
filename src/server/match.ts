@@ -1040,7 +1040,7 @@ export class Match {
     if (squaredDistance(at, attacker) > defenseLeash ** 2) return
     for (const unit of this.nearby[victim.faction].near(at, radius)) {
       if (!isUnitKind(unit.kind) || !unitStats[this.races[unit.faction]][unit.kind].damage ||
-          unit.order?.kind === 'move' || unit.order?.kind === 'attack' || squaredDistance(unit, at) > radius ** 2) continue
+          (unit !== victim && unit.order?.kind === 'attack') || squaredDistance(unit, at) > radius ** 2) continue
       const current = this.defendedAgainst(unit)
       if (current && current !== attacker && squaredDistance(unit, current) <= squaredDistance(unit, attacker)) continue
       unit.defense = { targetId: attacker.id, at, until: this.tick + defenseDuration }
