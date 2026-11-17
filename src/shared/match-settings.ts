@@ -18,7 +18,6 @@ type ResourceSettings = { count: number, stock: number | null, workers: number |
 export type MatchSettings = {
   map: MapId
   randomStarts?: boolean
-  autoBuild?: boolean
   sources: Record<ResourceKind, ResourceSettings>
   starting: Resources
   minutes: number | null
@@ -45,7 +44,6 @@ export function defaultMatchSettings(map: MapId = 'ashford-expanded'): MatchSett
   return {
     map,
     randomStarts: true,
-    autoBuild: false,
     sources: {
       gold: { count: deposits, stock: null, workers: null },
       stone: { count: deposits, stock: null, workers: null },
@@ -68,14 +66,12 @@ const bounded = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max
 
 export function parseMatchSettings(value: unknown): MatchSettings | null {
-  const { map, randomStarts, autoBuild, sources, starting, minutes, populationCap } = record(value)
+  const { map, randomStarts, sources, starting, minutes, populationCap } = record(value)
   const selected = mapIds.find(id => id === map)
   if (!selected || (randomStarts !== undefined && typeof randomStarts !== 'boolean')) return null
-  if (autoBuild !== undefined && typeof autoBuild !== 'boolean') return null
   if (minutes !== null && !bounded(minutes, 1, TIME_LIMIT_MAX_MINUTES)) return null
   const validated = defaultMatchSettings(selected)
   validated.randomStarts = randomStarts ?? true
-  validated.autoBuild = autoBuild ?? false
   validated.minutes = minutes
   if (populationCap !== undefined && !bounded(populationCap, 10, MAX_POPULATION_CAP)) return null
   validated.populationCap = populationCap ?? DEFAULT_POPULATION_CAP

@@ -17,13 +17,11 @@ test('mobile can customize a solo game and see the timed match statistics', asyn
     for (const resource of ['gold', 'wood', 'stone']) {
       await menu.locator('[name="' + resource + '-count"]').fill('0')
     }
-    await menu.getByLabel('Idle workers take queued construction jobs').check()
     await menu.getByRole('button', { name: 'Save settings' }).tap()
     await page.reload()
     await page.getByRole('button', { name: 'Match settings', exact: true }).tap()
     await expect(menu.getByLabel('Battlefield')).toHaveValue('ironbreak-pass')
     await expect(menu.getByLabel('Time limit (minutes)')).toHaveValue('1')
-    await expect(menu.getByLabel('Idle workers take queued construction jobs')).toBeChecked()
     await menu.getByRole('button', { name: 'Close settings' }).tap()
     await page.getByRole('button', { name: 'Play vs Computer' }).tap()
     await expect(page.locator('#match-clock')).toBeVisible()
