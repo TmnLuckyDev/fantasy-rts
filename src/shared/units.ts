@@ -38,7 +38,7 @@ const original: Record<'human' | 'orc', Record<EntityKind, UnitStats>> = {
     heavy: { health: 240, damage: 34, armor: 7, range: 28, speed: 104, cooldown: 18, radius: 12 },
     headquarters: { health: 1500, damage: 0, armor: 5, range: 0, speed: 0, cooldown: 0, radius: 30 },
     ...economyStats,
-    tower: { ...economyStats.tower, range: 185 }
+    tower: { ...economyStats.tower, range: 205 }
   },
   orc: {
     blade: { health: 94, damage: 15, armor: 3, range: 23, speed: 74, cooldown: 12, radius: 9 },
@@ -79,7 +79,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     marksman: { health: 92, speed: 54.4, range: 145, cooldown: 25 },
     heavy: { health: 248, armor: 8, speed: 76.5, cooldown: 21 },
     siege: { health: 205, damage: 38, armor: 5, range: 180, speed: 36, cooldown: 39 },
-    headquarters: { health: 1725, armor: 6 }, tower: { health: 552, armor: 4, range: 180 },
+    headquarters: { health: 1725, armor: 6 }, tower: { health: 552, armor: 4, range: 205 },
     wall: { health: 432, armor: 5 }, scout: { speed: 128 }, warship: { health: 715, speed: 73.8 },
     vanguard: { health: 385, speed: 69, damage: 32 }, pathfinder: { speed: 72, damage: 26, range: 149 }
   }),
@@ -89,7 +89,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     marksman: { health: 68, armor: 1, range: 143 },
     heavy: { health: 295, speed: 57, armor: 6, damage: 36, cooldown: 23 },
     siege: { health: 135, damage: 31, armor: 1, range: 190, speed: 52, cooldown: 34 },
-    tower: { health: 390, range: 190 }, wall: { health: 305 }, warship: { health: 585 }, support: { health: 94, speed: 73 },
+    tower: { health: 390, range: 205 }, wall: { health: 305 }, warship: { health: 585 }, support: { health: 94, speed: 73 },
     vanguard: { armor: 5, damage: 35 }, pathfinder: { health: 230, range: 146, damage: 26 }
   })
 }

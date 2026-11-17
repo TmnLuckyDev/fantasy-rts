@@ -955,7 +955,7 @@ export class Match {
         this.work(unit, obstacles)
         continue
       }
-      const automaticRange = stats.damage === 0 ? 0 : unit.order?.kind === 'advance' ? Math.max(180, this.attackRange(unit) + 30) : this.attackRange(unit) + 30
+      const automaticRange = stats.damage === 0 ? 0 : unit.order?.kind === 'advance' ? Math.max(180, this.attackRange(unit) + 30) : this.attackRange(unit)
       let target: Unit | undefined
       if (unit.order?.kind === 'attack') {
         target = this.units.get(unit.order.target)
@@ -973,7 +973,7 @@ export class Match {
       }
       const defenderTarget = this.defendedAgainst(unit)
       target ??= defenderTarget
-      if (automaticRange > 0 && unit.order?.kind !== 'move' && !target) {
+      if (automaticRange > 0 && !target) {
         let nearest = automaticRange
         const enemies = this.nearby[opposite(unit.faction)]
         for (const other of enemies.near(unit, automaticRange + maxRadius)) {
