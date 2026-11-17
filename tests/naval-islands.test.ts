@@ -119,13 +119,13 @@ test('walls leave the coast open while inland walls remain buildable', () => {
   assert.equal(validPlacement(map, 'wall', cellCenter(30, 56), []), true)
 })
 
-test('unload all lands friendly transports with shore in reach on distinct tiles', () => {
+test('selected transports sail to a chosen coast and unload only their own passengers', () => {
   const map = ashfordMap('shattered-isles')
   const match = new Match(map, defaultMatchSettings('shattered-isles'))
   const ships = [
     match['spawn']('human', 'transport', cellCenter(54, 56)),
     match['spawn']('human', 'transport', cellCenter(54, 55)),
-    match['spawn']('human', 'transport', cellCenter(96, 36)),
+    match['spawn']('human', 'transport', cellCenter(54, 54)),
     match['spawn']('orc', 'transport', cellCenter(54, 56))
   ]
   const passengers = ships.map(ship => {
@@ -134,7 +134,10 @@ test('unload all lands friendly transports with shore in reach on distinct tiles
     ship.passengers = [passenger.id]
     return passenger
   })
-  assert.ok(match.command('human', [ships[0].id], { kind: 'unload-all' }))
+  const destination = cellCenter(52, 61)
+  assert.ok(match.command('human', [ships[0].id, ships[1].id], { kind: 'unload', at: destination }))
+  assert.equal(passengers[0].embarkedOn, ships[0].id)
+  for (let i = 0; i < 300 && passengers.slice(0, 2).some(unit => unit.embarkedOn); i++) match.step()
   assert.equal(passengers[0].embarkedOn, undefined)
   assert.equal(passengers[1].embarkedOn, undefined)
   assert.notDeepEqual([passengers[0].x, passengers[0].y], [passengers[1].x, passengers[1].y])

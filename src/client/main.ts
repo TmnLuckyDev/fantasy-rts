@@ -482,7 +482,9 @@ function drawSelection(entities: Entity[], interactive = false) {
   button('board').hidden = !entities.some(entity => isUnitKind(entity.kind) && !isShipKind(entity.kind)) ||
     !ownEntities.some(entity => entity.kind === 'transport')
   button('unload').hidden = !entities.some(entity => entity.kind === 'transport' && entity.passengers?.length)
-  button('unload-all').hidden = !ownEntities.some(entity => entity.kind === 'transport' && entity.passengers?.length)
+  const targetingUnload = scene?.targetingUnload === true
+  button('unload').textContent = targetingUnload ? 'Choose landing coast' : 'Unload'
+  button('unload').setAttribute('aria-pressed', String(targetingUnload))
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
   const skill = entities.length === 1 && selected && isUnitKind(selected.kind) ? raceSkills[raceOf(selected)]?.[selected.kind] : undefined
   const heroSkillButton = button('hero-skill')
@@ -823,10 +825,6 @@ button('dismiss-units').onclick = () => {
   }
 }
 button('board').onclick = () => scene?.board()
-button('unload-all').onclick = () => {
-  const ship = ownEntities.find(entity => entity.kind === 'transport' && entity.passengers?.length)
-  if (ship) issueOrder([ship.id], { kind: 'unload-all' })
-}
 button('unload').onclick = () => scene?.unload()
 button('hero-skill').onclick = () => {
   if (selection.length === 1 && !isHeroKind(selection[0].kind)) issueOrder([selection[0].id], { kind: 'unit-ability' })

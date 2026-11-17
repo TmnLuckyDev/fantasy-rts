@@ -67,6 +67,7 @@ export class BattleScene extends Phaser.Scene {
   private lastMiniDraw = 0
   advanceMode = false
   formation: Formation = 'line'
+  private unloadTargets: number[] = []
   private rallyTarget: number | null = null
   private placing: BuildingKind | null = null
   private pointer: Point | null = null
@@ -342,6 +343,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   deselect() {
+    this.unloadTargets = []
     this.place(null)
     this.selectedGroup = null
     this.selectedResource = null
@@ -419,14 +421,38 @@ export class BattleScene extends Phaser.Scene {
 
   private workerIds() { return this.selectedGroup ? [] : [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
 
-  halt() { this.issue({ kind: 'halt' }) }
+  halt() {
+    this.unloadTargets = []
+    this.issue({ kind: 'halt' })
+    this.selectionChanged(true)
+  }
   board(transport?: number) {
     const units = this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind))
     if (units.length) this.actions.order(units, { kind: 'board', transport })
   }
+  get targetingUnload() { return this.unloadTargets.length > 0 }
+
   unload() {
-    const ships = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'transport')
-    if (ships.length) this.actions.order(ships, { kind: 'unload' })
+    this.place(null)
+    this.rallyTarget = null
+    this.unloadTargets = this.targetingUnload ? [] : [...this.selected].filter(id => {
+      const ship = this.visuals.get(id)?.entity
+      return ship?.kind === 'transport' && ship.passengers?.length
+    })
+    this.selectionChanged(true)
+  }
+
+  private targetUnload(screen: Point) {
+    if (!this.targetingUnload) return false
+    const at = this.world(screen)
+    const ships = this.unloadTargets.filter(id => this.visuals.get(id)?.entity.passengers?.length)
+    this.unloadTargets = []
+    for (let start = 0; start < ships.length; start += MAX_SELECTION) {
+      this.actions.order(ships.slice(start, start + MAX_SELECTION), { kind: 'unload', at })
+    }
+    this.markers.push({ point: at, color: 0xffdc82, born: this.time.now })
+    this.selectionChanged(true)
+    return true
   }
   explore() {
     const ids = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'scout')
@@ -452,7 +478,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private click(screen: Point, append: boolean, touch: boolean) {
-    if (this.placeRally(screen)) return
+    if (this.targetUnload(screen) || this.placeRally(screen)) return
     const point = this.world(screen)
     if (this.placing) {
       const ids = this.workerIds()
@@ -567,7 +593,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private orderAt(screen: Point) {
-    if (this.placeRally(screen)) return
+    if (this.targetUnload(screen) || this.placeRally(screen)) return
     if (this.placing) {
       this.place(null)
       return
