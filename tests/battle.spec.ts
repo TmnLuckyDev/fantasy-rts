@@ -397,26 +397,18 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await page.getByRole('button', { name: 'Base', exact: true }).tap()
     const start = await screenPoint(page, cellCenter(ashford.width - 12, ashford.height - 15), hall)
     const end = await screenPoint(page, cellCenter(ashford.width - 14, ashford.height - 15), hall)
-    if (mobileBrowser === chromium) {
-      const session = await context.newCDPSession(page)
-      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] })
-      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [end] })
-      await expect(page.locator('#placement-message')).toContainText('3 wall segments')
-      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-      await session.detach()
-    } else {
-      const field = page.locator('#battlefield')
-      await field.dispatchEvent('pointerdown', { button: 0, pointerId: 7, pointerType: 'touch', clientX: start.x, clientY: start.y })
-      await field.dispatchEvent('pointermove', { button: 0, pointerId: 7, pointerType: 'touch', clientX: end.x, clientY: end.y })
-      await expect(page.locator('#placement-message')).toContainText('3 wall segments')
-      await field.dispatchEvent('pointerup', { button: 0, pointerId: 7, pointerType: 'touch', clientX: end.x, clientY: end.y })
-    }
+    // Inject pointer events for the drag so both engines exercise the same path
+    // and can continue with Playwright touchscreen taps after the gesture.
+    const field = page.locator('#battlefield')
+    const dragPointer = { button: 0, pointerId: 7, pointerType: 'touch' }
+    await field.dispatchEvent('pointerdown', { ...dragPointer, clientX: start.x, clientY: start.y })
+    await field.dispatchEvent('pointermove', { ...dragPointer, clientX: end.x, clientY: end.y })
+    await expect(page.locator('#placement-message')).toContainText('3 wall segments')
+    await field.dispatchEvent('pointerup', { ...dragPointer, clientX: end.x, clientY: end.y })
     await expect(page.locator('#stone')).toHaveText('36')
     await expect(page.locator('#production-count')).toHaveText('3')
     await expect(page.locator('#placement-tip')).toBeHidden()
-    // The drag above uses raw CDP touch events on Chromium. Use the mouse here
-    // so its gesture recognizer cannot swallow an immediate synthesized tap.
-    await page.getByRole('button', { name: 'Production', exact: true }).click()
+    await page.getByRole('button', { name: 'Production', exact: true }).tap()
     await expect(page.getByRole('dialog', { name: 'Production', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Queues', exact: true }).tap()
     await expect(page.getByRole('region', { name: 'Production queues' })).toContainText('Stone Rampart · Queued')
