@@ -41,7 +41,7 @@ export type ResourceKind = typeof resourceKinds[number]
 export type Resources = Record<ResourceKind, number>
 export type Population = { used: number, reserved: number, limit: number }
 
-export const factionNames: Record<Race, string> = { human: 'Human Kingdoms', orc: 'Orcish Horde', dwarf: 'Ironbound Clans', elf: 'Sylvan Covenant', undead: 'Hollow Legion' }
+export const factionNames: Record<Race, string> = { human: 'Valorian Crown', orc: 'Bloodfang Horde', dwarf: 'Ironbound Clans', elf: 'Sylvan Covenant', undead: 'Hollow Legion' }
 export const entityNames: Record<Race, Record<EntityKind, string>> = {
   human: {
     siege: 'Siege Engine', support: 'Support', blade: 'Footman', polearm: 'Pikeman', ranged: 'Archer', marksman: 'Crossbowman', heavy: 'Knight',
