@@ -93,6 +93,9 @@ export class BattleScene extends Phaser.Scene {
       for (const kind of entityKinds) {
         this.textures.addCanvas(faction + kind + '0', entityTexture(this.races[faction], kind))
         if (isUnitKind(kind)) this.textures.addCanvas(faction + kind + '1', entityTexture(this.races[faction], kind, 1))
+        if (kind === 'worker' && this.races[faction] === 'human') {
+          for (const frame of [0, 1]) this.textures.addCanvas(faction + kind + 'dark' + frame, entityTexture('human', kind, frame, 1))
+        }
       }
     }
     this.map.tiles.forEach((tile, i) => {
@@ -720,7 +723,9 @@ export class BattleScene extends Phaser.Scene {
       const depth = Math.round(sprite.y)
       if (sprite.depth !== depth) sprite.setDepth(depth)
       if (!building) {
-        const texture = entity.faction + entity.kind + (entity.moving ? walkFrame : 0)
+        const texture = entity.faction + entity.kind +
+          (entity.kind === 'worker' && raceOf(entity) === 'human' && (Math.imul(entity.id, 0x9e3779b1) >>> 0) % 2 === 0 ? 'dark' : '') +
+          (entity.moving ? walkFrame : 0)
         if (sprite.texture.key !== texture) sprite.setTexture(texture)
         if (sprite.flipX !== (entity.facing < 0)) sprite.setFlipX(entity.facing < 0)
       }
