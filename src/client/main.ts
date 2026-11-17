@@ -1005,13 +1005,37 @@ function unlockSound(event: Event) {
 }
 document.addEventListener('click', unlockSound, { capture: true })
 document.addEventListener('keydown', unlockSound, { capture: true })
-button('map-button').addEventListener('pointerdown', event => {
+const mapButton = button('map-button')
+let minimapPointer: number | null = null
+
+function focusMinimapAt(event: PointerEvent) {
   const bounds = minimap.getBoundingClientRect()
+  if (!bounds.width || !bounds.height) return
   const clamp = (value: number) => Math.min(1, Math.max(0, value))
   scene?.minimapFocus(clamp((event.clientX - bounds.left) / bounds.width),
     clamp((event.clientY - bounds.top) / bounds.height))
+}
+
+mapButton.addEventListener('pointerdown', event => {
+  if (event.button !== 0 || !event.isPrimary) return
+  minimapPointer = event.pointerId
+  focusMinimapAt(event)
+  try {
+    mapButton.setPointerCapture(event.pointerId)
+  } catch {
+    // A canceled pointer may already be unavailable for capture.
+    minimapPointer = null
+  }
 })
-button('map-button').addEventListener('click', event => {
+mapButton.addEventListener('pointermove', event => {
+  if (event.pointerId === minimapPointer) focusMinimapAt(event)
+})
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
+  mapButton.addEventListener(type, event => {
+    if (event.pointerId === minimapPointer) minimapPointer = null
+  })
+}
+mapButton.addEventListener('click', event => {
   if (event.detail === 0) scene?.minimapFocus(0.5, 0.5)
 })
 result.oncancel = event => event.preventDefault()
