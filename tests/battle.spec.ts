@@ -102,7 +102,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
     await orc.goto(baseURL + '/?room=' + code)
     await expect(orc.getByLabel('Room code')).toHaveValue(code)
     await orc.getByRole('button', { name: 'Join', exact: true }).tap()
-    await expect(orc.locator('#seats')).toContainText('Orcish Horde · You')
+    await expect(orc.locator('#seats')).toContainText('Bloodfang Horde · You')
     await human.getByRole('button', { name: 'Ready', exact: true }).click()
     await orc.getByRole('button', { name: 'Ready', exact: true }).tap()
     await expect(human.locator('#battlefield canvas')).toBeVisible()
@@ -259,7 +259,7 @@ test('desktop and landscape touch players can finish an authoritative match', as
 
     await orc.reload()
     await expect(orc.locator('#battlefield canvas')).toBeVisible()
-    await expect(orc.locator('#banner')).toContainText('Orcish Horde')
+    await expect(orc.locator('#banner')).toContainText('Bloodfang Horde')
     expect(unit(orcHistory, 1)).toBeUndefined()
     await expect.poll(() => unit(humanHistory, 8)?.id, { timeout: 110_000 }).toBe(8)
     expect(decodeFog(newest(humanHistory)!.fog, ashford.tiles.length)[baseCell]).toBe(2)
@@ -292,7 +292,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await page.locator('button[data-faction="orc"]').tap()
     await page.getByRole('button', { name: 'Play vs Computer', exact: true }).tap()
     await expect(page.locator('#battlefield canvas')).toBeVisible()
-    await expect(page.locator('#banner')).toContainText('Orcish Horde vs Computer')
+    await expect(page.locator('#banner')).toContainText('Bloodfang Horde vs Computer')
     const hall = ashford.bases.orc
     const hallTap = await screenPoint(page, { x: hall.x, y: hall.y - 28 }, hall)
     await page.touchscreen.tap(hallTap.x, hallTap.y)
@@ -345,7 +345,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await context.setOffline(false)
 
     await page.reload()
-    await expect(page.locator('#banner')).toContainText('Orcish Horde vs Computer')
+    await expect(page.locator('#banner')).toContainText('Bloodfang Horde vs Computer')
     await expect(page.getByRole('button', { name: 'Enable sound' })).toBeVisible()
     await expect(idle()).toHaveText(/2/)
     await page.close()
