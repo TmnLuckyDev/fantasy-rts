@@ -125,6 +125,19 @@ test('desktop and landscape touch players can finish an authoritative match', as
     }, { x: base.x / worldWidth, y: base.y / worldHeight })
     expect(hiddenBase).toEqual([13, 19, 16, 255])
 
+    const minimapBounds = (await human.locator('#minimap').boundingBox())!
+    const mapY = minimapBounds.y + minimapBounds.height / 2
+    await human.mouse.move(minimapBounds.x + minimapBounds.width * .25, mapY)
+    await human.mouse.down()
+    try {
+      const from = await cameraBox(human)
+      await human.mouse.move(minimapBounds.x + minimapBounds.width * .75, mapY, { steps: 5 })
+      await expect.poll(async () => (await cameraBox(human)).x).toBeGreaterThan(from.x + 30)
+    } finally {
+      await human.mouse.up()
+    }
+    await panTo(human, ashford.bases.human, false)
+
     const firstOrc = unit(orcHistory, 9)!
     const orcTap = await screenPoint(orc, { x: firstOrc.x, y: firstOrc.y - 13 }, ashford.bases.orc)
     await orc.touchscreen.tap(orcTap.x, orcTap.y)
