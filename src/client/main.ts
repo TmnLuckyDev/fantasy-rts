@@ -956,6 +956,7 @@ button('exit').onclick = () => {
 }
 button('advance').onclick = toggleAdvance
 button('halt').onclick = () => scene?.halt()
+button('deselect').onclick = () => scene?.deselect()
 button('home').onclick = () => scene?.home()
 function drawSoundButton() {
   button('sound').setAttribute('aria-pressed', String(audio.enabled))
@@ -986,6 +987,7 @@ result.oncancel = event => event.preventDefault()
 window.addEventListener('keydown', event => {
   if (!scene || result.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
   switch (event.key.toLowerCase()) {
+    case 'escape': scene.deselect(); break
     case 'i': scene.selectIdleWorker(); break
     case 'q': scene.selectAll(); break
     case 'a': toggleAdvance(); break
