@@ -101,15 +101,13 @@ for (const race of ['dwarf', 'elf', 'undead'] as const) {
   const copy = document.createElement('span')
   const title = document.createElement('strong')
   title.textContent = factionNames[race]
-  const description = document.createElement('small')
-  description.textContent = raceRules[race].description
   const icon = document.createElement('canvas')
   icon.className = 'race-icon'
   icon.setAttribute('aria-hidden', 'true')
   icon.width = 48
   icon.height = 48
   paintPortrait(icon, race, 'headquarters')
-  copy.append(title, description)
+  copy.append(title)
   choice.append(icon, copy)
   document.querySelector('.factions')!.append(choice)
 }
