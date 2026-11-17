@@ -259,7 +259,7 @@ export class ComputerOpponent {
     for (const ship of fleet) {
       if (!match.units.get(ship.id)?.assigned) match.command(this.faction, [ship.id], { kind: 'advance', to: landing.sea })
     }
-    if (!ferry || !home) return
+    if (!ferry || !home || match.units.get(ferry.id)?.pickup) return
     const own = army.filter(unit => !isShipKind(unit.kind) && unit.kind !== 'scout' && !this.attacking.has(unit.id))
     if (ferry.passengers?.length) {
       if (distance(ferry, landing.sea) > 50) {
@@ -281,7 +281,7 @@ export class ComputerOpponent {
     }
     const nearby = own.filter(unit => distance(unit, ferry) <= 5 * TILE).slice(0, 12)
     if (nearby.length >= 4 && match.command(this.faction, nearby.map(unit => unit.id), { kind: 'board', transport: ferry.id })) {
-      match.command(this.faction, [ferry.id], { kind: 'move', to: landing.sea })
+      if (!match.units.get(ferry.id)?.pickup) match.command(this.faction, [ferry.id], { kind: 'move', to: landing.sea })
     } else {
       const walking = own.filter(unit => !match.units.get(unit.id)?.assigned && distance(unit, home.land) > TILE)
       if (walking.length) match.command(this.faction, walking.slice(0, 12).map(unit => unit.id), { kind: 'move', to: home.land })

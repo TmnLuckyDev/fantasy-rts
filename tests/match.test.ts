@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { TILE, ashford, ashfordClassic, cellCenter, distance, isWalkable, riverColumn, tileAt } from '../src/shared/map.ts'
 import { decodeFog } from '../src/shared/fog.ts'
+import { defaultMatchSettings } from '../src/shared/match-settings.ts'
 import { Match } from '../src/server/match.ts'
 import { canStand, findPath } from '../src/server/navigation.ts'
 import { unitStats } from '../src/shared/units.ts'
@@ -218,7 +219,7 @@ for (const protectedKind of ['worker', 'headquarters'] as const) {
     const attacker = match.units.get(12)!
     Object.assign(victim, cellCenter(28, 11))
     Object.assign(guard, { x: victim.x - 78, y: victim.y - 26 })
-    Object.assign(remote, { x: victim.x - 220, y: victim.y })
+    Object.assign(remote, { x: victim.x - 415, y: victim.y })
     Object.assign(ordered, { x: victim.x - 60, y: victim.y + 50 })
     Object.assign(attacker, { x: victim.x + 108, y: victim.y })
     const start = { x: guard.x, y: guard.y }
@@ -230,7 +231,7 @@ for (const protectedKind of ['worker', 'headquarters'] as const) {
     assert.ok(victim.hp < victim.maxHp, 'the ranged attack hit')
     assert.ok(attacker.hp < attacker.maxHp, 'the nearby melee guard struck back')
     assert.ok(distance(guard, start) > 70, 'the guard went out to intercept')
-    assert.equal(remote.x, victim.x - 220, 'troops stationed farther away hold position')
+    assert.equal(remote.x, victim.x - 415, 'troops stationed farther away hold position')
     assert.ok(distance(ordered, retreat) < 10, 'an explicit move order takes priority')
   })
 }
@@ -286,4 +287,21 @@ test('fog visibility remains identical when same-faction units overlap a tile', 
   assert.ok(overlapping.length > 0)
   assert.equal(match.view('human').fog, overlapping)
   assert.ok(baseline.length > 0)
+})
+
+test('idle workers take waiting and unassigned construction when auto-build is enabled', () => {
+  const map = ashford
+  const game = new Match(map, { ...defaultMatchSettings(), autoBuild: true })
+  const worker = game.units.get(15)!
+  const working = game['spawn']('human', 'farm', cellCenter(16, 14), 1000)
+  const queued = game['spawn']('human', 'farm', cellCenter(17, 14), 1000)
+  const paused = game['spawn']('human', 'farm', cellCenter(18, 14), 1000)
+  worker.job = { kind: 'construct', site: working.id }
+  worker.buildQueue = [queued.id]
+  for (let i = 0; i < 20; i++) game.step()
+  assert.equal(worker.job?.site, working.id)
+  assert.deepEqual(worker.buildQueue, [])
+  const assigned = [...game.units.values()].flatMap(unit => unit.job?.kind === 'construct' ? [unit.job.site] : [])
+  assert.equal(assigned.filter(id => id === queued.id).length, 1)
+  assert.equal(assigned.filter(id => id === paused.id).length, 1)
 })

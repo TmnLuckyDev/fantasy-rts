@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, bulkStructureCost, canAfford, FARM_POPULATION, REPAIR, repairCost, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
@@ -466,6 +466,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   button('explore').hidden = !entities.some(entity => entity.kind === 'scout')
   button('dismiss-units').hidden = !entities.length || !entities.every(entity => entity.kind === 'worker' || entity.kind === 'scout')
+  button('board').hidden = !entities.some(entity => isUnitKind(entity.kind) && !isShipKind(entity.kind)) ||
+    !ownEntities.some(entity => entity.kind === 'transport')
   button('unload').hidden = !(entities.length === 1 && selected?.kind === 'transport')
   if (selected?.kind === 'transport') button('unload').disabled = !(selected.passengers?.length)
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
@@ -785,6 +787,7 @@ button('dismiss-units').onclick = () => {
     issueOrder(ids, { kind: 'dismiss' })
   }
 }
+button('board').onclick = () => scene?.board()
 button('unload').onclick = () => scene?.unload()
 button('hero-skill').onclick = () => {
   if (selection.length === 1 && !isHeroKind(selection[0].kind)) issueOrder([selection[0].id], { kind: 'unit-ability' })
@@ -955,7 +958,13 @@ button('exit').onclick = () => {
   if (room?.phase === 'finished' || window.confirm(prompt)) leave()
 }
 button('advance').onclick = toggleAdvance
-button('halt').onclick = () => scene?.halt()
+function haltSelection() {
+  if (!scene) return
+  scene.advanceMode = false
+  button('advance').setAttribute('aria-pressed', 'false')
+  scene.halt()
+}
+button('halt').onclick = haltSelection
 button('deselect').onclick = () => scene?.deselect()
 button('home').onclick = () => scene?.home()
 function drawSoundButton() {
@@ -991,7 +1000,7 @@ window.addEventListener('keydown', event => {
     case 'i': scene.selectIdleWorker(); break
     case 'q': scene.selectAll(); break
     case 'a': toggleAdvance(); break
-    case 's': scene.halt(); break
+    case 's': haltSelection(); break
     case 'h': scene.home(); break
   }
 })

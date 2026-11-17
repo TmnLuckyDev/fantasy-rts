@@ -11,7 +11,7 @@ function advance(match: Match, ticks: number) {
   for (let i = 0; i < ticks; i++) match.step()
 }
 
-test('attacked melee troops and nearby moving allies counterattack then retain their move orders', () => {
+test('attacked melee troops obey explicit move and stop orders under repeated attacks', () => {
   const checkpoint = new Match().checkpoint()
   const humanBase = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
   const orcBase = checkpoint.units.find(unit => unit.faction === 'orc' && unit.kind === 'headquarters')!
@@ -31,10 +31,23 @@ test('attacked melee troops and nearby moving allies counterattack then retain t
   const ownAlly = internal.units.get(ally.id)!
   const enemy = internal.units.get(attacker.id)!
   internal.callDefenders(ownVictim, enemy)
-  assert.equal(ownVictim.defense?.targetId, attacker.id)
-  assert.equal(ownAlly.defense?.targetId, attacker.id)
+  assert.equal(ownVictim.defense, null)
+  assert.equal(ownAlly.defense, null)
   assert.equal(ownVictim.order?.kind, 'move')
   assert.equal(ownAlly.order?.kind, 'move')
+  const target = game.units.get(victim.id)!
+  const startX = target.x
+  advance(game, 15)
+  assert.ok(target.x > startX)
+  assert.equal(game.command('human', [victim.id], { kind: 'halt' }), true)
+  const stopped = { x: target.x, y: target.y }
+  for (let i = 0; i < 20; i++) {
+    internal.callDefenders(ownVictim, enemy)
+    game.step()
+  }
+  assert.deepEqual({ x: target.x, y: target.y }, stopped)
+  assert.equal(ownVictim.defense, null)
+  assert.equal(ownVictim.order?.kind, 'halt')
 })
 
 test('ships charge both gold and wood, including queued refunds', () => {

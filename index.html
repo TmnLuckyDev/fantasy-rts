@@ -85,6 +85,7 @@
             </label>
           </div>
           <label class="start-option"><input name="random-starts" type="checkbox" checked> Random starting positions</label>
+          <label class="start-option"><input name="auto-build" type="checkbox"> Idle workers take queued construction jobs</label>
           <p class="settings-note">Both sides start with the same resources. Blank stock, worker limit or time fields mean unlimited.</p>
           <div id="resource-settings"></div>
           <p id="score-rule" class="settings-note"></p>
@@ -142,10 +143,11 @@
           <button id="formation" type="button" aria-label="Army formation" aria-expanded="false" aria-controls="formation-options" hidden>Line</button>
           <button id="hero-skill" type="button" hidden>Hero skill</button>
           <button id="dismiss-units" type="button" hidden title="Permanently dismiss selected peasants or scouts">Dismiss</button>
+          <button id="board" type="button" title="Meet and board a friendly transport" hidden>Board</button>
           <button id="unload" type="button" title="Unload troops at the nearest coast" hidden>Unload</button>
           <button id="explore" type="button" title="Automatically explore unexplored terrain" hidden>Explore</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
-          <button id="halt" type="button" title="Stop (S)">Stop</button>
+          <button id="halt" type="button" title="Stop and hold until the next order (S)">Stop</button>
           <button id="deselect" type="button" title="Deselect (Esc)" aria-label="Deselect selected units">Deselect</button>
           <button id="global-train-toggle" type="button" aria-expanded="false" aria-controls="global-train-panel">Recruit</button>
           <button id="production-toggle" type="button" aria-expanded="false" aria-controls="production-panel">Queues <span id="production-count">0</span></button>
