@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Match } from '../src/server/match.ts'
-import { trainingCost, bulkStructureCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../src/shared/economy.ts'
+import { trainingCost, researchCost, bulkStructureCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgrades } from '../src/shared/economy.ts'
 import { cellCenter } from '../src/shared/map.ts'
 import { parseMessage } from '../src/server/validate.ts'
 import { heroLevel } from '../src/shared/heroes.ts'
@@ -99,7 +99,7 @@ test('blacksmith research has five levels for each upgrade and no sixth level', 
   const base = checkpoint.units.find(unit => unit.faction === 'human' && unit.kind === 'headquarters')!
   const smith = { ...base, id: ++checkpoint.sequence, kind: 'smithy' as const, ...cellCenter(10, 15), hp: 620, maxHp: 620 }
   checkpoint.units.push(smith)
-  checkpoint.resources.human = { gold: 10000, wood: 10000, stone: 10000 }
+  checkpoint.resources.human = { gold: 20000, wood: 10000, stone: 10000 }
   const game = Match.restore(checkpoint)
   for (const kind of ['weapons', 'armor', 'precision', 'vitality', 'range', 'speed'] as const) {
     for (let level = 1; level <= MAX_UPGRADE_LEVEL; level++) {
@@ -228,4 +228,26 @@ test('bulk upgrade rejects insufficient funds atomically and rejects enemy-owned
   const parsed = parseMessage(JSON.stringify({ type: 'command', ids: [base.id], order: { kind: 'bulk-structure-upgrade', building: 'tower' } }))
   assert.equal(parsed?.type, 'command')
   assert.equal(parseMessage(JSON.stringify({ type: 'command', ids: [base.id], order: { kind: 'bulk-structure-upgrade', building: 'headquarters' } })), null)
+})
+
+test('unit research charges the next level and rejects orders when the bank only covers an earlier level', () => {
+  const match = new Match()
+  const smith = match['spawn']('human', 'smithy', cellCenter(10, 13))
+  const resources = match.checkpoint().resources.human
+  Object.assign(resources, { gold: 4000, wood: 2500, stone: 0 })
+  const start = { ...resources }
+  const order = { kind: 'upgrade', upgrade: 'weapons' } as const
+  assert.deepEqual([1, 2, 3, 4, 5].map(level => researchCost('weapons', level).gold), [85, 170, 340, 680, 1360])
+  assert.equal(match.command('human', [smith.id], order), true)
+  assert.equal(resources.gold, start.gold - 85)
+  assert.equal(resources.wood, start.wood - 23)
+  advance(match, upgrades.weapons.ticks)
+  const restored = Match.restore(structuredClone(match.checkpoint()), match.map)
+  const bank = restored.checkpoint().resources.human
+  Object.assign(bank, { gold: 169, wood: 45 })
+  assert.equal(restored.command('human', [smith.id], order), false)
+  assert.equal(bank.gold, 169)
+  bank.gold++
+  assert.equal(restored.command('human', [smith.id], order), true)
+  assert.deepEqual(bank, { gold: 0, wood: 0, stone: 0 })
 })

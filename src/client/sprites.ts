@@ -137,6 +137,16 @@ function structure(faction: Race, kind: BuildingKind) {
   const ink = brush(surface)
   const { rect, block, poly, shadow } = ink
   shadow(23, base, tall ? 14 : 21, 5)
+  if (kind === 'settlement') {
+    block(plinth, 2, 31, 40, 5, 5)
+    masonry(ink, wall, 5, 18, 26, 13, 7)
+    pitchedRoof(ink, team, 3, 20, 30, 9, 12)
+    gate(ink, 9, 32, 10, brass)
+    block(oak, 31, 22, 9, 8, 4)
+    block(brass, 33, 27, 7, 5, 4)
+    flag(ink, team, 28, 3)
+    return surface
+  }
   if (kind === 'port') {
     block(oak, 2, 26, 39, 7, 5)
     for (const x of [5, 19, 34]) {

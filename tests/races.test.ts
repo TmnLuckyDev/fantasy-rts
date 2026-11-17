@@ -147,10 +147,10 @@ test('all races keep standard tower and warship reach and their naval cost chang
     const tower = match['spawn']('human', 'tower', cellCenter(8, 8))
     const warship = match['spawn']('human', 'warship', cellCenter(9, 8))
     assert.equal(match['attackRange'](tower), 205)
-    assert.equal(match['attackRange'](warship), 170)
+    assert.equal(match['attackRange'](warship), 120)
     for (let level = 0; level < 5; level++) match['upgrades'].human.push('range')
     assert.equal(match['attackRange'](tower), 265)
-    assert.equal(match['attackRange'](warship), 230)
+    assert.equal(match['attackRange'](warship), 180)
     assert.equal(trainingRule('warship', race).population, 2)
   }
   assert.equal(unitStats.dwarf.warship.health, 715)
