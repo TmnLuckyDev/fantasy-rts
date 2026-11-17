@@ -341,6 +341,14 @@ export class BattleScene extends Phaser.Scene {
     return this.fog[y * this.map.width + x]
   }
 
+  deselect() {
+    this.place(null)
+    this.selectedGroup = null
+    this.selectedResource = null
+    this.selected.clear()
+    this.selectionChanged(true)
+  }
+
   selectAll() { this.selectGroup('all') }
 
   selectGroup(group: TroopGroup, center = this.selectedGroup === group) {
