@@ -704,7 +704,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.placing) {
       if (this.placing === 'wall' && wallLine(this.map, a, b).length) {
         this.actions.order(this.workerIds(), { kind: 'wall-line', from: a, to: b })
-      } else if (this.placing !== 'wall') this.click(rect.to, false, false)
+      } else if (this.placing !== 'wall') this.deselect()
       return
     }
     this.selectedGroup = null
@@ -1073,7 +1073,7 @@ export class BattleScene extends Phaser.Scene {
         preview.point.x + preview.heading.x * 24, preview.point.y + preview.heading.y * 24)
     } else this.formationPreview = undefined
     const drag = this.controls?.selection
-    if (this.placing && this.pointer) {
+    if (this.placing && this.pointer && (!drag || this.placing === 'wall')) {
       const radius = buildingFootprint(this.placing)
       const points = drag && this.placing === 'wall'
         ? wallLine(this.map, this.world(drag.from), this.world(drag.to))
@@ -1082,7 +1082,7 @@ export class BattleScene extends Phaser.Scene {
       for (const at of points) {
         const error = this.buildError(this.placing, at)
         const ok = !error
-        if ((!drag || this.placing !== 'wall') && error !== this.lastBuildHint) {
+        if (!drag && error !== this.lastBuildHint) {
           this.lastBuildHint = error
           this.actions.placement(this.placing, error)
         }

@@ -61,11 +61,50 @@
             </div>
           </div>
           <button id="match-settings" type="button">Match settings</button>
+          <div class="guide-links">
+            <button id="open-how-to" type="button" aria-haspopup="dialog">How to play</button>
+            <button id="open-wiki" type="button" aria-haspopup="dialog">Game wiki</button>
+          </div>
           <p id="lobby-message" role="status">Choose a faction to start.</p>
         </section>
         <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Five battlefields</span><span>Custom match rules</span></footer>
       </div>
     </main>
+
+    <dialog id="game-guide" aria-labelledby="guide-title">
+      <header class="settings-heading">
+        <h2 id="guide-title">Game guide</h2>
+        <form method="dialog"><button type="submit" autofocus>Close</button></form>
+      </header>
+      <nav class="guide-links" aria-label="Game guide sections">
+        <button id="guide-how-to-tab" type="button" aria-pressed="true" aria-controls="guide-how-to">How to play</button>
+        <button id="guide-wiki-tab" type="button" aria-pressed="false" aria-controls="guide-wiki">Game wiki</button>
+      </nav>
+      <section id="guide-how-to" aria-label="How to play">
+        <h3>Your first match</h3>
+        <ol>
+          <li>Choose a faction and play against the computer or invite a friend to an online room.</li>
+          <li>Select a worker. In <strong>Gather</strong>, choose gold, wood or stone. Build a Farm when you need more population.</li>
+          <li>Open <strong>Build</strong>, choose a building and place it on clear ground. Place more with another tap or click. Drag across the battlefield to cancel and deselect. With a wall selected, dragging places a row of walls.</li>
+          <li>Choose a production building and press <strong>Train</strong>. Select your headquarters and use <strong>Upgrade</strong> to unlock higher tiers when progression is enabled.</li>
+          <li>Scout to reveal enemies, then destroy their headquarters. Timed matches can also end on score.</li>
+        </ol>
+        <h3>Controls</h3>
+        <dl>
+          <dt>Select troops</dt><dd>Click or tap a unit. Drag a box around several units. Double-click or double-tap a unit to select nearby friendly units of the same type in view.</dd>
+          <dt>Move and attack</dt><dd>Right-click with the mouse. On touch, select troops and tap a destination or enemy. Use <strong>Attack move</strong> to engage enemies along the route.</dd>
+          <dt>Move the camera</dt><dd>Use the minimap, arrow keys and mouse wheel, or pan with two fingers and pinch to zoom.</dd>
+        </dl>
+        <h3>Practice and settings</h3>
+        <p><strong>Practice</strong> walks you through the first orders. In a match, <strong>Options</strong> lets you adjust graphics and box selection. Solo matches also support pause and resume.</p>
+      </section>
+      <section id="guide-wiki" aria-label="Game wiki" hidden>
+        <label>Faction <select id="wiki-race"></select></label>
+        <p id="wiki-race-description"></p>
+        <p class="guide-note">Base stats before research or hero levels. Ranges and movement speeds are in world units.</p>
+        <div id="wiki-units" class="wiki-units"></div>
+      </section>
+    </dialog>
 
     <dialog id="settings-dialog" aria-labelledby="settings-title">
       <form id="settings-form">

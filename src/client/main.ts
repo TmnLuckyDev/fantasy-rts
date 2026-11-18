@@ -20,7 +20,10 @@ import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
 import { entityTexture } from './sprites.ts'
 import type { ArmyIndex } from './troop-groups.ts'
+import { configureGameGuide } from './game-guide.ts'
 import './style.css'
+
+configureGameGuide()
 
 const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const button = (id: string) => element<HTMLButtonElement>(id)
@@ -399,7 +402,7 @@ function showBattle() {
         setText('placement-message', count + ' wall segments · ' + (count * price) + ' stone')
         return
       }
-      const action = kind === 'wall' ? 'Drag to queue a wall line, or tap a tile.' : 'Tap each tile to queue another.'
+      const action = kind === 'wall' ? 'Drag to queue a wall line, or tap a tile.' : 'Tap to build again. Drag to cancel.'
       setText('placement-message', error ?? (entityNames[chosenRace][kind] + ' · ' + action))
     },
     effect: kind => audio.play(kind)
