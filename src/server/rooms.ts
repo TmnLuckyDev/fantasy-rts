@@ -151,9 +151,10 @@ export class Rooms {
         if (error) send(peer, { type: 'error', message: error })
         return
       }
-      const accepted = message.type === 'group-command' ? room.match.commandGroup(seat.faction, message.group, message.order)
-        : room.match.command(seat.faction, message.ids, message.order)
-      if (!accepted) send(peer, { type: 'error', message: 'That order cannot be issued.' })
+      const error = message.type === 'group-command' ?
+        room.match.executeGroup(seat.faction, message.group, message.order) :
+        room.match.execute(seat.faction, message.ids, message.order)
+      if (error) send(peer, { type: 'error', message: error })
       return
     }
     if (room.match) return

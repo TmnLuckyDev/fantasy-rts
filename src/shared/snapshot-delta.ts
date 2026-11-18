@@ -10,11 +10,11 @@ export type SnapshotDelta = {
   pose?: Pose[]
   upsert?: Entity[]
   removed?: number[]
-} & Partial<Pick<Snapshot, 'fog' | 'templates' | 'hallLevel' | 'controlSites' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
+} & Partial<Pick<Snapshot, 'income' | 'fog' | 'templates' | 'hallLevel' | 'controlSites' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
 
 function sameTraining(a: Entity['training'], b: Entity['training']) {
   return a === b || Boolean(a && b && a.kind === b.kind && a.progress === b.progress &&
-    a.remaining === b.remaining && a.seconds === b.seconds && a.queue?.length === b.queue?.length &&
+    a.remaining === b.remaining && a.seconds === b.seconds && a.totalSeconds === b.totalSeconds && a.revision === b.revision && a.queue?.length === b.queue?.length &&
     (a.queue ?? []).every((run, i) => run.kind === b.queue![i].kind && run.count === b.queue![i].count))
 }
 
@@ -27,7 +27,7 @@ function sameDetails(a: Entity, b: Entity) {
     a.landing?.total === b.landing?.total && a.landing?.waiting === b.landing?.waiting &&
     a.weaponLevel === b.weaponLevel && a.armorLevel === b.armorLevel && a.precisionLevel === b.precisionLevel &&
     a.vitalityLevel === b.vitalityLevel && a.rangeLevel === b.rangeLevel && a.speedLevel === b.speedLevel && a.maxHp === b.maxHp &&
-    a.construction === b.construction && a.constructionStatus === b.constructionStatus &&
+    a.workerTask === b.workerTask && a.constructionSeconds === b.constructionSeconds && a.construction === b.construction && a.constructionStatus === b.constructionStatus &&
     a.experience === b.experience && a.repairing === b.repairing && a.carrying === b.carrying && a.idle === b.idle &&
     a.research?.kind === b.research?.kind && a.research?.progress === b.research?.progress &&
     sameTraining(a.training, b.training)
@@ -56,6 +56,8 @@ export function makeDelta(previous: Snapshot, next: Snapshot): SnapshotDelta {
   if (next.effects.length) delta.effects = next.effects
   const a = previous.resources, b = next.resources
   if (a.gold !== b.gold || a.wood !== b.wood || a.stone !== b.stone) delta.resources = b
+  if (next.income && (next.income.gold !== previous.income?.gold || next.income.wood !== previous.income?.wood ||
+      next.income.stone !== previous.income?.stone)) delta.income = next.income
   const p = previous.population, q = next.population
   if (p.used !== q.used || p.limit !== q.limit || p.reserved !== q.reserved) delta.population = q
   if (next.upgrades?.join() !== previous.upgrades?.join()) delta.upgrades = next.upgrades ?? []
@@ -90,6 +92,7 @@ export function applyDelta(previous: Snapshot | undefined, delta: SnapshotDelta)
     type: 'snapshot', tick: delta.tick, entities, effects: delta.effects ?? [],
     ...(delta.templates || previous.templates ? { templates: delta.templates ?? previous.templates } : {}),
     ...(delta.hallLevel || previous.hallLevel ? { hallLevel: delta.hallLevel ?? previous.hallLevel } : {}),
+    ...(delta.income || previous.income ? { income: delta.income ?? previous.income } : {}),
     fog: delta.fog ?? previous.fog, resources: delta.resources ?? previous.resources,
     population: delta.population ?? previous.population, upgrades: delta.upgrades ?? previous.upgrades,
     ...(delta.controlSites || previous.controlSites ? { controlSites: delta.controlSites ?? previous.controlSites } : {}),
