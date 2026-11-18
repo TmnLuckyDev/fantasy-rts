@@ -683,7 +683,12 @@ function actionFeedback(message: string) {
   setText('action-feedback', message)
   feedback.hidden = false
   window.clearTimeout(feedbackTimer)
-  feedbackTimer = window.setTimeout(() => { feedback.hidden = true }, 2600)
+  feedbackTimer = window.setTimeout(() => {
+    feedback.hidden = true
+    for (const id of ['queue-feedback', 'template-feedback']) {
+      if (element(id).textContent === message) setText(id, '')
+    }
+  }, 2600)
 }
 
 function drawEconomyBreakdown() {
@@ -1086,16 +1091,14 @@ function openProductionTab(tab: 'recruit' | 'upgrades' | 'queues') {
   globalTrainPanel.hidden = tab !== 'recruit'
   productionUpgrades.hidden = tab !== 'upgrades'
   productionPanel.hidden = tab !== 'queues'
+  setText('queue-feedback', '')
   for (const [name, control] of [['recruit', globalTrainToggle], ['upgrades', globalUpgradeToggle], ['queues', productionToggle]] as const) {
     control.setAttribute('aria-pressed', String(tab === name))
   }
   if (tab === 'recruit') {
     globalProduction.message('')
     globalProduction.update(chosenRace, ownEntities, resources, population, hallLevel)
-  } else if (tab === 'queues') {
-    setText('queue-feedback', '')
-    drawProduction()
-  }
+  } else if (tab === 'queues') drawProduction()
   else {
     globalUpgradeOpen = true
     economyContext = 'global-upgrades'
