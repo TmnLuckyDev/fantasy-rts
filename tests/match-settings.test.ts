@@ -184,7 +184,10 @@ test('default mines and quarries share five worker slots and divert excess worke
     assert.ok(match.report().sides.human.gathered[resource] > 2500)
     assert.equal(match.view('human').depleted, undefined)
     assert.equal(serialize(match).settings.sources[resource].workers, 5)
-    for (const worker of workers) match['destroy'](worker)
+    for (const worker of match.units.values()) {
+      if (worker.faction === 'human' && worker.kind === 'worker') match['destroy'](worker)
+    }
+    match.checkpoint().resources.human.gold = training.worker.gold
     const before = match.report().sides.human.gathered[resource]
     assert.ok(match.command('human', [1], { kind: 'train', unit: 'worker' }))
     advance(match, training.worker.ticks + 1)

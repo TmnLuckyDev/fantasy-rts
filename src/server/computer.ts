@@ -11,8 +11,8 @@ import type { Match } from './match.ts'
 const resourceAssignments = ['gold', 'wood', 'stone', 'gold'] as const
 const plans = {
   easy: { cadence: 2, workers: 4, first: 105, interval: 38, guard: 3, wave: 5 },
-  normal: { cadence: 1, workers: 5, first: 75, interval: 28, guard: 3, wave: 7 },
-  hard: { cadence: 1, workers: 6, first: 58, interval: 24, guard: 4, wave: 10 }
+  normal: { cadence: 1, workers: 4, first: 75, interval: 28, guard: 3, wave: 7 },
+  hard: { cadence: 1, workers: 5, first: 58, interval: 24, guard: 4, wave: 10 }
 } as const
 type Strategy = 'rush' | 'balanced' | 'defensive' | 'counter'
 
@@ -125,11 +125,12 @@ export class ComputerOpponent {
     if (!hall) return
     const workers = own.filter(entity => entity.kind === 'worker')
     const builder = workers.length >= 4 ? workers.at(-1) : undefined
-    const workerTarget = plan.workers
+    const tier = match.hallLevel(this.faction)
+    const advancedEconomy = this.difficulty !== 'easy' && tier === 3 && match.tick >= 200 * TICK_HZ
+    const workerTarget = plan.workers + Number(race === 'undead' || advancedEconomy)
     if (workers.length < workerTarget && !hall.training) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
-    const tier = match.hallLevel(this.faction)
     const savingForTier = tier < 3 && hall.upgradeProgress === undefined &&
       hallUpgrades[tier === 1 ? 2 : 3].required.every(kind =>
         structures.some(site => site.kind === kind && site.construction === undefined))
