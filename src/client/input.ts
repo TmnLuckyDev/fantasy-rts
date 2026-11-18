@@ -54,7 +54,7 @@ export class BattlefieldInput {
     this.resetInput()
   }
 
-  private resetInput = () => {
+  resetInput = () => {
     this.pointers.clear()
     this.down = null
     this.selection = null

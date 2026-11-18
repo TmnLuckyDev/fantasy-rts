@@ -15,8 +15,8 @@ class TestPeer {
   readonly messages: ServerMessage[] = []
   readonly socket: WebSocket
 
-  constructor(url: string) {
-    this.socket = new WebSocket(url)
+  constructor(url: string, origin?: string) {
+    this.socket = new WebSocket(url, { origin })
     this.socket.on('message', data => this.messages.push(JSON.parse(data.toString()) as ServerMessage))
   }
 
@@ -60,8 +60,8 @@ async function startServer(t: TestContext, saveFile?: string) {
   assert.equal(health.status, 200)
   assert.deepEqual(await health.json(), { status: 'ok' })
 
-  const connect = async () => {
-    const peer = new TestPeer(`ws://127.0.0.1:${port}/socket`)
+  const connect = async (origin?: string) => {
+    const peer = new TestPeer(`ws://127.0.0.1:${port}/socket`, origin)
     t.after(() => peer.socket.terminate())
     await once(peer.socket, 'open')
     return peer
@@ -75,8 +75,8 @@ async function startServer(t: TestContext, saveFile?: string) {
 
 test('two sockets share a room, reject forged commands and recover a seat after reconnect', { timeout: 12_000 }, async t => {
   const connect = await startServer(t)
-  const human = await connect()
-  const orc = await connect()
+  const human = await connect('https://app.ashandiron.localhost')
+  const orc = await connect('capacitor://app.ashandiron.localhost')
   const intruder = await connect()
   const settings = defaultMatchSettings('twinmere-basin')
   human.send({ type: 'create', faction: 'human', settings })
@@ -120,7 +120,7 @@ test('two sockets share a room, reject forged commands and recover a seat after 
   await human.wait('room', ({ room }) => room.phase === 'playing' && room.players.some(player => !player.connected))
   intruder.send({ type: 'resume', code, token: '0'.repeat(64) })
   assert.equal((await intruder.wait('error', error => Boolean(error.resetSession))).resetSession, true)
-  const replacement = await connect()
+  const replacement = await connect('capacitor://app.ashandiron.localhost')
   replacement.send({ type: 'resume', code, token })
   assert.equal((await replacement.wait('session')).faction, 'orc')
   const returnedRoom = await replacement.wait('room', ({ room }) => room.phase === 'playing')
@@ -228,4 +228,12 @@ test('two independently chosen Elf seats survive a multiplayer reconnect', { tim
   const world = await resumed.wait('snapshot')
   assert.deepEqual(world.entities.map(unit => unit.id), right.entities.map(unit => unit.id))
   assert.ok(world.entities.every(unit => unit.race === 'elf'))
+})
+
+
+test('WebSocket upgrade continues rejecting unrelated and opaque origins', { timeout: 12_000 }, async t => {
+  const connect = await startServer(t)
+  for (const origin of ['https://app.ashandiron.localhost.example.com', 'null']) {
+    await assert.rejects(connect(origin), /403/)
+  }
 })

@@ -55,6 +55,8 @@ export class BattleScene extends Phaser.Scene {
   private waterTiles: number[] = []
   private ui!: Phaser.GameObjects.Graphics
   private controls!: BattlefieldInput
+
+  resetInput() { this.controls?.resetInput() }
   private miniTerrain!: HTMLCanvasElement
   private fogTexture!: Phaser.Textures.CanvasTexture
   private fogPixels!: ImageData

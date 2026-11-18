@@ -540,3 +540,35 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .wiki-units details { border: 1px solid var(--edge); padding: 0 .7rem; }
 .wiki-units summary { align-content: center; cursor: pointer; }
 .wiki-units p { margin: 0 0 .55rem; }
+
+/* Capacitor supplies Android insets on WebViews that cannot expose them through env(). */
+.native-app {
+  --app-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --app-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --app-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --app-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.native-app :is(input, textarea) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.native-app .lobby {
+  padding: calc(1.25rem + var(--app-top)) calc(1.25rem + var(--app-right))
+    calc(1.25rem + var(--app-bottom)) calc(1.25rem + var(--app-left));
+}
+.native-app .match { padding-inline: var(--app-left) var(--app-right); }
+.native-app .match-head { padding-top: calc(0.2rem + var(--app-top)); }
+.native-app .hud { padding-bottom: calc(0.35rem + var(--app-bottom)); }
+.native-app dialog {
+  max-height: calc(100dvh - var(--app-top) - var(--app-bottom) - 1rem);
+  max-width: calc(100vw - var(--app-left) - var(--app-right) - 1rem);
+}
+.native-app #production-sheet {
+  padding-bottom: calc(.65rem + var(--app-bottom));
+  max-width: calc(100vw - var(--app-left) - var(--app-right));
+  max-height: min(calc(72dvh - var(--app-top)), 32rem);
+}

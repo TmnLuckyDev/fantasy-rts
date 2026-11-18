@@ -12,13 +12,28 @@
     "build": "vite build && node scripts/build-server.mjs",
     "start": "node dist/server/index.js",
     "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "build:web": "vite build",
+    "build:mobile": "vite build --mode mobile --outDir dist/mobile",
+    "android:sync": "npm run build:mobile && cap sync android",
+    "ios:sync": "npm run build:mobile && cap sync ios",
+    "build:android": "node scripts/build-native.mjs android",
+    "build:ios": "node scripts/build-native.mjs ios",
+    "android:open": "cap open android",
+    "ios:open": "cap open ios",
+    "android:run": "npm run android:sync && cap run android --no-sync",
+    "ios:run": "npm run ios:sync && cap run ios --no-sync"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/ios": "8.6.2",
     "phaser": "3.90.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.2",
     "@playwright/test": "^1.56.1",
     "@types/node": "^22.15.3",
     "@types/ws": "^8.18.1",

@@ -44,6 +44,14 @@ export class BattleAudio {
     }
   }
 
+  setAppActive(active: boolean) {
+    if (active) {
+      if (this.context) void this.unlock()
+    } else if (this.context?.state === 'running') {
+      void this.context.suspend().catch(() => {})
+    }
+  }
+
   toggle() {
     this.enabled = !this.enabled
     try { localStorage.setItem(preferenceKey, this.enabled ? 'on' : 'off') } catch { /* storage is optional */ }

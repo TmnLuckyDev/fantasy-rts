@@ -18,6 +18,8 @@ import { GlobalProduction } from './global-production.ts'
 import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
+import { initializeNativeApp, nativeBackend, nativeIOS } from './native-app.ts'
+import { inviteUrl } from './multiplayer-endpoint.ts'
 import { entityTexture } from './sprites.ts'
 import type { ArmyIndex } from './troop-groups.ts'
 import { configureGameGuide } from './game-guide.ts'
@@ -179,8 +181,8 @@ let practiceMoving = false
 const invite = new URLSearchParams(location.search).get('room')
 if (invite && /^[A-Z2-9]{5}$/i.test(invite)) joinCode.value = invite.toUpperCase()
 
-const solo = new SoloClient(receive, refreshSoloButton)
-const client = new ConnectionClient(receive, status)
+const solo = new SoloClient(receive, refreshSoloButton, nativeIOS)
+const client = new ConnectionClient(receive, status, nativeBackend)
 refreshSoloButton()
 if (!invite && !client.hasSeat && solo.restoreOnReload) solo.start(faction, true)
 
@@ -1445,8 +1447,7 @@ element<HTMLFormElement>('join-form').onsubmit = event => {
 button('ready').onclick = () => client.send({ type: 'ready', ready: !room?.players.find(seat => seat.faction === faction)?.ready })
 button('copy').onclick = async () => {
   if (!room) return
-  const url = new URL(location.pathname, location.origin)
-  url.searchParams.set('room', room.code)
+  const url = inviteUrl(location.href, room.code, nativeBackend)
   try {
     await navigator.clipboard.writeText(url.href)
     note('Invite copied.')
@@ -1589,6 +1590,31 @@ for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const
 mapButton.addEventListener('click', event => {
   if (event.detail === 0) scene?.minimapFocus(0.5, 0.5)
 })
+initializeNativeApp(active => {
+  solo.setAppActive(active)
+  client.setAppActive(active)
+  audio.setAppActive(active)
+  if (!active) {
+    scene?.resetInput()
+    minimapPointer = null
+    dismissPointer = false
+  }
+}, () => {
+  const dialogs = document.querySelectorAll<HTMLDialogElement>('dialog[open]')
+  const dialog = dialogs[dialogs.length - 1]
+  if (dialog) dialog.close()
+  else if (!menu.hidden) closeEconomyMenu()
+  else if (gatherOpen) setGatherOpen(false)
+  else if (!formationOptions.hidden) toggleFormation(false)
+  else if (scene && (placing || scene.advanceMode || scene.targetingRally || scene.targetingUnload)) {
+    scene.cancelTargeting()
+    updateCommandTarget()
+  } else if (scene) button('exit').click()
+  else if (room) button('leave').click()
+  else return false
+  return true
+})
+
 result.oncancel = event => event.preventDefault()
 window.addEventListener('keydown', event => {
   if (!scene || result.open || matchOptions.open || productionSheet.open || templateSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
