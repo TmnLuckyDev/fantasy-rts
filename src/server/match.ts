@@ -59,7 +59,7 @@ type Unit = Entity & {
   job: WorkerJob | null
   cargo: ResourceKind | null
   cargoAmount?: number
-  queue: Array<{ kind: UnitKind, left: number, count?: number, paidCost?: Partial<Resources>, heroCost?: Partial<Resources> }>
+  queue: Array<{ kind: UnitKind, left: number, count?: number, heroCost?: Partial<Resources> }>
   buildTicks: number
   buildDuration: number
   embarkedOn?: number
@@ -993,22 +993,9 @@ export class Match {
 
   private appendTraining(building: Unit, kind: UnitKind, count: number) {
     const tail = building.queue.at(-1)
-    const paidCost = trainingCost(kind, this.races[building.faction])
-    const previousCost = tail?.kind === kind ? this.queuedTrainingCost(building.faction, tail) : undefined
-    if (previousCost && tail && resourceKinds.every(resource => (paidCost[resource] ?? 0) ===
-        (previousCost[resource] ?? 0))) tail.count = (tail.count ?? 1) + count
-    else building.queue.push({ kind, left: trainingRule(kind, this.races[building.faction]).ticks, count, paidCost })
-  }
-
-  private queuedTrainingCost(faction: Faction, entry: Unit['queue'][number]) {
-    if (entry.paidCost) return entry.paidCost
-    if (isHeroKind(entry.kind)) return entry.heroCost ?? { gold: 225 }
-    // Checkpoints from before skeleton prices changed did not record the amount paid.
-    if (this.races[faction] === 'undead') {
-      if (entry.kind === 'blade') return { gold: 60 }
-      if (entry.kind === 'ranged') return { gold: 72 }
-    }
-    return trainingCost(entry.kind, this.races[faction])
+    if (tail?.kind === kind) tail.count = (tail.count ?? 1) + count
+    else building.queue.push({ kind, left: trainingRule(kind, this.races[building.faction]).ticks, count,
+      ...(isHeroKind(kind) ? { heroCost: trainingCost(kind, this.races[building.faction]) } : {}) })
   }
 
   private cancelTraining(building: Unit, count: number) {
@@ -1019,7 +1006,7 @@ export class Match {
       const size = tail.count ?? 1
       const removed = Math.min(count, size)
       count -= removed
-      const cost = this.queuedTrainingCost(building.faction, tail)
+      const cost = isHeroKind(tail.kind) ? tail.heroCost ?? { gold: 225 } : trainingCost(tail.kind, this.races[building.faction])
       for (const resource of resourceKinds) stock[resource] += removed * (cost[resource] ?? 0)
       if (removed === size) building.queue.pop()
       else tail.count = size - removed
