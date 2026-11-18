@@ -560,6 +560,7 @@ function showResourceInfo(kind: ResourceKind, remaining: number | null) {
 }
 
 function drawSelection(entities: Entity[], interactive = false) {
+  const selectionChanged = entities.length !== selection.length || entities.some((entity, i) => entity.id !== selection[i]?.id)
   selection = entities
   button('gather-deposit').hidden = true
   const selected = entities[0]
@@ -584,7 +585,8 @@ function drawSelection(entities: Entity[], interactive = false) {
   if (!menu.hidden) updateEconomyOptions()
   button('gather-open').hidden = !workers
   buildQueueAction.hidden = !workers
-  if (changed || !workers) setGatherOpen(false)
+  if (!workers) setGatherOpen(false)
+  else if (interactive && selectionChanged) setGatherOpen(true)
   const label = element('selection-name')
   const detail = element('selection-detail')
   const upgrade = button('hall-upgrade')
@@ -900,6 +902,7 @@ function gatherChoice(resource: ResourceKind, label: string) {
   choice.append(icon, label)
   choice.onclick = () => {
     if (!scene?.gatherNearest(resource)) receive({ type: 'error', message: 'Explore a source of ' + resource + ' first.' })
+    else setGatherOpen(false)
   }
   return choice
 }
@@ -1039,7 +1042,10 @@ function openEconomyMenu(rebuild = false) {
 
 economyAction.onclick = () => {
   if (placing) scene?.place(null)
-  if (menu.hidden) openEconomyMenu(true)
+  if (menu.hidden) {
+    setGatherOpen(false)
+    openEconomyMenu(true)
+  }
   else closeEconomyMenu()
 }
 
@@ -1531,7 +1537,10 @@ match.addEventListener('pointerdown', event => {
   const outside = (panel: HTMLElement, trigger: HTMLElement) =>
     !panel.hidden && !panel.contains(event.target as Element) && !trigger.contains(event.target as Element)
   if (outside(menu, economyAction)) closeEconomyMenu()
-  else if (outside(workerActions, button('gather-open'))) setGatherOpen(false)
+  else if (outside(workerActions, button('gather-open'))) {
+    setGatherOpen(false)
+    if (economyAction.contains(event.target) || productionOpen.contains(event.target)) return
+  }
   else if (outside(formationOptions, formationButton)) toggleFormation(false)
   else return
   dismissPointer = true

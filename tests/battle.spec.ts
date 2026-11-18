@@ -213,6 +213,8 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     await human.getByRole('button', { name: 'Workers', exact: true }).click()
     await expect(human.locator('#selection-name')).toHaveText('3 workers selected')
     const mine = await screenPoint(human, cellCenter(5, 18), ashford.bases.human)
+    await expect(human.getByRole('group', { name: 'Gather resources' })).toBeVisible()
+    await human.mouse.click(mine.x, mine.y)
     await human.mouse.click(mine.x, mine.y)
     await expect(human.locator('#selection-name')).toHaveText('Gold mine')
     await expect(human.locator('#selection-detail')).toHaveText('600 gold remaining')
@@ -264,7 +266,6 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     await expect(human.locator('#population')).toHaveText('10/20', { timeout: 20_000 })
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
-    await orc.getByRole('button', { name: 'Gather', exact: true }).tap()
     await orc.getByRole('button', { name: 'Quarry stone', exact: true }).tap()
     await expect.poll(() => newest(orcHistory)?.resources.stone ?? 0, { timeout: 18_000 }).toBeGreaterThan(120)
     const tower = cellCenter(ashford.width - 11, ashford.height - 14)
@@ -370,10 +371,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     const idle = () => page.getByRole('button', { name: /^Idle worker/ })
     await expect(idle()).toHaveText(/3/)
     await idle().tap()
-    await expect(idle()).toBeEnabled()
-    await idle().tap()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
-    await page.getByRole('button', { name: 'Gather', exact: true }).tap()
     const gather = page.getByRole('group', { name: 'Gather resources' })
     for (const name of ['Mine gold', 'Chop wood', 'Quarry stone']) {
       await expect(gather.getByRole('button', { name, exact: true })).toBeVisible()
@@ -383,8 +381,6 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(farm).toBeHidden()
     await build.tap()
     await expect(gather).toBeHidden()
-    await expect(farm).toBeHidden()
-    await build.tap()
     await expect(farm).toBeVisible()
     const fieldBox = (await page.locator('#battlefield').boundingBox())!
     const openGround = { x: fieldBox.x + fieldBox.width * .65, y: fieldBox.y + 22 }
@@ -447,6 +443,7 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(page.locator('#portrait-prompt')).toBeHidden()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
 
+    await page.getByRole('button', { name: 'Gather', exact: true }).tap()
     page.once('dialog', dialog => dialog.accept())
     await page.getByRole('button', { name: 'Leave', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Play vs Computer', exact: true })).toBeEnabled()
