@@ -82,6 +82,10 @@ Ash & Iron skal have en tydelig progression, hvor spilleren opgraderer sin Town 
 
 **Bemærk:** Tabellen beskriver det ønskede princip. Den endelige liste over obligatoriske bygninger, racernes navne, omkostninger og oplåste enhedstyper skal fastlægges ved design og balancering.
 
+### Balance mellem Town Hall-niveauer
+
+En vigtig balanceovervejelse er at undgå, at en spiller, som først når Level 2, får en næsten uovervindelig fordel. Derfor bør prisen og tiden for hver opgradering stige.
+
 ### Funktionelle krav
 
 1. Spilleren skal kunne opgradere sin Town Hall i flere trin.
