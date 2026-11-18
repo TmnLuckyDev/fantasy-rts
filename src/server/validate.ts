@@ -63,7 +63,7 @@ export function parseMessage(raw: string): ClientMessage | null {
 }
 
 function parseOrder(order: Record<string, unknown>): Order | null {
-  if (order.kind === 'halt' || order.kind === 'build-queue' || order.kind === 'explore' || order.kind === 'unit-ability' || order.kind === 'hero-ability' || order.kind === 'unload' || order.kind === 'structure-upgrade' || order.kind === 'dismiss') return { kind: order.kind }
+  if (order.kind === 'halt' || order.kind === 'build-queue' || order.kind === 'explore' || order.kind === 'unit-ability' || order.kind === 'hero-ability' || order.kind === 'structure-upgrade' || order.kind === 'dismiss') return { kind: order.kind }
   const formation = formations.find(kind => kind === order.formation)
   if (order.formation !== undefined && !formation) return null
   const options = formation ? { formation } : {}
@@ -71,6 +71,11 @@ function parseOrder(order: Record<string, unknown>): Order | null {
     return { kind: 'rally', to: { x: order.to.x, y: order.to.y } }
   }
   if (order.kind === 'bulk-structure-upgrade' && (order.building === 'wall' || order.building === 'tower')) return { kind: 'bulk-structure-upgrade', building: order.building }
+  if (order.kind === 'unload') {
+    if (order.at === undefined) return { kind: 'unload' }
+    if (object(order.at) && coordinate(order.at.x) && coordinate(order.at.y)) return { kind: 'unload', at: { x: order.at.x, y: order.at.y } }
+    return null
+  }
   if (order.kind === 'board' && (order.transport === undefined || validId(order.transport))) return { kind: 'board', transport: order.transport }
   if (order.kind === 'attack' && validId(order.target)) return { kind: 'attack', target: order.target, ...options }
   if ((order.kind === 'move' || order.kind === 'advance') && object(order.to) &&

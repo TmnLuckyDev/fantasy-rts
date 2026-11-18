@@ -62,7 +62,7 @@ test('two browser players issue orders to 500 troops each and receive authoritat
   const phone = devices[isWebKit ? 'iPhone 14' : 'Pixel 7']
   const engine = isWebKit ? await webkit.launch() : browser
   const host = await browser.newContext({ viewport: { width: 1280, height: 750 } })
-  const guest = await engine.newContext({ ...phone, viewport: { width: phone.viewport.height, height: phone.viewport.width } })
+  const guest = await engine.newContext(phone)
   try {
     const clients = await Promise.all([host.newPage(), guest.newPage()])
     const state = clients.map((page, i) => observe(page, fixture.seats[i].faction))

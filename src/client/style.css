@@ -101,29 +101,6 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #result { color: var(--pale); background: #22221b; border: 1px solid var(--gold); box-shadow: 0 0 0 4px #211c14, 0 10px 60px #000; text-align: center; width: min(37rem, calc(100vw - 1.3rem)); max-height: calc(100dvh - 1.4rem); overflow: auto; padding: clamp(0.6rem, 3vw, 1.35rem); }
 #result h2 { font-size: 2.1rem; margin: 0.55rem 0; }
 #result::backdrop { background: #0c0e09a8; }
-@media (pointer: coarse) and (orientation: portrait) {
-  .hud { flex-wrap: wrap; }
-  .orders { flex: 1 0 100%; justify-content: center; }
-}
-@media (max-height: 530px) and (orientation: landscape) {
-  .lobby-inner { width: min(100%, 475px); }
-  #entry-actions { grid-template-columns: max-content max-content minmax(0, 1fr); gap: 0.35rem; }
-  #entry-actions button { padding-inline: 0.5rem; font-size: 0.82rem; }
-  #solo { grid-column: auto; }
-  .lobby { padding: 0.45rem; }
-  .title-block h1 { font-size: 3.1rem; }
-  .ornament { margin-bottom: 0.35rem; }
-  .war-table { padding: 0.8rem; }
-  .factions, .table-head { margin-bottom: 0.5rem; }
-  .faction { min-height: 50px; }
-  .lobby-foot { margin-top: 0.45rem; }
-  .match-head { min-height: 46px; }
-  .hud { min-height: 58px; gap: 0.45rem; }
-  #map-button { min-width: 0; }
-  #minimap { width: 99px; height: 45px; }
-  #selection-portrait { width: 35px; height: 35px; }
-  .orders button { padding-inline: 0.55rem; }
-}
 @media (max-width: 500px) {
   .head-actions button, .orders button { padding-inline: 0.45rem; }
   .wordmark { font-size: 0.95rem; }
@@ -153,11 +130,6 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .economy-menu small { font-size: 0.67rem; color: #ddd0ac; margin-top: 0.13rem; }
 .placement-tip { font-size: 0.8rem; pointer-events: none; }
 .placement-tip button { margin-left: 0.4rem; pointer-events: auto; }
-@media (max-width: 960px) and (orientation: landscape) {
-  .orders { flex-wrap: wrap; justify-content: flex-end; }
-  .orders button { padding-inline: 0.45rem; }
-  .resource-bar { gap: 0.38rem; padding-inline: 0.18rem; }
-}
 
 @media (max-width: 520px) {
   .match-head { flex-wrap: wrap; gap: 0.22rem 0.5rem; }
@@ -168,11 +140,6 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   .resource small { font-size: 0.55rem; }
 }
 
-@media (max-height: 530px) and (orientation: landscape) {
-  .economy-menu { left: 0.6rem; max-width: none; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
-  .economy-menu button { flex: 0 0 auto; }
-  .economy-hint { flex: 0 0 auto; align-self: center; }
-}
 
 .production-panel {
   left: 0.6rem;
@@ -184,18 +151,6 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 }
 .production-panel > div { padding: 0.4rem 0.55rem; background: #172729; font-size: 0.78rem; }
 #production-count { color: var(--gold); }
-@media (max-height: 530px) and (orientation: landscape) {
-  .production-panel { max-width: 80vw; }
-  .selection { flex: 0 1 10rem; }
-  .orders {
-    flex: 1 1 auto;
-    min-width: 0;
-    flex-wrap: nowrap;
-    justify-content: safe end;
-    overflow-x: auto;
-  }
-  .orders button { flex-shrink: 0; }
-}
 
 .solo-difficulty { grid-column: 1 / -1; display: flex; gap: 0.55rem; align-items: center; font-size: 0.8rem; }
 .solo-difficulty select { min-height: 36px; font-size: 16px; }
@@ -386,3 +341,90 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 .faction[aria-pressed="true"] { outline: 2px solid var(--gold); outline-offset: -3px; }
 
 .race-icon { width: 2rem; height: 2rem; object-fit: contain; image-rendering: pixelated; flex: 0 0 2rem; }
+
+.match-finished .orders,
+.match-finished #troop-groups,
+.match-finished .economy-menu,
+.match-finished #global-train-panel,
+.match-finished #formation-options { display: none; }
+
+.battle-shortcuts { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+#portrait-prompt { display: none; }
+#production-sheet {
+  margin: auto auto 0;
+  width: min(100%, 35rem);
+  max-height: min(72dvh, 32rem);
+  padding: .65rem .65rem max(.65rem, env(safe-area-inset-bottom));
+  overflow: auto;
+  overscroll-behavior: contain;
+  color: var(--pale);
+  background: #1b2629;
+  border: 1px solid var(--edge);
+  border-radius: .7rem .7rem 0 0;
+}
+#production-sheet::backdrop { background: #0c110dbb; }
+.production-tabs {
+  position: sticky;
+  top: -.65rem;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+  padding-block: .3rem .55rem;
+  background: #1b2629;
+}
+.production-tabs button[aria-pressed="true"] { border-color: var(--team); background: #415244; }
+.production-tabs #close-production { margin-left: auto; }
+#production-sheet #global-train-panel,
+#production-sheet .economy-menu,
+#production-sheet .production-panel {
+  position: static;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  padding: .25rem 0;
+  border: 0;
+  box-shadow: none;
+}
+.match-finished #production-open,
+.match-finished #idle-worker,
+.match-finished #workers { display: none; }
+
+@media (pointer: coarse) and (orientation: portrait) {
+  .hud {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: .35rem .5rem;
+    min-height: 0;
+  }
+  #selection-portrait { display: none; }
+  #minimap { width: 100px; height: 46px; }
+  .battle-shortcuts, .orders {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: .3rem;
+  }
+  .battle-shortcuts button, .orders button, .production-tabs button, .global-train-row button { min-height: 44px; }
+  .orders:not(:has(button:not([hidden]))) { display: none; }
+  .match-finished .orders { display: none; }
+  #troop-groups { max-height: 44px; }
+  .economy-menu, .placement-tip { max-width: calc(100% - 1.2rem); }
+}
+@media (pointer: coarse) and (orientation: landscape) {
+  #portrait-prompt {
+    position: fixed;
+    inset: 0;
+    z-index: 8;
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+    background: #181811;
+    color: var(--pale);
+    text-align: center;
+  }
+  #production-sheet, #result { visibility: hidden; }
+}

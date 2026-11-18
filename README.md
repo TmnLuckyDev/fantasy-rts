@@ -50,6 +50,8 @@ Select a completed building and choose **Repair** to send the closest idle worke
 
 Train a **Scout** from your Town Hall or Great Hall for 85 gold. Scouts are fast, lightly armored and have a large sight radius. Select one or more scouts and tap **Explore** to automatically seek unexplored walkable terrain. Issue a normal movement or Stop command to cancel exploration. Scouts are included in the troop bar.
 
+Use **Production** to switch between Recruit, Upgrades and Queues. A tap outside closes the panel. Select a visible gold mine or stone quarry to see its remaining stock. With workers selected, **Gather here** sends them to that deposit.
+
 Workers can place buildings on terrain already explored, even when it is currently under fog of war. Completely unexplored tiles remain unavailable. Building collision footprints are smaller than the artwork, allowing closer construction while preserving the original headquarters footprint. Placement outlines show the actual reduced footprint.
 
 ## Match settings and results
@@ -76,7 +78,7 @@ The headquarters supports 10 population. A completed Farm or Boar Farm adds ten.
 | Select | Click a troop or drag a box. Shift adds to selection. | Tap a troop or drag a box with one finger. |
 | Move or attack | Right-click the ground or an enemy. | With troops selected, tap the ground or an enemy. |
 | Attack-move | Press **A** or select **Attack move**, then choose a destination. | Select **Attack move**, then tap a destination. |
-| Pan and zoom | Arrow keys, minimap and mouse wheel. | Two-finger pan, pinch and minimap. Landscape gives the widest view. |
+| Pan and zoom | Arrow keys, minimap and mouse wheel. | Two-finger pan, pinch and tap or drag on the minimap. Play in portrait. |
 | Other orders | **Q** selects all troops, **S** stops them, **H** centers on your base. | **All troops**, **Stop** and **Base** on the command bar. |
 
 Solo matches run in the browser and save progress on that device. Reload the same tab to resume or use **Resume solo match** in the lobby. Switching away from the tab pauses the match. Multiplayer matches pause until disconnected players return. Multiplayer rooms live in server memory and are cleared when the process restarts. **Leave** ends a solo match and forfeits a multiplayer match.
@@ -110,7 +112,7 @@ npm run test:browser
 MOBILE_BROWSER=webkit npm run test:browser
 ```
 
-The browser test uses Chromium desktop against a landscape touch profile. The default profile is Android Chrome on Chromium. The WebKit variant uses iPhone 14 viewport and touch settings on Linux. Test profiles are emulation. [Architecture and engine decision](docs/architecture.md).
+The browser test uses Chromium desktop against a portrait touch profile. The default profile is Android Chrome on Chromium. The WebKit variant uses iPhone 14 viewport and touch settings on Linux. Test profiles are emulation. [Architecture and engine decision](docs/architecture.md).
 
 ## Current scope
 

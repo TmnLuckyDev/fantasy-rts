@@ -55,6 +55,9 @@ const menu = element('economy-menu')
 const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
 const globalUpgradeToggle = button('global-upgrade-toggle')
+const productionSheet = element<HTMLDialogElement>('production-sheet')
+const productionUpgrades = element('production-upgrades')
+const productionOpen = button('production-open')
 const productionPanel = element('production-panel')
 const productionToggle = button('production-toggle')
 const globalTrainPanel = element('global-train-panel')
@@ -88,8 +91,7 @@ function toggleFormation(open: boolean) {
   formationOptions.hidden = !open
   formationButton.setAttribute('aria-expanded', String(open))
   if (open) {
-    toggleGlobalTrain(false)
-    toggleProduction(false)
+    closeProduction()
     closeEconomyMenu()
   }
 }
@@ -142,6 +144,7 @@ let selection: Entity[] = []
 let placing = false
 let economyContext = ''
 let globalUpgradeOpen = false
+let gatherOpen = false
 
 const invite = new URLSearchParams(location.search).get('room')
 if (invite && /^[A-Z2-9]{5}$/i.test(invite)) joinCode.value = invite.toUpperCase()
@@ -173,7 +176,11 @@ function note(message: string, error = false) {
 
 function updateBanner(online: boolean) {
   if (!online && !solo.active) banner.textContent = 'Reconnecting to match…'
-  else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
+  else if (room?.result) {
+    const winner = room.result.winner
+    const outcome = winner === null ? 'Draw' : winner === faction ? 'Victory' : 'Defeat'
+    banner.textContent = outcome + ' · Review the battlefield'
+  } else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
   else banner.textContent = factionNames[chosenRace] + (room?.mode === 'solo' ? ' vs Computer' : '') +
     (room?.settings?.minutes ? ' · Destroy the enemy headquarters or win on score' : ' · Destroy the enemy headquarters')
 }
@@ -185,6 +192,7 @@ function selectRace(race: Race) {
 
 function showLobby() {
   result.close()
+  closeProduction()
   settingsMenu.close()
   button('match-settings').textContent = 'Match settings'
   game?.destroy(true)
@@ -192,6 +200,8 @@ function showLobby() {
   scene = null
   room = null
   match.hidden = true
+  match.classList.remove('match-finished')
+  button('view-stats').hidden = true
   lobby.hidden = false
   element('lobby-title').textContent = 'Game lobby'
   element('room-actions').hidden = true
@@ -217,7 +227,13 @@ function receive(message: ServerMessage) {
       else {
         if (!scene) showBattle()
         updateBanner(client.connected)
-        if (room.result) drawResult(room.result)
+        if (room.result) {
+          match.classList.add('match-finished')
+          button('view-stats').hidden = false
+          scene?.place(null)
+          closeProduction()
+          closeEconomyMenu()
+        }
       }
       break
     case 'snapshot': {
@@ -328,8 +344,7 @@ function showBattle() {
   resources = { gold: 0, wood: 0, stone: 0 }
   ownEntities = []
   researched = []
-  toggleProduction(false)
-  toggleGlobalTrain(false)
+  closeProduction()
   drawProduction()
   population = { used: 0, reserved: 0, limit: 0 }
   drawEconomy()
@@ -420,6 +435,7 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
 }
 
 function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
+  if (room?.result || productionSheet.open) return
   const message: GroupCommand = { type: 'group-command', group, order }
   if (solo.active) solo.sendArmyCommand(message)
   else client.send(message)
@@ -427,6 +443,7 @@ function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
 }
 
 function issueOrder(ids: number[], order: Order) {
+  if (room?.result) return
   if (solo.active) solo.command(ids, order)
   else client.send({ type: 'command', ids, order })
   if (order.kind === 'train') audio.play('train')
@@ -435,13 +452,14 @@ function issueOrder(ids: number[], order: Order) {
 }
 
 function showResourceInfo(kind: ResourceKind, remaining: number | null) {
-  drawSelection([], true)
+  button('gather-deposit').hidden = !selection.some(unit => unit.kind === 'worker') || remaining === 0
   element('selection-name').textContent = kind === 'wood' ? 'Tree' : kind === 'gold' ? 'Gold mine' : 'Stone quarry'
-  element('selection-detail').textContent = remaining === null ? 'Unlimited resources' : `${remaining.toLocaleString()} resources remaining`
+  element('selection-detail').textContent = remaining === null ? 'Unlimited ' + kind : `${remaining.toLocaleString()} ${kind} remaining`
 }
 
 function drawSelection(entities: Entity[], interactive = false) {
   selection = entities
+  button('gather-deposit').hidden = true
   const selected = entities[0]
   const workers = entities.some(entity => entity.kind === 'worker')
   const trainer = entities.length === 1 && selected && selected.construction === undefined &&
@@ -456,9 +474,14 @@ function drawSelection(entities: Entity[], interactive = false) {
   economyContext = nextContext
   economyAction.hidden = globalUpgradeOpen || !nextContext
   economyAction.textContent = workers ? 'Build' : smithy ? 'Upgrade' : (building && (building.kind === 'tower' || building.kind === 'wall')) ? 'Upgrade' : foundation ? 'Construction' : trainer ? 'Train' : 'Manage'
-  if (!nextContext || (!globalUpgradeOpen && workers && (changed || interactive))) closeEconomyMenu()
-  else if ((!workers || globalUpgradeOpen) && (changed || interactive)) openEconomyMenu(changed)
-  else if (!menu.hidden) updateEconomyOptions()
+  if (!productionSheet.open) {
+    if (changed || !nextContext) closeEconomyMenu()
+    if (!touch && !workers && (changed || interactive) && nextContext) openEconomyMenu(true)
+  }
+  if (!menu.hidden) updateEconomyOptions()
+  button('gather-open').hidden = !workers
+  buildQueueAction.hidden = !workers
+  if (changed || !workers) setGatherOpen(false)
   const label = element('selection-name')
   const detail = element('selection-detail')
   const meter = element<HTMLMeterElement>('selection-health')
@@ -468,8 +491,9 @@ function drawSelection(entities: Entity[], interactive = false) {
   button('dismiss-units').hidden = !entities.length || !entities.every(entity => entity.kind === 'worker' || entity.kind === 'scout')
   button('board').hidden = !entities.some(entity => isUnitKind(entity.kind) && !isShipKind(entity.kind)) ||
     !ownEntities.some(entity => entity.kind === 'transport')
-  button('unload').hidden = !(entities.length === 1 && selected?.kind === 'transport')
-  if (selected?.kind === 'transport') button('unload').disabled = !(selected.passengers?.length)
+  button('unload').hidden = !entities.some(entity => entity.kind === 'transport' && entity.passengers?.length)
+  const targetingUnload = scene?.targetingUnload === true
+  button('unload').setAttribute('aria-pressed', String(targetingUnload))
   const selectedHero = entities.length === 1 && selected && isHeroKind(selected.kind) ? selected : undefined
   const skill = entities.length === 1 && selected && isUnitKind(selected.kind) ? raceSkills[raceOf(selected)]?.[selected.kind] : undefined
   const heroSkillButton = button('hero-skill')
@@ -482,8 +506,10 @@ function drawSelection(entities: Entity[], interactive = false) {
     heroSkillButton.title = 'description' in ability ? ability.description : ability.passive
   }
   const movable = entities.some(entity => isUnitKind(entity.kind))
-  button('advance').disabled = !movable
-  button('halt').disabled = !movable
+  button('advance').hidden = !movable || workers && entities.every(entity => entity.kind === 'worker')
+  button('halt').hidden = !movable
+  button('deselect').hidden = !selected
+  updateCommandTarget()
   meter.hidden = !selected
   portrait.hidden = !selected
   if (!selected) {
@@ -539,13 +565,23 @@ function gatherHint() {
 function closeEconomyMenu() {
   menu.hidden = true
   economyAction.setAttribute('aria-expanded', 'false')
-  globalUpgradeToggle.setAttribute('aria-expanded', 'false')
   globalUpgradeOpen = false
   syncWorkerActions()
 }
 
+function setGatherOpen(open: boolean) {
+  gatherOpen = open
+  syncWorkerActions()
+}
+button('gather-open').onclick = () => {
+  closeEconomyMenu()
+  setGatherOpen(workerActions.hidden)
+}
+button('gather-deposit').onclick = () => scene?.gatherInspectedDeposit()
+
 function syncWorkerActions() {
-  workerActions.hidden = economyContext !== 'build' || placing || !menu.hidden || !productionPanel.hidden
+  workerActions.hidden = !gatherOpen || economyContext !== 'build' || placing || !menu.hidden || productionSheet.open
+  button('gather-open').setAttribute('aria-expanded', String(!workerActions.hidden))
 }
 
 function updateEconomyOptions() {
@@ -658,7 +694,8 @@ workerActions.append(gatherChoice('gold', 'Mine gold'), gatherChoice('wood', 'Ch
 
 const buildQueueAction = actionButton('Build queue', () => scene?.buildQueue())
 buildQueueAction.title = 'Build queued and unfinished structures until given another order'
-workerActions.append(buildQueueAction)
+buildQueueAction.hidden = true
+button('gather-open').after(buildQueueAction)
 
 function buildChoices() {
   return buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
@@ -713,7 +750,7 @@ function buildingActions(site: Entity) {
   if (trainedAt(site.kind, chosenRace).length) actions.push(actionButton('Set rally point', () => {
     scene?.setRallyTarget(site.id)
     closeEconomyMenu()
-    banner.textContent = 'Tap a tile to set the rally point.'
+    updateCommandTarget()
   }))
   if (site.kind === 'headquarters') return actions
   const demolish = actionButton('Demolish', () => {
@@ -725,7 +762,6 @@ function buildingActions(site: Entity) {
 }
 
 function openEconomyMenu(rebuild = false) {
-  toggleGlobalTrain(false)
   if (!economyContext || placing) return
   if (rebuild) {
     if (economyContext === 'global-upgrades') {
@@ -776,29 +812,14 @@ function openEconomyMenu(rebuild = false) {
     }
   }
   updateEconomyOptions()
-  toggleProduction(false)
   menu.hidden = false
   economyAction.setAttribute('aria-expanded', 'true')
   syncWorkerActions()
 }
 
-globalUpgradeToggle.onclick = () => {
-  globalUpgradeOpen = !globalUpgradeOpen
-  if (globalUpgradeOpen) {
-    closeEconomyMenu()
-    globalUpgradeOpen = true
-    economyContext = 'global-upgrades'
-    openEconomyMenu(true)
-    globalUpgradeToggle.setAttribute('aria-expanded', 'true')
-  } else {
-    closeEconomyMenu()
-    drawSelection(selection, true)
-  }
-}
-
 economyAction.onclick = () => {
   if (placing) scene?.place(null)
-  if (menu.hidden) openEconomyMenu(economyContext === 'build')
+  if (menu.hidden) openEconomyMenu(true)
   else closeEconomyMenu()
 }
 
@@ -817,7 +838,7 @@ button('hero-skill').onclick = () => {
 }
 button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
-button('cancel-placement').onclick = () => scene?.place(null)
+button('cancel-placement').onclick = () => scene?.cancelTargeting()
 
 function percentage(progress: number) { return Math.floor(progress * 100) + '%' }
 
@@ -839,31 +860,57 @@ function trainingSummary(training: NonNullable<Entity['training']>) {
   return labels.length ? active + ' → ' + labels.join(', ') : active
 }
 
-function toggleGlobalTrain(open: boolean) {
-  globalTrainPanel.hidden = !open
-  globalTrainToggle.setAttribute('aria-expanded', String(open))
-  if (!open) return
-  toggleFormation(false)
-  toggleProduction(false)
-  closeEconomyMenu()
-  scene?.place(null)
-  globalProduction.message('')
-  globalProduction.update(chosenRace, ownEntities, resources, population)
-}
-
-globalTrainToggle.onclick = () => toggleGlobalTrain(globalTrainPanel.hidden)
-
-function toggleProduction(open: boolean) {
-  productionPanel.hidden = !open
-  productionToggle.setAttribute('aria-expanded', String(open))
-  syncWorkerActions()
-  if (open) {
-    toggleFormation(false)
-    toggleGlobalTrain(false)
+function openProductionTab(tab: 'recruit' | 'upgrades' | 'queues') {
+  if (room?.result) return
+  if (!productionSheet.open) {
+    scene?.cancelTargeting()
     closeEconomyMenu()
-    drawProduction()
+    setGatherOpen(false)
+    toggleFormation(false)
+    productionSheet.showModal()
+  }
+  closeEconomyMenu()
+  globalTrainPanel.hidden = tab !== 'recruit'
+  productionUpgrades.hidden = tab !== 'upgrades'
+  productionPanel.hidden = tab !== 'queues'
+  for (const [name, control] of [['recruit', globalTrainToggle], ['upgrades', globalUpgradeToggle], ['queues', productionToggle]] as const) {
+    control.setAttribute('aria-pressed', String(tab === name))
+  }
+  if (tab === 'recruit') {
+    globalProduction.message('')
+    globalProduction.update(chosenRace, ownEntities, resources, population)
+  } else if (tab === 'queues') drawProduction()
+  else {
+    globalUpgradeOpen = true
+    economyContext = 'global-upgrades'
+    productionUpgrades.append(menu)
+    openEconomyMenu(true)
   }
 }
+
+function closeProduction() {
+  if (productionSheet.open) productionSheet.close()
+  if (menu.parentElement === productionUpgrades) workerActions.after(menu)
+  globalTrainPanel.hidden = true
+  productionPanel.hidden = true
+  productionUpgrades.hidden = true
+  if (globalUpgradeOpen) closeEconomyMenu()
+}
+
+productionOpen.onclick = () => openProductionTab('recruit')
+globalTrainToggle.onclick = () => openProductionTab('recruit')
+globalUpgradeToggle.onclick = () => openProductionTab('upgrades')
+productionToggle.onclick = () => openProductionTab('queues')
+button('close-production').onclick = closeProduction
+productionSheet.onclose = () => {
+  if (!productionSheet.open) closeProduction()
+}
+productionSheet.addEventListener('click', event => {
+  if (event.target !== productionSheet) return
+  const bounds = productionSheet.getBoundingClientRect()
+  if (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom) closeProduction()
+})
 
 function drawProduction() {
   const rows: string[] = []
@@ -896,7 +943,6 @@ function drawProduction() {
   }))
 }
 
-productionToggle.onclick = () => toggleProduction(productionPanel.hidden)
 
 function drawResult(outcome: NonNullable<RoomState['result']>) {
   element('result-title').textContent = !outcome.winner ? 'Draw' : outcome.winner === faction ? 'Victory' : 'Defeat'
@@ -924,10 +970,24 @@ function leave() {
   showLobby()
 }
 
+function updateCommandTarget() {
+  const landing = scene?.targetingUnload === true
+  const attack = scene?.advanceMode === true
+  const rally = scene?.targetingRally === true
+  button('advance').setAttribute('aria-pressed', String(attack))
+  if (placing) return
+  placementTip.hidden = !landing && !attack && !rally
+  if (landing) setText('placement-message', 'Choose a landing coast.')
+  else if (attack) setText('placement-message', 'Choose where to attack-move.')
+  else if (rally) setText('placement-message', 'Choose a rally point.')
+}
+
 function toggleAdvance() {
-  if (!scene || button('advance').disabled) return
-  scene.advanceMode = !scene.advanceMode
-  button('advance').setAttribute('aria-pressed', String(scene.advanceMode))
+  if (!scene || button('advance').hidden) return
+  const wasActive = scene.advanceMode
+  scene.cancelTargeting()
+  scene.advanceMode = !wasActive
+  updateCommandTarget()
 }
 
 for (const item of factionButtons) {
@@ -975,6 +1035,10 @@ button('copy').onclick = async () => {
 }
 button('leave').onclick = leave
 button('return').onclick = leave
+button('view-stats').onclick = () => {
+  if (room?.result) drawResult(room.result)
+}
+button('review-map').onclick = () => result.close()
 button('exit').onclick = () => {
   const prompt = room?.mode === 'solo' ? 'End this solo match?' : 'Leave the battle and forfeit?'
   if (room?.phase === 'finished' || window.confirm(prompt)) leave()
@@ -1040,7 +1104,7 @@ mapButton.addEventListener('click', event => {
 })
 result.oncancel = event => event.preventDefault()
 window.addEventListener('keydown', event => {
-  if (!scene || result.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
+  if (!scene || result.open || productionSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
   switch (event.key.toLowerCase()) {
     case 'escape': scene.deselect(); break
     case 'i': scene.selectIdleWorker(); break

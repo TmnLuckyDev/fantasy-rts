@@ -67,6 +67,7 @@ export class BattleScene extends Phaser.Scene {
   private lastMiniDraw = 0
   advanceMode = false
   formation: Formation = 'line'
+  private unloadTargets: number[] = []
   private rallyTarget: number | null = null
   private placing: BuildingKind | null = null
   private pointer: Point | null = null
@@ -342,7 +343,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   deselect() {
-    this.place(null)
+    this.cancelTargeting()
     this.selectedGroup = null
     this.selectedResource = null
     this.selected.clear()
@@ -413,20 +414,58 @@ export class BattleScene extends Phaser.Scene {
   }
 
   place(kind: BuildingKind | null) {
+    if (kind) {
+      this.advanceMode = false
+      this.unloadTargets = []
+      this.rallyTarget = null
+      this.selectedResource = null
+    }
     this.placing = kind
     this.actions.placement(kind)
   }
 
   private workerIds() { return this.selectedGroup ? [] : [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'worker') }
 
-  halt() { this.issue({ kind: 'halt' }) }
+  halt() {
+    this.cancelTargeting()
+    this.issue({ kind: 'halt' })
+    this.selectionChanged(true)
+  }
   board(transport?: number) {
     const units = this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind))
     if (units.length) this.actions.order(units, { kind: 'board', transport })
   }
+  get targetingUnload() { return this.unloadTargets.length > 0 }
+
+  cancelTargeting() {
+    this.advanceMode = false
+    this.unloadTargets = []
+    this.rallyTarget = null
+    this.place(null)
+    if (this.initialized) this.selectionChanged()
+  }
+
   unload() {
-    const ships = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'transport')
-    if (ships.length === 1) this.actions.order(ships, { kind: 'unload' })
+    const wasTargeting = this.targetingUnload
+    this.cancelTargeting()
+    this.unloadTargets = wasTargeting ? [] : [...this.selected].filter(id => {
+      const ship = this.visuals.get(id)?.entity
+      return ship?.kind === 'transport' && ship.passengers?.length
+    })
+    this.selectionChanged(true)
+  }
+
+  private targetUnload(screen: Point) {
+    if (!this.targetingUnload) return false
+    const at = this.world(screen)
+    const ships = this.unloadTargets.filter(id => this.visuals.get(id)?.entity.passengers?.length)
+    this.unloadTargets = []
+    for (let start = 0; start < ships.length; start += MAX_SELECTION) {
+      this.actions.order(ships.slice(start, start + MAX_SELECTION), { kind: 'unload', at })
+    }
+    this.markers.push({ point: at, color: 0xffdc82, born: this.time.now })
+    this.selectionChanged(true)
+    return true
   }
   explore() {
     const ids = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'scout')
@@ -440,29 +479,36 @@ export class BattleScene extends Phaser.Scene {
 
   private ownUnit(entity: Entity) { return entity.faction === this.faction && isUnitKind(entity.kind) }
 
-  setRallyTarget(id: number) { this.rallyTarget = id }
+  get targetingRally() { return this.rallyTarget !== null }
+
+  setRallyTarget(id: number) {
+    this.cancelTargeting()
+    this.rallyTarget = id
+  }
 
   private placeRally(screen: Point) {
     if (this.rallyTarget === null) return false
     const at = this.world(screen)
     this.actions.order([this.rallyTarget], { kind: 'rally', to: at })
     this.rallyTarget = null
+    this.selectionChanged()
     this.markers.push({ point: at, color: 0xffdc82, born: this.time.now })
     return true
   }
 
   private click(screen: Point, append: boolean, touch: boolean) {
-    if (this.placeRally(screen)) return
+    if (this.targetUnload(screen) || this.placeRally(screen)) return
     const point = this.world(screen)
     if (this.placing) {
       const ids = this.workerIds()
       const at = snapToCell(point)
       if (ids.length && this.sightAt(at) > 0 && validPlacement(this.map, this.placing, at, this.entities())) {
         this.actions.order(ids, { kind: 'build', building: this.placing, at })
-        this.actions.placement(this.placing)
+        this.place(null)
       } else this.actions.placement(this.placing, true)
       return
     }
+    if (!this.advanceMode && this.inspectMine(point, touch)) return
     if (touch && this.workerIds().length && this.gatherPoint(point)) {
       this.orderAt(screen)
       return
@@ -506,6 +552,32 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  private inspectMine(point: Point, touch: boolean) {
+    const candidates = touch ? [point, { x: point.x, y: point.y + 12 }] : [point]
+    for (const at of candidates) {
+      const kind = resourceAt(this.map, at)
+      if (kind !== 'gold' && kind !== 'stone') continue
+      const index = Math.floor(at.y / TILE) * this.map.width + Math.floor(at.x / TILE)
+      const deposit = this.newest?.deposits?.find(entry => entry.index === index)
+      if (!deposit || this.sightAt(at) !== 2) continue
+      const workers = this.workerIds()
+      this.selectedGroup = null
+      this.selected = new Set(workers)
+      this.selectedResource = index
+      this.selectionChanged(true)
+      this.actions.resource(kind, deposit.remaining)
+      return true
+    }
+    return false
+  }
+
+  gatherInspectedDeposit() {
+    const index = this.selectedResource
+    const workers = this.workerIds()
+    if (index === null || !workers.length || this.depleted.has(index)) return
+    this.actions.order(workers, { kind: 'gather', at: cellCenter(index % this.map.width, Math.floor(index / this.map.width)) })
+  }
+
   private pick(point: Point, touch = false) {
     return [...this.visuals.values()]
       .filter(({ entity, sprite }) => {
@@ -521,12 +593,14 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private selectBox(rect: SelectionRect, append: boolean) {
+    if (this.targetingUnload || this.advanceMode) return
+    this.selectedResource = null
     const a = this.world(rect.from)
     const b = this.world(rect.to)
     if (this.placing) {
       if (this.placing === 'wall' && wallLine(this.map, a, b).length) {
         this.actions.order(this.workerIds(), { kind: 'wall-line', from: a, to: b })
-        this.actions.placement('wall')
+        this.place(null)
       }
       return
     }
@@ -567,7 +641,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private orderAt(screen: Point) {
-    if (this.placeRally(screen)) return
+    if (this.targetUnload(screen) || this.placeRally(screen)) return
     if (this.placing) {
       this.place(null)
       return
@@ -607,6 +681,10 @@ export class BattleScene extends Phaser.Scene {
     })
     if (military && (order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack')) {
       order = { ...order, formation: this.formation }
+    }
+    if (this.advanceMode && (order.kind === 'advance' || order.kind === 'attack')) {
+      this.advanceMode = false
+      this.selectionChanged()
     }
     if (this.selectedGroup && isArmyOrder(order)) this.actions.groupOrder(this.selectedGroup, order)
     else {

@@ -9,6 +9,7 @@ const neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const
 export class Coast {
   private readonly map: BattleMap
   private readonly regions: Int32Array
+  private readonly shoresBySea = new Map<number, Landing[]>()
   private readonly shores = new Map<string, Landing[]>()
 
   constructor(map: BattleMap) {
@@ -42,6 +43,10 @@ export class Coast {
         if (nx < 0 || nx >= width || ny < 0 || ny >= height || !isWater(tiles[next])) continue
         const key = this.regions[index] + ':' + this.regions[next]
         const landing = { land: cellCenter(x, y), sea: cellCenter(nx, ny) }
+        const sea = this.regions[next]
+        const seaShore = this.shoresBySea.get(sea)
+        if (seaShore) seaShore.push(landing)
+        else this.shoresBySea.set(sea, [landing])
         const shores = this.shores.get(key)
         if (shores) shores.push(landing)
         else this.shores.set(key, [landing])
@@ -52,6 +57,18 @@ export class Coast {
   region(at: Point) {
     const x = Math.floor(at.x / TILE), y = Math.floor(at.y / TILE)
     return x >= 0 && x < this.map.width && y >= 0 && y < this.map.height ? this.regions[y * this.map.width + x] : 0
+  }
+
+  landingNear(target: Point, ship: Point) {
+    let best: Landing | undefined
+    let closest = 4 * TILE
+    for (const site of this.shoresBySea.get(this.region(ship)) ?? []) {
+      const gap = Math.hypot(site.land.x - target.x, site.land.y - target.y)
+      if (gap > closest) continue
+      best = site
+      closest = gap
+    }
+    return best
   }
 
   meeting(unit: Point, ship: Point) {

@@ -332,3 +332,17 @@ test('workers deliver every resource to the nearest completed allied settlement 
     assert.ok(distance(worker, nearer) > 52)
   }
 })
+
+test('final snapshots reveal both armies and the entire battlefield', () => {
+  const match = new Match()
+  assert.equal(match.view('human').entities.some(entity => entity.faction === 'orc'), false)
+  assert.ok(decodeFog(match.view('human').fog, match.map.tiles.length).some(cell => cell === 0))
+  match.result = { winner: 'human', reason: 'disconnect' }
+  for (const faction of ['human', 'orc'] as const) {
+    const final = match.view(faction)
+    assert.ok(final.entities.some(entity => entity.faction === 'human'))
+    assert.ok(final.entities.some(entity => entity.faction === 'orc'))
+    assert.ok(decodeFog(final.fog, match.map.tiles.length).every(cell => cell === 2))
+    assert.equal(match.command(faction, [final.entities.find(entity => entity.faction === faction)!.id], { kind: 'halt' }), false)
+  }
+})

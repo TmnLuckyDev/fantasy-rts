@@ -155,7 +155,7 @@ export type Order =
   | { kind: 'explore' }
   | { kind: 'hero-ability' | 'unit-ability' }
   | { kind: 'board', transport?: number }
-  | { kind: 'unload' }
+  | { kind: 'unload', at?: Point }
   | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }
   | { kind: 'wall-line', from: Point, to: Point }

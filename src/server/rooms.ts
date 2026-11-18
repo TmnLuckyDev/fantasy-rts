@@ -49,6 +49,7 @@ const send = (peer: WebSocket | null, message: ServerMessage) => {
 export class Rooms {
   private rooms = new Map<string, Room>()
   private sessions = new Map<WebSocket, Session>()
+  private revealed = new WeakSet<WebSocket>()
   private snapshots = new WeakMap<WebSocket, Snapshot>()
 
   checkpoint(): SavedRoom[] {
@@ -196,7 +197,8 @@ export class Rooms {
     send(peer, { type: 'session', code: room.code, token: seat.token, faction: seat.faction })
     this.broadcastRoom(room)
     this.snapshots.delete(peer)
-    if (room.match) this.sendSnapshot(peer, room.match.view(seat.faction))
+    this.revealed.delete(peer)
+    if (room.match) this.sendSnapshot(peer, room.match.view(seat.faction), Boolean(room.match.result))
   }
 
   disconnect(peer: WebSocket, explicit = false, now = Date.now()) {
@@ -234,6 +236,7 @@ export class Rooms {
       }
       if (room.match.result) {
         if (now - room.finishedAt > resultLifetime) this.close(room)
+        else if (room.seats.some(seat => seat.peer && !this.revealed.has(seat.peer))) this.broadcastSnapshot(room)
         continue
       }
       if (this.paused(room)) continue
@@ -258,17 +261,19 @@ export class Rooms {
     for (const seat of room.seats) {
       const peer = seat.peer
       if (!peer || peer.readyState !== WebSocket.OPEN || peer.bufferedAmount >= 256_000) continue
+      if (room.match.result && this.revealed.has(peer)) continue
       let view = views.get(seat.faction)
       if (!view) {
         view = room.match.view(seat.faction, snapshot)
         views.set(seat.faction, view)
       }
-      this.sendSnapshot(peer, view)
+      this.sendSnapshot(peer, view, Boolean(room.match.result))
     }
   }
 
-  private sendSnapshot(peer: WebSocket, view: Snapshot) {
+  private sendSnapshot(peer: WebSocket, view: Snapshot, finished = false) {
     if (peer.readyState !== WebSocket.OPEN || peer.bufferedAmount >= 256_000) return
+    if (finished) this.revealed.add(peer)
     if (peer.protocol !== deltaProtocol) {
       peer.send(JSON.stringify(view))
       return
