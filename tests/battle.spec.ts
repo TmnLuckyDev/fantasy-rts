@@ -274,6 +274,7 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     await human.getByRole('button', { name: 'Farm · 70 wood · 20 stone', exact: true }).click()
     await human.mouse.click(farm.x, farm.y)
     await expect(human.locator('#population')).toHaveText('10/20', { timeout: 20_000 })
+    await human.locator('#cancel-placement').click()
 
     await orc.getByRole('button', { name: 'Workers', exact: true }).tap()
     await orc.getByRole('button', { name: 'Quarry stone', exact: true }).tap()
@@ -522,6 +523,7 @@ test('small portrait match supports double tap, filters, persistent graphics and
     }, { a, b })
     await expect(page.locator('#selection-name')).toHaveText('3 workers selected')
 
+    await page.getByRole('button', { name: 'Gather', exact: true }).tap()
     await page.getByRole('button', { name: 'Pause', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible()
     const savedTick = () => page.evaluate(() => JSON.parse(localStorage.getItem('ash-and-iron-solo') ?? 'null')?.save?.match?.tick ?? 0)
