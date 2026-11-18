@@ -115,35 +115,49 @@ export function buildingFootprint(kind: BuildingKind) {
   return Math.round(unitStats.human[kind].radius * (kind === 'wall' ? 0.9 : 0.78))
 }
 
-export function validPlacement(map: BattleMap, kind: BuildingKind, position: Point, entities: Iterable<Entity>) {
+export function placementError(map: BattleMap, kind: BuildingKind, position: Point, entities: Iterable<Entity>) {
   const point = snapToCell(position)
   const radius = buildingFootprint(kind)
   const edge = radius - 0.01
   for (const dx of [-edge, 0, edge]) {
     for (const dy of [-edge, 0, edge]) {
       const tile = tileAt(map, Math.floor((point.x + dx) / TILE), Math.floor((point.y + dy) / TILE))
-      if (tile !== 'grass' && tile !== 'road') return false
+      if (tile !== 'grass' && tile !== 'road') return 'Blocked by terrain.'
     }
   }
   if (kind === 'wall') {
     const x = Math.floor(point.x / TILE), y = Math.floor(point.y / TILE)
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (isWater(tileAt(map, x + dx, y + dy))) return false
+      if (isWater(tileAt(map, x + dx, y + dy))) return 'Walls need clearance from the shoreline.'
     }
   }
   if (kind === 'port') {
     const x = Math.floor(point.x / TILE), y = Math.floor(point.y / TILE)
     if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) =>
-      [1, 2, 3].some(distance => tileAt(map, x + dx * distance, y + dy * distance) === 'water'))) return false
+      [1, 2, 3].some(distance => tileAt(map, x + dx * distance, y + dy * distance) === 'water'))) return 'A harbor needs a navigable coastline.'
   }
   for (const entity of entities) {
     const otherRadius = isUnitKind(entity.kind) ? unitStats[raceOf(entity)][entity.kind].radius :
       entity.kind === 'headquarters' ? unitStats[raceOf(entity)][entity.kind].radius : buildingFootprint(entity.kind)
-    if (distance(point, entity) < radius + otherRadius + (isUnitKind(entity.kind) ? 2 : -0.01)) return false
+    if (distance(point, entity) < radius + otherRadius + (isUnitKind(entity.kind) ? 2 : -0.01)) return isUnitKind(entity.kind) ? 'Blocked by a unit.' : 'Too close to another building.'
   }
-  return true
+  return null
 }
 
+
+export function validPlacement(map: BattleMap, kind: BuildingKind, position: Point, entities: Iterable<Entity>) {
+  return !placementError(map, kind, position, entities)
+}
+
+export function repairPulse(race: Race, fortified: boolean, kind: EntityKind) {
+  return fortified && (kind === 'wall' || kind === 'tower') ?
+    Math.round(REPAIR.health * (raceRules[race].defense?.[kind] ?? 1)) : REPAIR.health
+}
+
+export function repairPrice(entity: Pick<Entity, 'kind' | 'hp' | 'maxHp'>, pulse = REPAIR.health): Cost {
+  const pulses = Math.ceil(Math.max(0, entity.maxHp - entity.hp) / pulse)
+  return entity.kind === 'wall' ? { stone: pulses } : { wood: pulses, stone: pulses }
+}
 
 export const hallUpgrades = {
   2: { required: ['barracks', 'smithy'], cost: { gold: 240, wood: 150, stone: 70 }, ticks: 480 },

@@ -109,6 +109,8 @@
             <div class="resource stone" title="Stone for buildings and walls"><span aria-hidden="true"></span><div><small>Stone</small><output id="stone" aria-label="Stone">0</output></div></div>
             <div class="resource population" id="population-meter" title="Population · trained and queued"><span aria-hidden="true"></span><div><small>Population</small><output id="population" aria-label="Population">0/0</output></div></div>
           </div>
+          <button id="match-options" type="button" aria-haspopup="dialog">Options</button>
+          <button id="solo-pause" type="button" hidden>Pause</button>
           <button id="sound" type="button" aria-label="Mute sound" aria-pressed="true">Sound on</button>
           <button id="view-stats" type="button" class="primary" hidden>Match statistics</button>
           <button id="exit" type="button">Leave</button>
@@ -120,6 +122,7 @@
           <button id="finish-practice" type="button" hidden>Finish practice</button>
         </aside>
         <section id="battlefield" aria-label="Battlefield"></section>
+        <output id="action-feedback" role="status" hidden></output>
         <div id="attack-alerts" role="region" aria-label="Attack alerts" aria-live="polite" hidden></div>
         <div id="formation-options" role="group" aria-label="Formation options" hidden>
           <button type="button" data-formation="line" aria-pressed="true">Line</button>
@@ -140,8 +143,10 @@
           <meter id="selection-health" min="0" max="100" value="0" hidden aria-label="Selected troops health"></meter>
         </div>
         <div class="battle-shortcuts" aria-label="Battle shortcuts">
+          <button id="camera-back" type="button" hidden>Back to previous position</button>
+          <button id="hero-quick" type="button" hidden><canvas id="hero-quick-portrait" width="30" height="30" aria-hidden="true"></canvas><span id="hero-quick-label"></span></button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
-          <button id="idle-worker" type="button" aria-label="Idle worker" title="Cycle through idle workers (I)" disabled>Idle <span id="idle-count">0</span></button>
+          <button id="idle-worker" type="button" aria-label="Idle worker" title="Cycle through idle workers (I)" disabled>Idle: <span id="idle-count">0</span></button>
           <button id="workers" type="button">Workers</button>
           <button id="production-open" type="button" aria-haspopup="dialog" aria-label="Production">Production <span id="production-count">0</span></button>
         </div>
@@ -164,6 +169,15 @@
         <div id="placement-tip" class="placement-tip" role="status" hidden><span id="placement-message">Choose a clear tile to build on.</span> <button id="cancel-placement" type="button">Cancel</button></div>
       </footer>
       <div id="portrait-prompt" role="status">Rotate your phone to portrait to play.</div>
+      <dialog id="match-options-sheet" class="production-sheet" aria-label="Match options">
+        <div class="production-tabs"><strong>Match options</strong><button id="close-match-options" type="button">Close</button></div>
+        <div class="qol-options">
+          <button id="options-build" type="button">Build</button>
+          <label>Box selection <select id="selection-filter"><option value="all">All units</option><option value="military">Military only</option><option value="workers">Workers only</option></select></label>
+          <label>Graphics <select id="graphics-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+          <section aria-label="Economy breakdown"><strong>Economy</strong><p id="income-summary"></p><p id="worker-breakdown"></p></section>
+        </div>
+      </dialog>
       <dialog id="production-sheet" aria-label="Production">
         <div class="production-tabs" role="group" aria-label="Production views">
           <button id="global-train-toggle" type="button" aria-controls="global-train-panel" aria-pressed="true">Recruit</button>
@@ -175,6 +189,7 @@
         <section id="global-train-panel" aria-label="Global production" hidden></section>
         <section id="production-upgrades" aria-label="Research upgrades" hidden></section>
         <section id="production-panel" class="production-panel" aria-label="Production queues" hidden></section>
+        <p id="queue-feedback" class="training-feedback" role="status"></p>
       </dialog>
       <dialog id="template-sheet" aria-label="Army groups">
         <div class="production-tabs"><button id="new-template" type="button">New group</button><button id="close-templates" type="button">Close</button></div>

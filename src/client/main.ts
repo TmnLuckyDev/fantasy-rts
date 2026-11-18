@@ -1,3 +1,4 @@
+import { replenishPlan } from '../shared/army-templates.ts'
 import { buildingTier, hallUpgrades, researchTier, unitTier } from '../shared/economy.ts'
 import { templateKinds } from '../shared/protocol.ts'
 import type { ArmyTemplate } from '../shared/protocol.ts'
@@ -5,7 +6,7 @@ import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
-import { buildings, bulkStructureCost, canAfford, FARM_POPULATION, REPAIR, repairCost, researchCost, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
+import { buildings, bulkStructureCost, canAfford, FARM_POPULATION, REPAIR, repairCost, repairPrice, repairPulse, researchCost, researchTicks, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings } from '../shared/map.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { hasHero, heroAbilities, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
@@ -136,12 +137,26 @@ let playerRaces: PlayerRaces = { human: 'human', orc: 'orc' }
 let room: RoomState | null = null
 let scene: BattleScene | null = null
 let game: Phaser.Game | null = null
-let orderMessageTimer: number | undefined
 let resources: Resources = { gold: 0, wood: 0, stone: 0 }
 let ownEntities: Entity[] = []
 let researched: UpgradeKind[] = []
 let currentTick = 0
 let population: Population = { used: 0, reserved: 0, limit: 0 }
+const matchOptions = element<HTMLDialogElement>('match-options-sheet')
+const qualityChoice = element<HTMLSelectElement>('graphics-quality')
+const filterChoice = element<HTMLSelectElement>('selection-filter')
+let quality: 'low' | 'medium' | 'high' = 'high'
+try {
+  const saved = localStorage.getItem('ash-iron-graphics')
+  if (saved === 'low' || saved === 'medium') quality = saved
+} catch { /* Storage is optional. */ }
+qualityChoice.value = quality
+let recentIncome: Resources = { gold: 0, wood: 0, stone: 0 }
+let replenishGroup: number | null = null
+let requestedCancel: { id: number, revision: number } | undefined
+let feedbackTimer = 0
+let feedbackLastAt = 0
+
 const templateSheet = element<HTMLDialogElement>('template-sheet')
 const templateEditor = element<HTMLFormElement>('template-editor')
 let templateId = 0
@@ -252,6 +267,7 @@ function receive(message: ServerMessage) {
       else {
         if (!scene) showBattle()
         updateBanner(client.connected)
+        button('solo-pause').hidden = !solo.active || Boolean(room.result)
         if (room.result) {
           match.classList.add('match-finished')
           button('view-stats').hidden = false
@@ -271,11 +287,15 @@ function receive(message: ServerMessage) {
       templates = message.templates ?? []
       hasProgression = message.hallLevel !== undefined
       hallLevel = message.hallLevel ?? 3
-      if (templateSheet.open) drawTemplates()
       resources = message.resources
       population = message.population
       ownEntities = message.entities.filter(entity => entity.faction === faction)
       researched = message.upgrades ?? []
+      recentIncome = message.income ?? { gold: 0, wood: 0, stone: 0 }
+      if (requestedCancel && ownEntities.find(unit => unit.id === requestedCancel?.id)?.training?.revision !== requestedCancel.revision) requestedCancel = undefined
+      if (templateSheet.open) drawTemplates()
+      drawHeroQuick()
+      if (matchOptions.open) drawEconomyBreakdown()
       if (solo.practice && practiceStep === 2 && ownEntities.some(entity => entity.training?.kind === 'blade')) setPracticeStep(3)
       if (solo.practice && practiceStep === 3 && practiceMoving &&
           ownEntities.some(entity => entity.kind !== 'worker' && isUnitKind(entity.kind) && entity.moving)) setPracticeStep(4)
@@ -294,9 +314,12 @@ function receive(message: ServerMessage) {
       if (scene) {
         if (!globalTrainPanel.hidden) globalProduction.message(message.message)
         if (templateSheet.open) setText('template-feedback', message.message)
-        banner.textContent = message.message
-        window.clearTimeout(orderMessageTimer)
-        orderMessageTimer = window.setTimeout(() => updateBanner(client.connected), 2500)
+        if (requestedCancel) {
+          requestedCancel = undefined
+          drawProduction()
+          setText('queue-feedback', message.message)
+        }
+        actionFeedback(message.message)
       } else note(message.message, true)
       break
   }
@@ -353,16 +376,18 @@ function showBattle() {
   element('result-map').textContent = map.name
   scene = new BattleScene(faction, playerRaces, map, battlefield, minimap, {
     dismissBuildMenu: () => {
-      if (menu.hidden || economyContext !== 'build') return false
-      closeEconomyMenu()
-      return true
+      if (!menu.hidden) { closeEconomyMenu(); return true }
+      if (!workerActions.hidden) { setGatherOpen(false); return true }
+      if (!formationOptions.hidden) { toggleFormation(false); return true }
+      return false
     },
     order: issueOrder,
     groupOrder: issueGroupOrder,
     groups: drawTroopGroups,
     selection: drawSelection,
     resource: showResourceInfo,
-    placement: (kind, blocked, segmentCount) => {
+    buildRequirement,
+    placement: (kind, error, segmentCount) => {
       placing = Boolean(kind)
       placementTip.hidden = !kind
       syncWorkerActions()
@@ -374,10 +399,17 @@ function showBattle() {
         return
       }
       const action = kind === 'wall' ? 'Drag to queue a wall line, or tap a tile.' : 'Tap each tile to queue another.'
-      element('placement-message').textContent = blocked ? 'Choose explored, open ground.' : entityNames[chosenRace][kind] + ' · ' + action
+      setText('placement-message', error ?? (entityNames[chosenRace][kind] + ' · ' + action))
     },
     effect: kind => audio.play(kind)
   })
+  requestedCancel = undefined
+  scene.quality = quality
+  filterChoice.value = 'all'
+  button('camera-back').hidden = true
+  button('hero-quick').hidden = true
+  button('solo-pause').hidden = !solo.active
+  button('solo-pause').textContent = 'Pause'
   button('idle-worker').disabled = true
   setText('idle-count', '0')
   scene.advanceMode = false
@@ -439,7 +471,10 @@ function drawAttackAlerts(alerts: readonly AttackAlert[]) {
     item.dataset.severity = alert.kind
     item.textContent = labels[alert.kind]
     item.title = 'Center camera on attack'
-    item.onclick = () => scene?.focusAlert(alert.at)
+    item.onclick = () => {
+      scene?.focusAlert(alert.at)
+      button('camera-back').hidden = false
+    }
     notices.push(item)
     const position = scene?.minimapPosition(alert.at)
     if (!position) continue
@@ -477,6 +512,7 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
 }
 
 function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
+  if (solo.paused) { actionFeedback('Resume the match to give orders.'); return }
   if (room?.result || productionSheet.open) return
   const message: GroupCommand = { type: 'group-command', group, order }
   if (solo.active) solo.sendArmyCommand(message)
@@ -486,6 +522,7 @@ function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
 }
 
 function issueOrder(ids: number[], order: Order) {
+  if (solo.paused) { actionFeedback('Resume the match to give orders.'); return }
   if (room?.result) return
   if (solo.active) solo.command(ids, order)
   else client.send({ type: 'command', ids, order })
@@ -534,14 +571,14 @@ function drawSelection(entities: Entity[], interactive = false) {
   const foundation = building?.construction !== undefined
   const nextContext = globalUpgradeOpen ? 'global-upgrades' : workers ? 'build' : (building && !foundation && (building.kind === 'tower' || building.kind === 'wall')) ? 'fortify:' + building.id : trainer ? 'train:' + trainer.id :
     smithy ? 'research:' + selected.id : foundation ? 'cancel:' + building.id :
-    building ? 'manage:' + building.id : ''
+    building ? 'manage:' + building.id : 'build'
   const changed = nextContext !== economyContext
   economyContext = nextContext
   economyAction.hidden = globalUpgradeOpen || !nextContext
-  economyAction.textContent = workers ? 'Build' : smithy ? 'Upgrade' : (building && (building.kind === 'tower' || building.kind === 'wall')) ? 'Upgrade' : foundation ? 'Construction' : trainer ? 'Train' : 'Manage'
+  economyAction.textContent = nextContext === 'build' ? 'Build' : smithy ? 'Upgrade' : (building && (building.kind === 'tower' || building.kind === 'wall')) ? 'Upgrade' : foundation ? 'Construction' : trainer ? 'Train' : 'Manage'
   if (!productionSheet.open) {
     if (changed || !nextContext) closeEconomyMenu()
-    if (!touch && !workers && (changed || interactive) && nextContext) openEconomyMenu(true)
+    if (!touch && !workers && (changed || interactive) && nextContext !== 'build') openEconomyMenu(true)
   }
   if (!menu.hidden) updateEconomyOptions()
   button('gather-open').hidden = !workers
@@ -568,6 +605,9 @@ function drawSelection(entities: Entity[], interactive = false) {
     const remaining = Math.max(0, (selected.abilityReadyAt ?? 0) - currentTick)
     heroSkillButton.textContent = remaining ? ability.name + ' · ' + Math.ceil(remaining / TICKS_PER_SECOND) + 's' : ability.name
     heroSkillButton.disabled = remaining > 0
+    const fill = Math.max(0, Math.min(1, 1 - remaining / ability.cooldown))
+    heroSkillButton.style.setProperty('--cooldown', Math.round(fill * 360) + 'deg')
+    heroSkillButton.dataset.ready = String(!remaining)
     heroSkillButton.title = 'description' in ability ? ability.description : ability.passive
   }
   const movable = entities.some(entity => isUnitKind(entity.kind))
@@ -607,6 +647,11 @@ function drawSelection(entities: Entity[], interactive = false) {
       ? gatherHint()
       : (touch ? 'Tap ground to move or an enemy to attack.' : 'Right-click ground to move or an enemy to attack.')
   }
+  if (building && !foundation && building.hp < building.maxHp) {
+    const pulse = repairPulse(chosenRace, researched.includes('fortress'), building.kind)
+    const cost = repairPrice(building, pulse)
+    detail.textContent += ' · Full repair ' + costLabel(cost) + (canAfford(resources, cost) ? '' : ' · Insufficient resources')
+  }
   let total = 0
   let remaining = 0
   let waiting = false
@@ -617,6 +662,56 @@ function drawSelection(entities: Entity[], interactive = false) {
     waiting ||= entity.landing.waiting
   }
   if (total) detail.textContent += ` · ${total - remaining}/${total} ashore` + (waiting ? ' · Waiting for space' : remaining ? ' · Landing' : '')
+}
+
+function costLabel(cost: Cost) {
+  return resourceKinds.flatMap(kind => cost[kind] ? [cost[kind] + ' ' + kind] : []).join(' · ') || 'No cost'
+}
+
+function buildRequirement(kind: typeof buildingKinds[number]) {
+  if (buildingTier(kind) > hallLevel) return 'Requires Town Hall Level ' + buildingTier(kind) + '.'
+  if (!selection.some(entity => entity.kind === 'worker') &&
+      !ownEntities.some(entity => entity.kind === 'worker' && entity.workerTask !== 'building')) return 'No available worker.'
+  const missing = resourceKinds.find(resource => resources[resource] < (buildings[kind].cost[resource] ?? 0))
+  return missing ? 'Not enough ' + missing + '.' : null
+}
+
+function actionFeedback(message: string) {
+  const feedback = element('action-feedback')
+  if (feedback.textContent === message && !feedback.hidden && performance.now() - feedbackLastAt < 800) return
+  feedbackLastAt = performance.now()
+  setText('action-feedback', message)
+  feedback.hidden = false
+  window.clearTimeout(feedbackTimer)
+  feedbackTimer = window.setTimeout(() => {
+    feedback.hidden = true
+    for (const id of ['queue-feedback', 'template-feedback']) {
+      if (element(id).textContent === message) setText(id, '')
+    }
+  }, 2600)
+}
+
+function drawEconomyBreakdown() {
+  const workers = { gold: 0, wood: 0, stone: 0, building: 0, idle: 0, other: 0 }
+  let total = 0
+  for (const entity of ownEntities) {
+    if (entity.kind !== 'worker') continue
+    total++
+    workers[entity.workerTask ?? (entity.idle ? 'idle' : 'other')]++
+  }
+  setText('income-summary', resourceKinds.map(kind => kind[0].toUpperCase() + kind.slice(1) + ' +' + recentIncome[kind] + '/min').join(' · '))
+  setText('worker-breakdown', `Workers ${total} · Gold ${workers.gold} · Wood ${workers.wood} · Stone ${workers.stone} · Building/repairing ${workers.building} · Idle ${workers.idle}` +
+    (workers.other ? ' · Other orders ' + workers.other : ''))
+}
+
+function drawHeroQuick() {
+  const hero = ownEntities.find(entity => isHeroKind(entity.kind))
+  const quick = button('hero-quick')
+  quick.hidden = !hero || Boolean(room?.result)
+  if (!hero) return
+  paintPortrait(element<HTMLCanvasElement>('hero-quick-portrait'), raceOf(hero), hero.kind)
+  const label = entityNames[raceOf(hero)][hero.kind] + ' · Lv ' + heroLevel(hero.experience ?? 0) + ' · ' + Math.ceil(hero.hp) + '/' + hero.maxHp + ' HP'
+  setText('hero-quick-label', label)
 }
 
 function drawEconomy() {
@@ -680,15 +775,21 @@ function updateEconomyOptions() {
   for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
     const rule = choiceRules.get(choice)
     const required = rule?.upgrade ? researchTier(researched.filter(kind => kind === rule.upgrade).length + 1) : rule?.tier ?? 1
-    if (required > hallLevel) {
-      choice.disabled = true
-      choice.title = 'Requires headquarters level ' + required
-      const detail = choice.querySelector('small')
-      if (detail && !detail.textContent?.includes(choice.title)) detail.textContent += ' · ' + choice.title
-    } else if (rule && !rule.upgrade) {
-      const detail = choice.querySelector('small')
-      if (detail?.textContent?.includes(' · Requires headquarters')) detail.textContent = detail.textContent.split(' · Requires headquarters')[0]
+    if (!rule) continue
+    const hall = required > hallLevel ? 'Requires Town Hall Level ' + required : ''
+    const cost = rule.upgrade ? researchCost(rule.upgrade, Math.min(upgradeLevelLimit(rule.upgrade), researched.filter(kind => kind === rule.upgrade).length + 1)) : rule.cost
+    const shortages = resourceKinds.flatMap(kind => resources[kind] < (cost[kind] ?? 0) ? [((cost[kind] ?? 0) - resources[kind]) + ' ' + kind] : [])
+    const missingSmith = rule.upgrade && economyContext === 'global-upgrades' &&
+      !ownEntities.some(entity => entity.kind === 'smithy' && entity.construction === undefined)
+    const reason = [hall, missingSmith ? 'Requires ' + entityNames[chosenRace].smithy : '', shortages.length ? 'Missing ' + shortages.join(', ') : ''].filter(Boolean).join(' · ')
+    if (hall) choice.disabled = true
+    let hint = choice.querySelector<HTMLElement>('.requirement')
+    if (!hint) {
+      hint = document.createElement('small')
+      hint.className = 'requirement'
+      choice.querySelector('span')?.append(hint)
     }
+    if (hint.textContent !== reason) hint.textContent = reason
   }
   const hallUpgrade = menu.querySelector<HTMLButtonElement>('[data-hall-upgrade]')
   if (hallUpgrade) {
@@ -730,7 +831,9 @@ function updateEconomyOptions() {
       !ownEntities.some(entity => entity.idle) ? 'Select a worker and target this building to repair it.' : ''
     repair.disabled = Boolean(reason)
     repair.title = reason
-    repair.textContent = site.repairing ? 'Repairing…' : repair.getAttribute('aria-label')
+    const pulse = repairPulse(chosenRace, researched.includes('fortress'), site.kind)
+    const label = 'Repair to full HP · ' + costLabel(repairPrice(site, pulse))
+    repair.textContent = site.repairing ? 'Repairing…' : label
   }
   const findHero = menu.querySelector<HTMLButtonElement>('[data-find-hero]')
   if (findHero) findHero.hidden = !ownEntities.some(unit => isHeroKind(unit.kind))
@@ -742,12 +845,17 @@ function refreshResearchChoice(choice: HTMLButtonElement, kind: UpgradeKind) {
   const cap = upgradeLevelLimit(kind)
   const level = Math.min(cap, researched.filter(research => research === kind).length + 1)
   const cost = researchCost(kind, level)
-  const title = `${upgrades[kind].name} · Lv ${level}/${cap}`
+  const previous = researched.filter(research => research === kind).length
+  const bonus = upgrades[kind].bonus
+  const suffix = kind === 'speed' || kind === 'fortress' ? '%' : ''
+  const seconds = Math.ceil((hasProgression ? researchTicks(kind, level) : upgrades[kind].ticks) / TICKS_PER_SECOND)
+  const title = previous >= cap ? `${upgrades[kind].name} · Max level ${cap}` : `${upgrades[kind].name} · Lv ${previous} → ${level}`
   const price = resourceKinds.filter(resource => cost[resource]).map(resource => `${cost[resource]} ${resource}`).join(' · ')
   const label = title + ' · ' + price
   if (choice.getAttribute('aria-label') !== label) {
     choice.querySelector('strong')!.textContent = title
-    choice.querySelector('small')!.textContent = price
+    choice.querySelector('small')!.textContent = previous >= cap ? 'Fully researched' :
+      `+${previous * bonus}${suffix} → +${level * bonus}${suffix} · ${price} · ${seconds}s`
     choice.setAttribute('aria-label', label)
   }
   return cost
@@ -872,7 +980,7 @@ function buildingActions(site: Entity) {
 }
 
 function openEconomyMenu(rebuild = false) {
-  if (!economyContext || placing) return
+  if (!economyContext || placing || room?.result) return
   if (rebuild) {
     if (economyContext === 'global-upgrades') {
       const smith = ownEntities.find(entity => entity.kind === 'smithy' && entity.construction === undefined)
@@ -953,9 +1061,9 @@ button('cancel-placement').onclick = () => scene?.cancelTargeting()
 function percentage(progress: number) { return Math.floor(progress * 100) + '%' }
 
 function constructionSummary(entity: Entity) {
-  if (entity.constructionStatus === 'queued') return 'Queued'
+  if (entity.constructionStatus === 'queued') return 'Queued · ' + percentage(entity.construction ?? 0)
   if (entity.constructionStatus === 'paused') return 'Paused · ' + percentage(entity.construction ?? 0)
-  return 'Building · ' + percentage(entity.construction ?? 0)
+  return 'Building · ' + percentage(entity.construction ?? 0) + (entity.constructionSeconds === undefined ? '' : ' · est. ' + entity.constructionSeconds + 's')
 }
 
 function trainingSummary(training: NonNullable<Entity['training']>) {
@@ -983,6 +1091,7 @@ function openProductionTab(tab: 'recruit' | 'upgrades' | 'queues') {
   globalTrainPanel.hidden = tab !== 'recruit'
   productionUpgrades.hidden = tab !== 'upgrades'
   productionPanel.hidden = tab !== 'queues'
+  setText('queue-feedback', '')
   for (const [name, control] of [['recruit', globalTrainToggle], ['upgrades', globalUpgradeToggle], ['queues', productionToggle]] as const) {
     control.setAttribute('aria-pressed', String(tab === name))
   }
@@ -1023,34 +1132,57 @@ productionSheet.addEventListener('click', event => {
 })
 
 function drawProduction() {
-  const rows: string[] = []
   let count = 0
+  const visible = !productionPanel.hidden
+  const active: Entity[] = []
   for (const entity of ownEntities) {
-    const name = entityNames[chosenRace][entity.kind]
-    if (entity.construction !== undefined) {
-      count++
-      rows.push(name + ' · ' + constructionSummary(entity))
-    }
-    if (entity.training) {
-      count += entity.training.remaining
-      rows.push(name + ' · ' + trainingSummary(entity.training))
-    }
-    if (entity.research) {
-      count++
-      rows.push(name + ' · ' + upgrades[entity.research.kind].name + ' · ' + percentage(entity.research.progress))
-    }
+    if (!entity.training && !entity.research && entity.construction === undefined) continue
+    count += (entity.training?.remaining ?? 0) + Number(Boolean(entity.research)) + Number(entity.construction !== undefined)
+    if (visible) active.push(entity)
   }
   setText('production-count', String(count))
-  if (productionPanel.hidden) return
-  if (!rows.length) rows.push('Nothing queued')
-  const signature = rows.join('')
+  if (!visible) return
+  const signature = JSON.stringify([chosenRace, solo.paused, requestedCancel, active.map(entity => [entity.id, entity.training?.revision,
+    entity.training?.seconds, entity.training?.totalSeconds, entity.construction === undefined ? null : constructionSummary(entity),
+    entity.research?.kind, entity.research && percentage(entity.research.progress)])])
   if (productionPanel.dataset.rows === signature) return
   productionPanel.dataset.rows = signature
-  productionPanel.replaceChildren(...rows.map(row => {
-    const item = document.createElement('div')
-    item.textContent = row
-    return item
-  }))
+  const rows = active.map(entity => {
+    const row = document.createElement('section')
+    row.className = 'queue-building'
+    const title = document.createElement('strong')
+    title.textContent = entityNames[chosenRace][entity.kind] + ' #' + entity.id
+    row.append(title)
+    if (entity.training) {
+      const training = entity.training
+      const eta = document.createElement('small')
+      eta.textContent = training.remaining + ' queued · next ' + (training.seconds ? training.seconds + 's' : 'ready') + ' · total ' + (training.totalSeconds ?? training.seconds ?? 0) + 's'
+      row.append(eta)
+      training.queue?.forEach((run, index) => {
+        const item = document.createElement('div')
+        const label = entityNames[chosenRace][run.kind] + ' × ' + run.count
+        item.textContent = label
+        const cancel = actionButton('Cancel', () => {
+          if (requestedCancel || training.revision === undefined) return
+          setText('queue-feedback', '')
+          requestedCancel = { id: entity.id, revision: training.revision }
+          drawProduction()
+          issueOrder([entity.id], { kind: 'cancel-training-run', index, revision: training.revision })
+        })
+        cancel.setAttribute('aria-label', 'Cancel ' + label + ' at ' + title.textContent)
+        cancel.disabled = Boolean(requestedCancel) || training.revision === undefined || solo.paused
+        item.append(cancel)
+        row.append(item)
+      })
+    }
+    if (entity.research || entity.construction !== undefined) {
+      const progress = document.createElement('small')
+      progress.textContent = entity.research ? upgrades[entity.research.kind].name + ' · ' + percentage(entity.research.progress) : constructionSummary(entity)
+      row.append(progress)
+    }
+    return row
+  })
+  productionPanel.replaceChildren(...(rows.length ? rows : ['Nothing queued']))
 }
 
 
@@ -1127,16 +1259,29 @@ function templateOrder(order: Order) {
 }
 
 function drawTemplates() {
-  const signature = JSON.stringify([templates, chosenRace])
+  const queued = new Map<typeof templateKinds[number], number>()
+  const production = ownEntities.filter(entity => !isUnitKind(entity.kind) && entity.construction === undefined)
+  for (const entity of production) for (const run of entity.training?.queue ?? []) {
+    const kind = templateKinds.find(kind => kind === run.kind)
+    if (kind) queued.set(kind, (queued.get(kind) ?? 0) + run.count)
+  }
+  const ready = new Set(production.flatMap(entity => trainedAt(entity.kind, chosenRace)))
+  const signature = JSON.stringify([templates, chosenRace, [...queued], [...ready], replenishGroup, replenishGroup === null ? null : [resources, population, hallLevel]])
   if (signature === templatesSignature) return
   templatesSignature = signature
   const list = element('template-list')
   list.replaceChildren()
   if (!templates.length) list.textContent = 'Create a group to automatically assign matching recruits.'
-  for (const group of templates) {
+  for (const [index, group] of templates.entries()) {
     const section = document.createElement('section')
     const title = document.createElement('strong')
     title.textContent = group.name + ' · ' + group.members.length + '/' + group.targets.reduce((total, row) => total + row.count, 0)
+    const plan = replenishPlan(templates, group, queued, chosenRace, resources, population,
+      kind => ready.has(kind) && unitTier(kind) <= hallLevel && (!isHeroKind(kind) || !hasHero(ownEntities)))
+    const missing = plan.rows.reduce((sum, row) => sum + row.missing, 0)
+    const reserved = plan.rows.reduce((sum, row) => sum + row.queued, 0)
+    const priority = document.createElement('small')
+    priority.textContent = 'Priority ' + (index + 1) + ' · ' + (missing ? missing + ' missing · ' + reserved + ' queued' : 'Complete')
     const breakdown = document.createElement('p')
     breakdown.textContent = group.targets.map(row =>
       entityNames[chosenRace][row.kind] + ' ' + group.members.filter(unit => unit.kind === row.kind).length + '/' + row.count).join(' · ')
@@ -1146,12 +1291,41 @@ function drawTemplates() {
     })
     select.disabled = !group.members.length
     const members = () => selection.filter(unit => unit.kind !== 'worker').slice(0, 500).map(unit => unit.id)
-    section.append(title, breakdown, select,
+    const frame = actionButton('Frame group', () => {
+      templateSheet.close()
+      scene?.selectTemplate(group.members.map(unit => unit.id), true)
+    })
+    frame.disabled = select.disabled
+    const up = actionButton('↑ Priority', () => templateOrder({ kind: 'template-priority', template: group.id, direction: -1 }))
+    const down = actionButton('↓ Priority', () => templateOrder({ kind: 'template-priority', template: group.id, direction: 1 }))
+    up.disabled = index === 0
+    down.disabled = index === templates.length - 1
+    section.append(title, priority, breakdown, select, frame, up, down,
       actionButton('Edit', () => editTemplate(group)),
       actionButton('Assign selection', () => templateOrder({ kind: 'template-assign', template: group.id, members: members() })),
       actionButton('Remove selection', () => templateOrder({ kind: 'template-release', template: group.id, members: members() })),
-      actionButton('Replenish', () => templateOrder({ kind: 'template-replenish', template: group.id })),
+      actionButton('Replenish', () => { replenishGroup = replenishGroup === group.id ? null : group.id; drawTemplates() }),
       actionButton('Delete group', () => templateOrder({ kind: 'template-remove', template: group.id })))
+    if (replenishGroup === group.id) {
+      const detail = document.createElement('p')
+      detail.textContent = plan.rows.flatMap(row => row.missing ? [entityNames[chosenRace][row.kind] + ' · ' + row.missing +
+        ' missing · ' + row.queued + ' queued' + (row.add ? ' · +' + row.add + ' to queue' : '')] : []).join(' / ') || 'Group complete.'
+      const totals = document.createElement('p')
+      totals.textContent = 'Cost ' + costLabel(plan.cost) + ' · Available ' + costLabel(resources) +
+        (plan.missingPopulation ? ' · Need ' + plan.missingPopulation + ' more population' : '')
+      const confirm = actionButton('Confirm replenish', () => {
+        replenishGroup = null
+        templateOrder({ kind: 'template-replenish', template: group.id, expected: plan.rows.flatMap(row => row.add ? [{ kind: row.kind, count: row.add }] : []) })
+        drawTemplates()
+      })
+      confirm.disabled = !plan.rows.some(row => row.add)
+      if (plan.rows.some(row => row.add > row.missing - row.queued)) {
+        const note = document.createElement('small')
+        note.textContent = 'Higher-priority groups receive matching recruits first.'
+        section.append(note)
+      }
+      section.append(detail, totals, confirm)
+    }
     list.append(section)
   }
 }
@@ -1203,6 +1377,7 @@ button('army-templates').onclick = () => {
   scene?.cancelTargeting()
   closeEconomyMenu()
   templateEditor.hidden = true
+  replenishGroup = null
   setText('template-feedback', '')
   drawTemplates()
   templateSheet.showModal()
@@ -1288,6 +1463,44 @@ function haltSelection() {
 button('halt').onclick = haltSelection
 button('deselect').onclick = () => scene?.deselect()
 button('home').onclick = () => scene?.home()
+button('camera-back').onclick = () => {
+  scene?.restoreCamera()
+  button('camera-back').hidden = true
+}
+button('hero-quick').onclick = () => scene?.selectHero()
+button('match-options').onclick = () => {
+  closeEconomyMenu()
+  setGatherOpen(false)
+  toggleFormation(false)
+  drawEconomyBreakdown()
+  matchOptions.showModal()
+}
+button('close-match-options').onclick = () => matchOptions.close()
+button('options-build').onclick = () => {
+  matchOptions.close()
+  economyContext = 'build'
+  economyAction.textContent = 'Build'
+  openEconomyMenu(true)
+}
+matchOptions.addEventListener('click', event => {
+  if (event.target !== matchOptions) return
+  const { left, right, top, bottom } = matchOptions.getBoundingClientRect()
+  if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) matchOptions.close()
+})
+filterChoice.onchange = () => { if (scene) scene.selectionFilter = filterChoice.value as BattleScene['selectionFilter'] }
+qualityChoice.onchange = () => {
+  quality = qualityChoice.value as BattleScene['quality']
+  if (scene) scene.quality = quality
+  try { localStorage.setItem('ash-iron-graphics', quality) } catch { /* Storage is optional. */ }
+}
+button('solo-pause').onclick = () => {
+  if (!solo.active || room?.result) return
+  solo.togglePause()
+  button('solo-pause').textContent = solo.paused ? 'Resume' : 'Pause'
+  button('solo-pause').setAttribute('aria-pressed', String(solo.paused))
+  if (solo.paused) scene?.scene.pause()
+  else scene?.scene.resume()
+}
 function drawSoundButton() {
   button('sound').setAttribute('aria-pressed', String(audio.enabled))
   button('sound').setAttribute('aria-label', audio.enabled ? 'Mute sound' : 'Enable sound')
@@ -1304,6 +1517,26 @@ function unlockSound(event: Event) {
 }
 document.addEventListener('click', unlockSound, { capture: true })
 document.addEventListener('keydown', unlockSound, { capture: true })
+let dismissPointer = false
+match.addEventListener('pointerdown', event => {
+  dismissPointer = false
+  if (!(event.target instanceof Element) || productionSheet.open || templateSheet.open || matchOptions.open || result.open) return
+  const outside = (panel: HTMLElement, trigger: HTMLElement) =>
+    !panel.hidden && !panel.contains(event.target as Element) && !trigger.contains(event.target as Element)
+  if (outside(menu, economyAction)) closeEconomyMenu()
+  else if (outside(workerActions, button('gather-open'))) setGatherOpen(false)
+  else if (outside(formationOptions, formationButton)) toggleFormation(false)
+  else return
+  dismissPointer = true
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
+match.addEventListener('click', event => {
+  if (!dismissPointer || event.detail === 0) return
+  dismissPointer = false
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
 const mapButton = button('map-button')
 let minimapPointer: number | null = null
 
@@ -1339,7 +1572,7 @@ mapButton.addEventListener('click', event => {
 })
 result.oncancel = event => event.preventDefault()
 window.addEventListener('keydown', event => {
-  if (!scene || result.open || productionSheet.open || templateSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
+  if (!scene || result.open || matchOptions.open || productionSheet.open || templateSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
   switch (event.key.toLowerCase()) {
     case 'escape': scene.deselect(); break
     case 'i': scene.selectIdleWorker(); break

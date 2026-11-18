@@ -1,3 +1,4 @@
+import { replenishPlan } from '../shared/army-templates.ts'
 import { buildingTier, hallUpgrades, researchTicks, researchTier, unitTier } from '../shared/economy.ts'
 import { templateKinds } from '../shared/protocol.ts'
 import type { ArmyTemplate, TemplateKind } from '../shared/protocol.ts'
@@ -10,7 +11,7 @@ import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
 import { siegeBalance, unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
-  buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, researchCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
+  buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, repairPulse, researchCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, placementError, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
 import { CONTROL_RADIUS, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
@@ -59,6 +60,7 @@ type Unit = Entity & {
   job: WorkerJob | null
   cargo: ResourceKind | null
   cargoAmount?: number
+  queueRevision?: number
   queue: Array<{ kind: UnitKind, left: number, count?: number, heroCost?: Partial<Resources> }>
   buildTicks: number
   buildDuration: number
@@ -88,6 +90,7 @@ export type MatchCheckpoint = {
   settings?: MatchSettings
   templates?: Record<Faction, ArmyTemplate[]>
   stats?: Record<Faction, MatchStats>
+  incomeSamples?: { tick: number, gathered: Record<Faction, Resources> }[]
   territory?: Record<Faction, number>
   extracted?: Array<[number, number]>
   knownDepletion?: Partial<Record<Faction, number[]>>
@@ -202,6 +205,7 @@ export class Match {
     ? mapForSettings(checkpoint.settings, checkpoint.mapSeed) : ashfordMap(checkpoint.map ?? 'ashford-original')) {
     const match = new Match(map, checkpoint.settings, checkpoint.races)
     Object.assign(match.stats, checkpoint.stats)
+    match.incomeSamples = checkpoint.incomeSamples?.slice(-31) ?? []
     Object.assign(match.templates, checkpoint.templates)
     Object.assign(match.territory, checkpoint.territory)
     for (const [index, amount] of checkpoint.extracted ?? []) {
@@ -255,7 +259,7 @@ export class Match {
 
   checkpoint(): MatchCheckpoint {
     return {
-      map: this.map.id, races: this.races, ...(this.corpses.size ? { corpses: [...this.corpses.values()] } : {}), mapSeed: this.map.seed, settings: this.settings, stats: this.stats, extracted: [...this.extracted],
+      map: this.map.id, races: this.races, ...(this.corpses.size ? { corpses: [...this.corpses.values()] } : {}), mapSeed: this.map.seed, settings: this.settings, stats: this.stats, incomeSamples: this.incomeSamples, extracted: [...this.extracted],
       templates: this.templates, territory: { ...this.territory }, knownDepletion: this.visibleDepletion, tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
       units: [...this.units.values()], missiles: this.missiles, upgrades: this.upgrades,
       heroExperience: this.heroExperience,
@@ -280,8 +284,67 @@ export class Match {
     return unit
   }
 
+  private incomeSamples: NonNullable<MatchCheckpoint['incomeSamples']> = []
+
+  private income(faction: Faction): Resources {
+    const last = this.incomeSamples.at(-1)
+    const first = this.incomeSamples[0]
+    if (!first || !last || first.tick === last.tick) return { gold: 0, wood: 0, stone: 0 }
+    return {
+      gold: Math.round((last.gathered[faction].gold - first.gathered[faction].gold) * 2),
+      wood: Math.round((last.gathered[faction].wood - first.gathered[faction].wood) * 2),
+      stone: Math.round((last.gathered[faction].stone - first.gathered[faction].stone) * 2)
+    }
+  }
+
+  private feedback: string | undefined
+
+  execute(faction: Faction, ids: number[], order: Order) {
+    this.feedback = undefined
+    if (this.command(faction, ids, order)) return this.feedback ?? null
+    return this.feedback ?? 'That order cannot be issued.'
+  }
+
+  private reject(message: string): false {
+    this.feedback = message
+    return false
+  }
+
+  private idleWorker(unit: Unit) {
+    return !unit.job && (!unit.order || unit.order.kind === 'halt') && !unit.assigned
+  }
+
+  private automaticBuilder(faction: Faction, at: Point) {
+    const coast = this.coast ??= new Coast(this.map)
+    const region = coast.region(at)
+    let best: Unit | undefined
+    let rank = Infinity
+    let gap = Infinity
+    for (const worker of this.units.values()) {
+      if (worker.faction !== faction || worker.kind !== 'worker' || worker.embarkedOn || this.constructionLoad(worker) > 1 ||
+          worker.job?.kind === 'repair' || worker.order?.kind === 'build-queue' || !region || coast.region(worker) !== region) continue
+      const priority = Number(!this.idleWorker(worker))
+      const distance = squaredDistance(worker, at)
+      if (priority > rank || (priority === rank && distance >= gap)) continue
+      best = worker
+      rank = priority
+      gap = distance
+    }
+    return best
+  }
+
   command(faction: Faction, ids: number[], order: Order): boolean {
-    if (this.result || ids.length === 0 || ids.length > MAX_SELECTION) return false
+    if (this.result || ids.length > MAX_SELECTION) return false
+    if (!ids.length) {
+      if (order.kind !== 'build' && order.kind !== 'wall-line') return false
+      const at = order.kind === 'build' ? order.at : order.from
+      if (order.kind === 'build') {
+        const error = this.constructionError(faction, order.building, at)
+        if (error) return this.reject(error)
+      }
+      const worker = this.automaticBuilder(faction, snapToCell(at))
+      return worker ? this.assignWorkers(faction, [worker], order) : this.reject('No available worker can reach this site.')
+    }
     const units: Unit[] = []
     for (const id of new Set(ids)) {
       const unit = this.units.get(id)
@@ -289,6 +352,11 @@ export class Match {
       units.push(unit)
     }
     return this.issue(faction, units, order)
+  }
+
+  executeGroup(faction: Faction, group: TroopGroup, order: ArmyOrder) {
+    this.feedback = undefined
+    return this.commandGroup(faction, group, order) ? null : this.feedback ?? 'That group order cannot be issued.'
   }
 
   commandGroup(faction: Faction, group: TroopGroup, order: ArmyOrder) {
@@ -310,13 +378,14 @@ export class Match {
       if (units.length !== 1 || units[0].embarkedOn || !isUnitKind(units[0].kind)) return false
       const caster = units[0]
       if ((order.kind === 'hero-ability') !== isHeroKind(caster.kind)) return false
+      if (this.tick < (caster.abilityReadyAt ?? 0)) return this.reject('Ability is on cooldown.')
       const custom = raceSkills[this.races[faction]]?.[caster.kind as UnitKind]
       if (custom) return this.castRaceSkill(caster, custom)
       if (order.kind === 'unit-ability') return false
       if (units.length !== 1 || !isHeroKind(units[0].kind)) return false
       const hero = units[0]
       const ability = heroAbilities[hero.kind as HeroKind]
-      if (this.tick < (hero.abilityReadyAt ?? 0)) return false
+      if (this.tick < (hero.abilityReadyAt ?? 0)) return this.reject('Ability is on cooldown.')
       hero.abilityReadyAt = this.tick + ability.cooldown
       if (hero.kind === 'vanguard') {
         hero.abilityActiveUntil = this.tick + ability.duration
@@ -365,6 +434,15 @@ export class Match {
     if (order.kind === 'structure-upgrade') return units.length === 1 && this.startStructureUpgrade(units[0])
     if (order.kind === 'upgrade') return units.length === 1 && this.startUpgrade(units[0], order.upgrade)
     if (order.kind === 'train') return units.length === 1 && this.enqueue(units[0], order.unit, order.count ?? 1)
+    if (order.kind === 'cancel-training-run') {
+      if (units.length !== 1) return false
+      const building = units[0]
+      if ((building.queueRevision ?? 0) !== order.revision || !building.queue[order.index]) {
+        return this.reject('The queue changed. Choose the order again.')
+      }
+      this.refundRun(building, order.index, building.queue[order.index].count ?? 1)
+      return true
+    }
     if (order.kind === 'cancel-train') return units.length === 1 && this.cancelTraining(units[0], order.count)
     if (order.kind === 'cancel-build') return units.length === 1 && this.cancelConstruction(units[0])
     if (order.kind === 'dismiss') {
@@ -395,6 +473,12 @@ export class Match {
           order.to.x < 0 || order.to.y < 0 || order.to.x >= this.map.width * TILE ||
           order.to.y >= this.map.height * TILE)) return false
 
+    if (this.map.id === 'shattered-isles' && (order.kind === 'move' || order.kind === 'advance') &&
+        units.every(unit => !isShipKind(unit.kind))) {
+      const coast = this.coast ??= new Coast(this.map)
+      const target = coast.region(order.to)
+      if (target && units.every(unit => coast.region(unit) !== target)) return this.reject('Target is unreachable on foot.')
+    }
     const troops = order.kind === 'attack' ? units.filter(unit => unit.kind !== 'worker') : units
     if (!troops.length) return false
     if ((order.kind === 'move' || order.kind === 'advance' || order.kind === 'attack') && order.formation) {
@@ -639,14 +723,26 @@ export class Match {
     }
   }
 
+  private constructionError(faction: Faction, kind: BuildingKind, at: Point) {
+    const tier = buildingTier(kind)
+    if (tier > this.hallLevel(faction)) return 'Requires Town Hall Level ' + tier + '.'
+    const missing = resourceKinds.find(resource => this.resources[faction][resource] < (buildingRules[kind].cost[resource] ?? 0))
+    if (missing) return 'Not enough ' + missing + '.'
+    const sight = this.visibility.at(faction, snapToCell(at))
+    if (!sight) return 'Unexplored territory.'
+    const error = placementError(this.map, kind, at, this.units.values())
+    return sight === 1 && error ? 'That site is blocked.' : error
+  }
+
   private assignWorkers(faction: Faction, workers: Unit[], order: Extract<Order, { kind: 'gather' | 'build' | 'wall-line' | 'resume-build' | 'repair' }>) {
-    if (!workers.length) return false
+    if (!workers.length) return this.reject('No available worker.')
     if (order.kind === 'gather') {
       const resource = resourceAt(this.map, order.at)
-      if (!resource || !this.availableDeposit(faction, order.at)) return false
+      if (!resource || !this.availableDeposit(faction, order.at)) return this.reject('That resource source is unavailable.')
       const at = snapToCell(order.at)
+      const coast = this.coast ??= new Coast(this.map)
       const source = this.settings.sources[resource]
-      const limit = source.stock === null ? source.workers : null
+      const limit = resource === 'wood' && source.stock !== null ? null : source.workers
       const picked = new Set(workers)
       const assignments = new Map<number, number>()
       if (limit !== null) {
@@ -659,31 +755,37 @@ export class Match {
       }
       const preferred = this.depositIndex(at)
       let accepted = false
+      let unassigned = false
+      let waiting = false
+      const preferredJob = (worker: Unit) => worker.job?.kind === 'gather' && this.depositIndex(worker.job.at) === preferred
+      workers.sort((a, b) => Number(preferredJob(b)) - Number(preferredJob(a)))
       for (const worker of workers) {
         let target: Point = at
-        if (limit !== null && (assignments.get(preferred) ?? 0) >= limit) {
-          const coast = this.coast ??= new Coast(this.map)
-          const region = coast.region(worker)
+        const region = coast.region(worker)
+        const unreachable = resource !== 'wood' && !coast.canReachDeposit(region, at)
+        if (unreachable || (limit !== null && (assignments.get(preferred) ?? 0) >= limit)) {
           let nearest = Infinity
           let alternative: Point | undefined
           for (const site of this.deposits) {
-            if (site.resource !== resource || (assignments.get(site.index) ?? 0) >= limit ||
+            if (site.resource !== resource || (limit !== null && (assignments.get(site.index) ?? 0) >= limit) ||
                 !this.availableDeposit(faction, site.at)) continue
-            const gap = squaredDistance(at, site.at)
+            const gap = squaredDistance(worker, site.at)
             if (gap >= nearest || !coast.canReachDeposit(region, site.at)) continue
             nearest = gap
             alternative = site.at
           }
-          if (!alternative) {
+          if (!alternative && (source.stock === null || unreachable)) {
+            unassigned = true
             const current = worker.job
             if (current?.kind === 'gather') {
               const index = this.depositIndex(current.at)
-              if (index === preferred && (assignments.get(index) ?? 0) >= limit) this.resetOrders(worker)
+              if (index === preferred && (unreachable || (limit !== null && (assignments.get(index) ?? 0) >= limit))) this.resetOrders(worker)
               else assignments.set(index, (assignments.get(index) ?? 0) + 1)
             }
             continue
           }
-          target = alternative
+          if (alternative) target = alternative
+          else waiting = true
         }
         const index = this.depositIndex(target)
         assignments.set(index, (assignments.get(index) ?? 0) + 1)
@@ -693,6 +795,7 @@ export class Match {
         }
         accepted = true
       }
+      if (unassigned || waiting) this.feedback = 'No nearby resource source has a free worker slot.'
       return accepted
     }
     if (order.kind === 'repair') {
@@ -717,14 +820,14 @@ export class Match {
       return true
     }
     const kind = order.kind === 'build' ? order.building : 'wall'
-    if (buildingTier(kind) > this.hallLevel(faction)) return false
+    if (buildingTier(kind) > this.hallLevel(faction)) return this.reject('Requires Town Hall Level ' + buildingTier(kind) + '.')
     const locations = order.kind === 'build' ? [order.at] : wallLine(this.map, order.from, order.to)
     const rule = buildingRules[kind]
     const stock = this.resources[faction]
     let queued = false
     for (const at of locations) {
-      if (!canAfford(stock, rule.cost)) break
-      if (this.visibility.at(faction, at) === 0 || !validPlacement(this.map, kind, at, this.units.values())) continue
+      const error = this.constructionError(faction, kind, at)
+      if (error) { this.feedback = error; continue }
       spend(stock, rule.cost)
       this.queueConstruction(this.builder(workers), this.spawn(faction, kind, snapToCell(at), rule.ticks).id)
       queued = true
@@ -763,6 +866,14 @@ export class Match {
       return true
     }
     if (!group) return false
+    if (order.kind === 'template-priority') {
+      const index = groups.indexOf(group)
+      const next = index + order.direction
+      if (!groups[next]) return false
+      groups[index] = groups[next]
+      groups[next] = group
+      return true
+    }
     if (order.kind === 'template-remove') {
       groups.splice(groups.indexOf(group), 1)
       return true
@@ -780,28 +891,30 @@ export class Match {
       }
       return true
     }
-    let queued = false
-    for (const { kind } of group.targets) {
-      let need = 0
-      for (const item of groups) {
-        need += Math.max(0, (item.targets.find(row => row.kind === kind)?.count ?? 0) -
-          item.members.filter(row => row.kind === kind).length)
-        if (item === group) break
+    const queued = new Map<TemplateKind, number>()
+    const ready = new Set<UnitKind>()
+    for (const unit of this.units.values()) {
+      if (unit.faction !== faction || unit.buildDuration) continue
+      for (const kind of trainedAt(unit.kind, this.races[faction])) ready.add(kind)
+      for (const run of unit.queue) {
+        const kind = templateKinds.find(kind => kind === run.kind)
+        if (kind) queued.set(kind, (queued.get(kind) ?? 0) + (run.count ?? 1))
       }
-      for (const unit of this.units.values()) {
-        if (unit.faction !== faction) continue
-        for (const entry of unit.queue) if (entry.kind === kind) need -= entry.count ?? 1
-      }
-      const rule = trainingRule(kind, this.races[faction])
-      const pop = this.population(faction)
-      const capacity = Math.floor((pop.limit - pop.used - pop.reserved) / rule.population)
-      const cost = trainingCost(kind, this.races[faction])
-      const affordable = Math.min(...resourceKinds.map(resource => cost[resource] ?
-        Math.floor(this.resources[faction][resource] / cost[resource]!) : Infinity))
-      const count = Math.min(need, capacity, affordable, isHeroKind(kind) ? 1 : Infinity)
-      if (count > 0 && this.trainGlobally(faction, kind, count) === null) queued = true
     }
-    return queued
+    const plan = replenishPlan(groups, group, queued, this.races[faction], this.resources[faction], this.population(faction),
+      kind => ready.has(kind) && !this.trainingError(faction, kind, 1))
+    if (order.kind === 'template-replenish' && order.expected) {
+      const additions = plan.rows.filter(row => row.add)
+      if (additions.length !== order.expected.length ||
+          additions.some(row => !order.expected!.some(item => item.kind === row.kind && item.count === row.add))) {
+        return this.reject('The group or queue changed. Review replenish again.')
+      }
+    }
+    let accepted = false
+    for (const row of plan.rows) {
+      if (row.add && this.trainGlobally(faction, row.kind, row.add) === null) accepted = true
+    }
+    return accepted || this.reject('No additional recruits can be queued for this group.')
   }
 
   private builder(workers: Unit[]) {
@@ -906,10 +1019,13 @@ export class Match {
     const level = this.upgrades[building.faction].filter(upgrade => upgrade === kind).length + 1
     if (!rule || building.kind !== researchSite(kind) || building.buildDuration || building.upgradeJob ||
         (kind === 'fortress' && this.races[building.faction] !== 'dwarf') ||
-        researchTier(level) > this.hallLevel(building.faction) || level > upgradeLevelLimit(kind) ||
+        level > upgradeLevelLimit(kind) ||
         [...this.units.values()].some(unit => unit.faction === building.faction && unit.upgradeJob?.kind === kind)) return false
+    const tier = researchTier(level)
+    if (tier > this.hallLevel(building.faction)) return this.reject('Requires Town Hall Level ' + tier + '.')
     const cost = researchCost(kind, level)
-    if (!canAfford(stock, cost)) return false
+    const missing = resourceKinds.find(resource => stock[resource] < (cost[resource] ?? 0))
+    if (missing) return this.reject('Not enough ' + missing + '.')
     spend(stock, cost)
     const ticks = this.settings.progression ? researchTicks(kind, level) : rule.ticks
     building.upgradeJob = { kind, left: ticks, total: ticks }
@@ -985,13 +1101,16 @@ export class Match {
   }
 
   private enqueue(building: Unit, kind: UnitKind, count: number) {
-    if (building.buildDuration || !trainedAt(building.kind, this.races[building.faction]).includes(kind) || this.trainingError(building.faction, kind, count)) return false
+    if (building.buildDuration || !trainedAt(building.kind, this.races[building.faction]).includes(kind)) return this.reject('No available production building.')
+    const error = this.trainingError(building.faction, kind, count)
+    if (error) return this.reject(error)
     for (const resource of resourceKinds) this.resources[building.faction][resource] -= count * (trainingCost(kind, this.races[building.faction])[resource] ?? 0)
     this.appendTraining(building, kind, count)
     return true
   }
 
   private appendTraining(building: Unit, kind: UnitKind, count: number) {
+    building.queueRevision = (building.queueRevision ?? 0) + 1
     const tail = building.queue.at(-1)
     if (tail?.kind === kind) tail.count = (tail.count ?? 1) + count
     else building.queue.push({ kind, left: trainingRule(kind, this.races[building.faction]).ticks, count,
@@ -1000,18 +1119,24 @@ export class Match {
 
   private cancelTraining(building: Unit, count: number) {
     if (!Number.isSafeInteger(count) || count < 1 || !building.queue.length) return false
-    const stock = this.resources[building.faction]
     while (count > 0 && building.queue.length) {
       const tail = building.queue.at(-1)!
       const size = tail.count ?? 1
       const removed = Math.min(count, size)
       count -= removed
-      const cost = isHeroKind(tail.kind) ? tail.heroCost ?? { gold: 225 } : trainingCost(tail.kind, this.races[building.faction])
-      for (const resource of resourceKinds) stock[resource] += removed * (cost[resource] ?? 0)
-      if (removed === size) building.queue.pop()
-      else tail.count = size - removed
+      this.refundRun(building, building.queue.length - 1, removed)
     }
     return true
+  }
+
+  private refundRun(building: Unit, index: number, count: number) {
+    const run = building.queue[index]
+    const stock = this.resources[building.faction]
+    const cost = isHeroKind(run.kind) ? run.heroCost ?? { gold: 225 } : trainingCost(run.kind, this.races[building.faction])
+    for (const resource of resourceKinds) stock[resource] += count * (cost[resource] ?? 0)
+    if (count === (run.count ?? 1)) building.queue.splice(index, 1)
+    else run.count = (run.count ?? 1) - count
+    building.queueRevision = (building.queueRevision ?? 0) + 1
   }
 
   private cancelConstruction(site: Unit) {
@@ -1065,6 +1190,7 @@ export class Match {
       next.left = trainingRule(next.kind, this.races[building.faction]).ticks
     }
     const trained = this.spawn(building.faction, next.kind, spawnPoint)
+    building.queueRevision = (building.queueRevision ?? 0) + 1
     this.templates[building.faction].some(group => this.addToTemplate(group, trained))
     if (building.rally) {
       trained.assigned = building.rally
@@ -1096,7 +1222,7 @@ export class Match {
       if (++job.workTicks >= REPAIR.ticks) {
         job.workTicks = 0
         spend(stock, cost)
-        site.hp = Math.min(site.maxHp, site.hp + this.fortifiedHealth(site.faction, site.kind, REPAIR.health))
+        site.hp = Math.min(site.maxHp, site.hp + repairPulse(this.races[site.faction], this.upgrades[site.faction].includes('fortress'), site.kind))
         if (site.hp === site.maxHp) this.resetOrders(worker)
       }
       return
@@ -1440,6 +1566,10 @@ export class Match {
     this.resolveRoutes(hostileBuildings)
     this.spaceMovingUnits(hostileBuildings)
     this.visibility.update(this.units.values())
+    if (this.tick === 1 || this.tick % TICK_HZ === 0) {
+      this.incomeSamples.push({ tick: this.tick, gathered: { human: { ...this.stats.human.gathered }, orc: { ...this.stats.orc.gathered } } })
+      if (this.incomeSamples.length > 31) this.incomeSamples.shift()
+    }
     if (this.tick % TICK_HZ === 0) this.scoreControl(true)
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
@@ -1925,13 +2055,13 @@ export class Match {
       })) } : {}),
       ...(this.controlSites.length ? { controlSites: this.controlSites.map(({ x, y, owner }) =>
         ({ x, y, ...(owner && (owner === faction || visible({ x, y })) ? { owner } : {}) })) } : {}), ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
-      resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction], deposits,
+      income: this.income(faction), resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction], deposits,
       ...(this.usesCorpses && this.corpses.size ? { corpses: [...this.corpses.values()].filter(visible) } : {}),
       entities: world.entities.flatMap(entity => {
         if (entity.embarkedOn) return []
         if (entity.faction === faction) return [entity]
         if (!finished && !this.canSee(faction, entity)) return []
-        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, passengers: _passengers, passengerPop: _passengerPop, landing: _landing, concealed: _concealed, rally: _rally, ...seen } = entity
+        const { workerTask: _task, constructionSeconds: _eta, idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, passengers: _passengers, passengerPop: _passengerPop, landing: _landing, concealed: _concealed, rally: _rally, ...seen } = entity
         return [seen]
       }),
       effects
@@ -1971,12 +2101,17 @@ export class Match {
           ...(unit.unloadTotal ? { landing: { total: unit.unloadTotal, waiting: Boolean(unit.unloadRetryAt) } } : {}),
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
+          constructionSeconds: buildDuration && construction.get(id) === 'building' ? Math.ceil((buildDuration - buildTicks) / TICK_HZ) : undefined,
+          workerTask: kind === 'worker' ? unit.job?.kind === 'gather' ? unit.job.resource :
+            unit.job || unit.order?.kind === 'build-queue' ? 'building' : !this.idleWorker(unit) ? 'other' : undefined : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / (unit.upgradeJob.total ?? upgrades[unit.upgradeJob.kind].ticks) } : undefined,
           repairing: repairs.has(id) || undefined,
           carrying: cargo ?? undefined,
-          idle: kind === 'worker' ? !unit.job && !unit.order && !unit.assigned : undefined,
+          idle: kind === 'worker' ? this.idleWorker(unit) : undefined,
           training: next ? { kind: next.kind, progress: 1 - next.left / trainingRule(next.kind, this.races[faction]).ticks, remaining: queue.reduce((total, entry) => total + (entry.count ?? 1), 0),
-            seconds: Math.ceil(next.left / TICK_HZ), queue: queue.map(entry => ({ kind: entry.kind, count: entry.count ?? 1 })) } : undefined
+            seconds: Math.ceil(next.left / TICK_HZ), revision: unit.queueRevision ?? 0,
+            totalSeconds: Math.ceil((next.left + queue.reduce((ticks, entry, index) => ticks +
+              ((entry.count ?? 1) - Number(index === 0)) * trainingRule(entry.kind, this.races[faction]).ticks, 0)) / TICK_HZ), queue: queue.map(entry => ({ kind: entry.kind, count: entry.count ?? 1 })) } : undefined
         }
       })
     }

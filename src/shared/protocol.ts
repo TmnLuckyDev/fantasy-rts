@@ -95,16 +95,18 @@ export type Entity = Point & {
   maxHp: number
   facing: -1 | 1
   moving: boolean
+  constructionSeconds?: number
   construction?: number
   constructionStatus?: 'queued' | 'building' | 'paused'
   research?: { kind: UpgradeKind, progress: number }
-  training?: { kind: UnitKind, progress: number, remaining: number, queue?: Array<{ kind: UnitKind, count: number }>, seconds?: number }
+  training?: { kind: UnitKind, progress: number, remaining: number, queue?: Array<{ kind: UnitKind, count: number }>, seconds?: number, totalSeconds?: number, revision?: number }
   experience?: number
   abilityReadyAt?: number
   abilityActiveUntil?: number
   repairing?: boolean
   carrying?: ResourceKind
   idle?: boolean
+  workerTask?: ResourceKind | 'building' | 'other'
   embarkedOn?: number
   passengers?: number[]
   passengerPop?: number
@@ -156,7 +158,9 @@ export type TemplateTarget = { kind: TemplateKind, count: number }
 export type ArmyTemplate = { id: number, name: string, targets: TemplateTarget[], members: Array<{ id: number, kind: TemplateKind }> }
 export type Order =
   | { kind: 'template-save', template: number, name: string, targets: TemplateTarget[] }
-  | { kind: 'template-remove' | 'template-replenish', template: number }
+  | { kind: 'template-remove', template: number }
+  | { kind: 'template-replenish', template: number, expected?: TemplateTarget[] }
+  | { kind: 'template-priority', template: number, direction: -1 | 1 }
   | { kind: 'template-assign' | 'template-release', template: number, members: number[] }
   | { kind: 'rally', to: Point }
   | { kind: 'move' | 'advance', to: Point, formation?: Formation }
@@ -177,6 +181,7 @@ export type Order =
   | { kind: 'repair', target: number }
   | { kind: 'train', unit: UnitKind, count?: number }
   | { kind: 'cancel-train', count: number }
+  | { kind: 'cancel-training-run', index: number, revision: number }
   | { kind: 'cancel-build' }
   | { kind: 'demolish' }
   | { kind: 'dismiss' }
@@ -208,7 +213,7 @@ export type ControlSite = Point & { owner?: Faction }
 export type DepositInfo = { index: number, remaining: number | null }
 export type Corpse = Point & { id: number, expiresAt: number }
 
-export type Snapshot = { templates?: ArmyTemplate[], hallLevel?: number, controlSites?: ControlSite[], corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
+export type Snapshot = { income?: Resources, templates?: ArmyTemplate[], hallLevel?: number, controlSites?: ControlSite[], corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }

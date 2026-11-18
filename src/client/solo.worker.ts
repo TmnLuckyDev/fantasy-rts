@@ -68,10 +68,12 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
       else save()
       return
     }
-    const accepted = message.type === 'group-command' ? game.match.commandGroup(game.faction, message.group, message.order)
-      : game.match.command(game.faction, message.ids, message.order)
-    if (accepted) save()
-    else send({ type: 'error', message: 'That order cannot be issued.' })
+    const error = message.type === 'group-command' ?
+      game.match.executeGroup(game.faction, message.group, message.order) :
+      game.match.execute(game.faction, message.ids, message.order)
+    save()
+    if (error) send({ type: 'error', message: error })
+
   }
 })
 

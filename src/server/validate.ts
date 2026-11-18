@@ -55,13 +55,26 @@ export function parseMessage(raw: string): ClientMessage | null {
       return group && parsed && isArmyOrder(parsed) ? { type, group, order: parsed } : null
     }
     case 'command': {
-      if (!Array.isArray(ids) || !ids.length || ids.length > MAX_SELECTION || !ids.every(validId) || !object(order)) return null
+      if (!Array.isArray(ids) || ids.length > MAX_SELECTION || !ids.every(validId) || !object(order)) return null
       const parsed = parseOrder(order)
-      return parsed ? { type, ids, order: parsed } : null
+      return parsed && (ids.length || parsed.kind === 'build' || parsed.kind === 'wall-line') ? { type, ids, order: parsed } : null
     }
     default:
       return null
   }
+}
+
+function templateTargets(value: unknown, cap = 500) {
+  if (!Array.isArray(value) || value.length > templateKinds.length) return null
+    const targets: import('../shared/protocol.ts').TemplateTarget[] = []
+    for (const target of value) {
+      if (!object(target)) return null
+      const kind = templateKinds.find(kind => kind === target.kind)
+      if (!kind || !validId(target.count) || target.count > cap || targets.some(row => row.kind === kind)) return null
+      targets.push({ kind, count: target.count })
+    }
+    if (targets.reduce((sum, target) => sum + target.count, 0) > cap) return null
+  return targets
 }
 
 function parseOrder(order: Record<string, unknown>): Order | null {
@@ -69,18 +82,20 @@ function parseOrder(order: Record<string, unknown>): Order | null {
   if (order.kind === 'template-save' && (order.template === 0 || validId(order.template)) &&
       typeof order.name === 'string' && order.name.trim().length > 0 && order.name.length <= 32 &&
       Array.isArray(order.targets) && order.targets.length <= templateKinds.length) {
-    const targets: import('../shared/protocol.ts').TemplateTarget[] = []
-    for (const target of order.targets) {
-      if (!object(target)) return null
-      const kind = templateKinds.find(kind => kind === target.kind)
-      if (!kind || !validId(target.count) || target.count > 500 || targets.some(row => row.kind === kind)) return null
-      targets.push({ kind, count: target.count })
-    }
-    if (targets.reduce((sum, target) => sum + target.count, 0) > 500) return null
+    const targets = templateTargets(order.targets)
+    if (!targets) return null
     return { kind: order.kind, template: order.template, name: order.name.trim(), targets }
   }
-  if ((order.kind === 'template-remove' || order.kind === 'template-replenish') && validId(order.template)) {
+  if (order.kind === 'template-priority' && validId(order.template) && (order.direction === -1 || order.direction === 1)) {
+    return { kind: order.kind, template: order.template, direction: order.direction }
+  }
+  if (order.kind === 'template-remove' && validId(order.template)) {
     return { kind: order.kind, template: order.template }
+  }
+  if (order.kind === 'template-replenish' && validId(order.template)) {
+    if (order.expected === undefined) return { kind: order.kind, template: order.template }
+    const expected = templateTargets(order.expected, 2000)
+    return expected ? { kind: order.kind, template: order.template, expected } : null
   }
   if ((order.kind === 'template-assign' || order.kind === 'template-release') && validId(order.template) &&
       Array.isArray(order.members) && order.members.length <= 500 && order.members.every(validId)) {
@@ -123,6 +138,10 @@ function parseOrder(order: Record<string, unknown>): Order | null {
   if ((order.kind === 'resume-build' || order.kind === 'repair') && validId(order.target)) return { kind: order.kind, target: order.target }
   if (order.kind === 'train' && isUnitKind(order.unit) && (order.count === undefined || validId(order.count))) {
     return { kind: 'train', unit: order.unit, count: order.count }
+  }
+  if (order.kind === 'cancel-training-run' && typeof order.index === 'number' && typeof order.revision === 'number' &&
+      Number.isSafeInteger(order.index) && order.index >= 0 && Number.isSafeInteger(order.revision) && order.revision >= 0) {
+    return { kind: order.kind, index: order.index, revision: order.revision }
   }
   if (order.kind === 'cancel-train' && validId(order.count)) return { kind: order.kind, count: order.count }
   if (order.kind === 'cancel-build' || order.kind === 'demolish') return { kind: order.kind }
