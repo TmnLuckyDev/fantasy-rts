@@ -72,3 +72,13 @@ test('heroes regenerate slowly after time out of combat', () => {
   assert.ok(resumed.units.get(hero.id)!.hp > wounded)
   assert.ok(resumed.units.get(hero.id)!.hp < hero.maxHp)
 })
+
+test('cancelling a legacy queued hero returns the legacy price', () => {
+  const match = new Match()
+  match.units.get(1)!.queue.push({ kind: 'vanguard', left: 190 })
+  const restored = Match.restore(structuredClone(match.checkpoint()))
+  const before = restored.view('human').resources
+  assert.ok(restored.command('human', [1], { kind: 'cancel-train', count: 1 }))
+  assert.equal(restored.view('human').resources.gold, before.gold + 225)
+  assert.equal(restored.view('human').resources.wood, before.wood)
+})

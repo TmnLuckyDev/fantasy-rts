@@ -59,7 +59,7 @@ type Unit = Entity & {
   job: WorkerJob | null
   cargo: ResourceKind | null
   cargoAmount?: number
-  queue: Array<{ kind: UnitKind, left: number, count?: number }>
+  queue: Array<{ kind: UnitKind, left: number, count?: number, heroCost?: Partial<Resources> }>
   buildTicks: number
   buildDuration: number
   embarkedOn?: number
@@ -950,7 +950,8 @@ export class Match {
   private appendTraining(building: Unit, kind: UnitKind, count: number) {
     const tail = building.queue.at(-1)
     if (tail?.kind === kind) tail.count = (tail.count ?? 1) + count
-    else building.queue.push({ kind, left: trainingRule(kind, this.races[building.faction]).ticks, count })
+    else building.queue.push({ kind, left: trainingRule(kind, this.races[building.faction]).ticks, count,
+      ...(isHeroKind(kind) ? { heroCost: trainingCost(kind, this.races[building.faction]) } : {}) })
   }
 
   private cancelTraining(building: Unit, count: number) {
@@ -961,7 +962,8 @@ export class Match {
       const size = tail.count ?? 1
       const removed = Math.min(count, size)
       count -= removed
-      for (const resource of resourceKinds) stock[resource] += removed * (trainingCost(tail.kind, this.races[building.faction])[resource] ?? 0)
+      const cost = isHeroKind(tail.kind) ? tail.heroCost ?? { gold: 225 } : trainingCost(tail.kind, this.races[building.faction])
+      for (const resource of resourceKinds) stock[resource] += removed * (cost[resource] ?? 0)
       if (removed === size) building.queue.pop()
       else tail.count = size - removed
     }

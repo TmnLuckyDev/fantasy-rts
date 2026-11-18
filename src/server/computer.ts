@@ -1,4 +1,4 @@
-import { buildingTier } from '../shared/economy.ts'
+import { buildingTier, hallUpgrades } from '../shared/economy.ts'
 import { buildings, canAfford, researchCost, trainedAt, upgrades, validPlacement } from '../shared/economy.ts'
 import { TILE, ashfordMap, cellCenter, distance, isWalkable, isWater, resourceAt, tileAt } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
@@ -129,9 +129,11 @@ export class ComputerOpponent {
     if (workers.length < workerTarget && !hall.training) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
-    if (match.settings.progression && match.hallLevel(this.faction) < 3 && !hall.upgradeProgress) {
-      match.command(this.faction, [hall.id], { kind: 'structure-upgrade' })
-    }
+    const tier = match.hallLevel(this.faction)
+    const savingForTier = tier < 3 && hall.upgradeProgress === undefined &&
+      hallUpgrades[tier === 1 ? 2 : 3].required.every(kind =>
+        structures.some(site => site.kind === kind && site.construction === undefined))
+    if (savingForTier) match.command(this.faction, [hall.id], { kind: 'structure-upgrade' })
     if (builder) this.build(match, view, builder, structures, race)
     const scout = own.find(entity => entity.kind === 'scout')
     if (scout && !match.units.get(scout.id)?.order) match.command(this.faction, [scout.id], { kind: 'explore' })
@@ -158,7 +160,7 @@ export class ComputerOpponent {
       assigned.set(key(at), (assigned.get(key(at)) ?? 0) + 1)
     })
     const smith = structures.find(unit => unit.kind === 'smithy' && unit.construction === undefined && !unit.research)
-    if (smith) {
+    if (smith && !savingForTier) {
       for (const kind of ['weapons', 'armor'] as const) {
         if (!view.upgrades?.includes(kind) && canAfford(view.resources, researchCost(kind, 1)) &&
             match.command(this.faction, [smith.id], { kind: 'upgrade', upgrade: kind })) break
@@ -173,7 +175,7 @@ export class ComputerOpponent {
     if (army.length >= 8 && workers.length >= 4 && !hall.training && !army.some(unit => isHeroKind(unit.kind))) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: this.strategy === 'counter' ? 'pathfinder' : 'vanguard' })
     }
-    this.trainArmy(match, army, structures, view, race)
+    if (!savingForTier) this.trainArmy(match, army, structures, view, race)
     const enemies = view.entities.filter(unit => unit.faction !== this.faction)
     for (const unit of army) {
       const skill = isUnitKind(unit.kind) && raceSkills[race]?.[unit.kind]
