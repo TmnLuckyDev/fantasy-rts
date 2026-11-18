@@ -1207,6 +1207,11 @@ button('army-templates').onclick = () => {
   drawTemplates()
   templateSheet.showModal()
 }
+templateSheet.addEventListener('click', event => {
+  if (event.target !== templateSheet) return
+  const { left, right, top, bottom } = templateSheet.getBoundingClientRect()
+  if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) templateSheet.close()
+})
 button('close-templates').onclick = () => templateSheet.close()
 button('new-template').onclick = () => editTemplate()
 button('cancel-template').onclick = () => { templateEditor.hidden = true }

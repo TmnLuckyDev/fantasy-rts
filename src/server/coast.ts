@@ -59,6 +59,16 @@ export class Coast {
     return x >= 0 && x < this.map.width && y >= 0 && y < this.map.height ? this.regions[y * this.map.width + x] : 0
   }
 
+  canReachDeposit(region: number, at: Point) {
+    if (!region) return false
+    if (this.region(at) === region) return true
+    for (const [dx, dy] of neighbors) {
+      const next = { x: at.x + dx * TILE, y: at.y + dy * TILE }
+      if (this.region(next) === region) return true
+    }
+    return false
+  }
+
   landingNear(target: Point, ship: Point, reserved: readonly Point[]) {
     const shores = this.shoresBySea.get(this.region(ship)) ?? []
     const region = isWalkable(tileAt(this.map, Math.floor(target.x / TILE), Math.floor(target.y / TILE))) ? this.region(target) : 0

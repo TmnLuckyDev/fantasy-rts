@@ -61,9 +61,9 @@ Use **Match settings** before creating an online room or starting a new solo mat
 
 - Select a battlefield and set the number of gold mines, stone quarries and tree tiles per side.
 - **Random starting positions** is on by default. Each new match selects a clear start on the Human side and mirrors it for the Orcs at the other end of the map. Each resource type enabled in the rules has a reachable source within 4.5 tiles of both headquarters. Turn random starts off for fixed positions. Checkpoints retain the original terrain and starting positions.
-- Set stock and active workers per source separately for gold, stone and wood. Leave either field blank for unlimited. Excess workers wait for a slot, and spent sources remain on the terrain but can no longer be harvested.
+- Set stock and active workers per source separately for gold, stone and wood. Leave either field blank for unlimited. Gold mines and quarries default to five workers, and deposits have unlimited stock by default. Excess workers assigned to an unlimited-stock source try a nearby explored source of the same kind on connected land. Workers still queue at finite deposits so they can take the last remaining loads.
 - Set starting gold, wood and stone for both sides. Leave the time field blank for an unlimited match. For timed matches, the clock advances with the simulation and pauses with the match.
-- At the time limit, the score includes resources in reserve, the recruitment value of the surviving army, completed research and one point per second for each uncontested marked objective. Temporary summons do not earn score. Ties draw. The loss of a headquarters still decides the game if it occurs by the last tick.
+- At the time limit, the score includes resources in reserve (half credit for reserves beyond 2,000), the recruitment value of the surviving army, completed research and one point per second for each uncontested marked objective. Temporary summons do not earn score. Ties draw. The loss of a headquarters still decides the game if it occurs by the last tick.
 - The results show resources delivered, troops trained, buildings completed and razed, enemy units killed, losses, surviving army and score for both sides. The totals exclude starting units and resources. Old saves begin counting activity from the update.
 
 ## Heroes

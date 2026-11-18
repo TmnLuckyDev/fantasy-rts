@@ -62,8 +62,8 @@ test('each resource enforces active worker limits and delivers the exact last pa
     advance(match, GATHERING[resource].ticks)
     assert.equal([...match.units.values()].filter(unit => unit.cargo).length, 1)
     assert.equal(match.snapshot().resources.human[resource], settings.starting[resource])
-    advance(match, GATHERING[resource].ticks)
-    assert.equal(match.units.get(16)?.cargoAmount, 7)
+    for (let i = 0; i < 2 * GATHERING[resource].ticks && !match.view('human').depleted?.includes(index); i++) match.step()
+    assert.ok([...match.units.values()].some(unit => unit.cargo === resource && unit.cargoAmount === 7))
     const after = match.view('human')
     assert.deepEqual(after.depleted, [index])
     assert.equal(match.view('orc').depleted, undefined)
@@ -156,4 +156,66 @@ test('timed score credits research and uncontested objectives, excluding tempora
   for (let i = 0; i < TICK_HZ; i++) match.step()
   assert.equal(match.report().sides.human.territory, 1)
   assert.equal(serialize(match).report().sides.human.territory, 1)
+})
+
+test('default mines and quarries share five worker slots and divert excess workers to explored deposits', () => {
+  const settings = defaultMatchSettings('ashford-original')
+  assert.equal(settings.sources.wood.workers, null)
+  for (const source of Object.values(settings.sources)) assert.equal(source.stock, null)
+  for (const [resource, tile, coordinates] of [['gold', 'mine', [5, 18]], ['stone', 'quarry', [4, 15]]] as const) {
+    assert.equal(settings.sources[resource].workers, 5)
+    const match = Match.configured(settings)
+    const at = cellCenter(coordinates[0], coordinates[1])
+    const home = match.map.bases.human
+    const next = match.map.tiles.flatMap((value, i) => value === tile ? [cellCenter(i % match.map.width, Math.floor(i / match.map.width))] : [])
+      .filter(point => point.x < match.map.width * 16 && (point.x !== at.x || point.y !== at.y))
+      .sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0]
+    const workers = Array.from({ length: 6 }, (_, i) => match['spawn']('human', 'worker', cellCenter(coordinates[0] + 1, coordinates[1] + i % 3 - 1)))
+    const reveal = match['spawn']('human', 'scout', { x: next.x + 32, y: next.y })
+    match.step()
+    assert.ok(match.availableDeposit('human', next))
+    match['destroy'](reveal)
+    assert.ok(match.command('human', workers.slice(0, 5).map(worker => worker.id), { kind: 'gather', at }))
+    assert.ok(match.command('human', [workers[5].id], { kind: 'gather', at }))
+    const overflow = workers[5].job
+    assert.ok(overflow?.kind === 'gather')
+    assert.notDeepEqual(overflow.at, at)
+    advance(match, 5 * 60 * TICK_HZ)
+    assert.ok(match.report().sides.human.gathered[resource] > 2500)
+    assert.equal(match.view('human').depleted, undefined)
+    assert.equal(serialize(match).settings.sources[resource].workers, 5)
+    for (const worker of match.units.values()) {
+      if (worker.faction === 'human' && worker.kind === 'worker') match['destroy'](worker)
+    }
+    match.checkpoint().resources.human.gold = training.worker.gold
+    const before = match.report().sides.human.gathered[resource]
+    assert.ok(match.command('human', [1], { kind: 'train', unit: 'worker' }))
+    advance(match, training.worker.ticks + 1)
+    const newcomer = [...match.units.values()].filter(unit => unit.faction === 'human' && unit.kind === 'worker').at(-1)!
+    assert.ok(match.command('human', [newcomer.id], { kind: 'gather', at }))
+    advance(match, 30 * TICK_HZ)
+    assert.ok(match.report().sides.human.gathered[resource] > before)
+  }
+})
+
+test('a full unlimited mine with no explored alternative leaves extra workers idle', () => {
+  const settings = defaultMatchSettings('ashford-original')
+  settings.sources.gold.count = 1
+  const match = Match.configured(settings)
+  const at = cellCenter(5, 18)
+  const workers = Array.from({ length: 6 }, (_, i) => match['spawn']('human', 'worker', cellCenter(6, 15 + i)))
+  assert.ok(match.command('human', workers.map(worker => worker.id), { kind: 'gather', at }))
+  assert.equal(workers.filter(worker => worker.job?.kind === 'gather').length, 5)
+  assert.equal(workers[5].job, null)
+  assert.ok(!match.command('human', [workers[5].id], { kind: 'gather', at }))
+})
+
+test('large bank reserves contribute less than the same resources invested in a living army', () => {
+  const invested = Match.configured({ ...defaultMatchSettings('ashford-original'), starting: { gold: 3000, wood: 0, stone: 0 } })
+  const hoarded = Match.configured({ ...defaultMatchSettings('ashford-original'), starting: { gold: 3300, wood: 0, stone: 0 } })
+  invested['spawn']('human', 'farm', cellCenter(10, 15))
+  const barracks = invested['spawn']('human', 'barracks', cellCenter(10, 12))
+  assert.ok(invested.command('human', [barracks.id], { kind: 'train', unit: 'blade', count: 4 }))
+  advance(invested, training.blade.ticks * 4)
+  assert.equal(invested.report().sides.human.score, hoarded.report().sides.human.score)
 })

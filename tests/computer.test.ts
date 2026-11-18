@@ -38,3 +38,15 @@ for (const faction of factions) {
     assert.deepEqual(match.result, { winner: faction, reason: 'headquarters' })
   })
 }
+
+test('Normal invests in another worker after reaching the late economy while Easy keeps its opening workforce', () => {
+  for (const difficulty of ['easy', 'normal'] as const) {
+    const match = new Match()
+    const hall = match.units.get(1)!
+    match['spawn']('human', 'worker', { x: hall.x + 42, y: hall.y })
+    match['spawn']('human', 'farm', { x: hall.x + 80, y: hall.y + 60 })
+    match.tick = 200 * TICK_HZ
+    new ComputerOpponent('human', match.map, difficulty).think(match)
+    assert.equal(hall.queue.some(order => order.kind === 'worker'), difficulty === 'normal')
+  }
+})

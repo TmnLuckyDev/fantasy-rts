@@ -97,6 +97,13 @@ test('army templates can be created, replenished and selected in practice', asyn
   await page.getByRole('button', { name: 'Production', exact: true }).click()
   await page.getByRole('button', { name: 'Army groups', exact: true }).click()
   const sheet = page.getByRole('dialog', { name: 'Army groups' })
+  const currentSelection = await page.locator('#selection-name').textContent()
+  const field = (await page.locator('#battlefield canvas').boundingBox())!
+  await page.mouse.click(field.x + 6, field.y + 6)
+  await expect(sheet).not.toBeVisible()
+  await expect(page.locator('#selection-name')).toHaveText(currentSelection!)
+  await page.getByRole('button', { name: 'Production', exact: true }).click()
+  await page.getByRole('button', { name: 'Army groups', exact: true }).click()
   await sheet.getByRole('button', { name: 'New group' }).click()
   await sheet.getByLabel('Group name').fill('Vanguard')
   await sheet.getByLabel('Footman', { exact: true }).fill('1')
