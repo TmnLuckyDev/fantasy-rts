@@ -359,6 +359,9 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(vanguard).toBeDisabled()
     await expect(ranger).toBeDisabled()
     await page.getByRole('button', { name: 'Mute sound' }).tap()
+    await expect(peon).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Mute sound' })).toHaveAttribute('aria-pressed', 'true')
+    await page.getByRole('button', { name: 'Mute sound' }).tap()
     await expect(page.getByRole('button', { name: 'Enable sound' })).toHaveAttribute('aria-pressed', 'false')
 
     const idle = () => page.getByRole('button', { name: /^Idle worker/ })

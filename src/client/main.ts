@@ -317,6 +317,7 @@ function receive(message: ServerMessage) {
         if (requestedCancel) {
           requestedCancel = undefined
           drawProduction()
+          setText('queue-feedback', message.message)
         }
         actionFeedback(message.message)
       } else note(message.message, true)
@@ -1091,7 +1092,10 @@ function openProductionTab(tab: 'recruit' | 'upgrades' | 'queues') {
   if (tab === 'recruit') {
     globalProduction.message('')
     globalProduction.update(chosenRace, ownEntities, resources, population, hallLevel)
-  } else if (tab === 'queues') drawProduction()
+  } else if (tab === 'queues') {
+    setText('queue-feedback', '')
+    drawProduction()
+  }
   else {
     globalUpgradeOpen = true
     economyContext = 'global-upgrades'
@@ -1157,6 +1161,7 @@ function drawProduction() {
         item.textContent = label
         const cancel = actionButton('Cancel', () => {
           if (requestedCancel || training.revision === undefined) return
+          setText('queue-feedback', '')
           requestedCancel = { id: entity.id, revision: training.revision }
           drawProduction()
           issueOrder([entity.id], { kind: 'cancel-training-run', index, revision: training.revision })
@@ -1524,7 +1529,7 @@ match.addEventListener('pointerdown', event => {
   event.stopImmediatePropagation()
 }, { capture: true })
 match.addEventListener('click', event => {
-  if (!dismissPointer) return
+  if (!dismissPointer || event.detail === 0) return
   dismissPointer = false
   event.preventDefault()
   event.stopImmediatePropagation()

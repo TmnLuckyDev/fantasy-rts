@@ -254,13 +254,13 @@ export class BattleScene extends Phaser.Scene {
     this.spreadCrowds()
     const crowded = this.visuals.size >= largeBattleCount
     const counts = { shot: 0, hit: 0, fallen: 0 }
-    if (crowded || this.quality !== 'high') for (const item of this.effects) counts[item.effect.kind]++
+    if (crowded) for (const item of this.effects) counts[item.effect.kind]++
     const center = this.cameraCenter()
     const camera = this.cameras.main
     const effectRadius = Math.hypot(camera.width, camera.height) / camera.zoom / 2 + 160
     for (const effect of snapshot.effects) {
       const nearby = distance(effect.at, center) < effectRadius
-      if ((crowded || this.quality !== 'high') && (!nearby || counts[effect.kind] >= Math.ceil(effectBudget[effect.kind] * (this.quality === 'low' ? .35 : this.quality === 'medium' ? .65 : 1)))) continue
+      if (crowded && (!nearby || counts[effect.kind] >= effectBudget[effect.kind])) continue
       counts[effect.kind]++
       let sprite: Phaser.GameObjects.Image | undefined
       if (!crowded && this.quality === 'high' && effect.kind === 'fallen' && isUnitKind(effect.entityKind)) {
