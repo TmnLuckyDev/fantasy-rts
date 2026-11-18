@@ -46,8 +46,8 @@ export function defaultMatchSettings(map: MapId = 'ashford-expanded'): MatchSett
     map,
     randomStarts: true,
     sources: {
-      gold: { count: deposits, stock: null, workers: null },
-      stone: { count: deposits, stock: null, workers: null },
+      gold: { count: deposits, stock: null, workers: 5 },
+      stone: { count: deposits, stock: null, workers: 5 },
       wood: { count: treeLimit(map), stock: null, workers: null }
     },
     starting: { ...STARTING_RESOURCES },

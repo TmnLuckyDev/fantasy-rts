@@ -11,8 +11,8 @@ import type { Match } from './match.ts'
 const resourceAssignments = ['gold', 'wood', 'stone', 'gold'] as const
 const plans = {
   easy: { cadence: 2, workers: 4, first: 105, interval: 38, guard: 3, wave: 5 },
-  normal: { cadence: 1, workers: 4, first: 75, interval: 28, guard: 3, wave: 7 },
-  hard: { cadence: 1, workers: 5, first: 58, interval: 24, guard: 4, wave: 10 }
+  normal: { cadence: 1, workers: 5, first: 75, interval: 28, guard: 3, wave: 7 },
+  hard: { cadence: 1, workers: 6, first: 58, interval: 24, guard: 4, wave: 10 }
 } as const
 type Strategy = 'rush' | 'balanced' | 'defensive' | 'counter'
 
@@ -125,7 +125,7 @@ export class ComputerOpponent {
     if (!hall) return
     const workers = own.filter(entity => entity.kind === 'worker')
     const builder = workers.length >= 4 ? workers.at(-1) : undefined
-    const workerTarget = plan.workers + (race === 'undead' ? 1 : 0)
+    const workerTarget = plan.workers
     if (workers.length < workerTarget && !hall.training) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
@@ -141,23 +141,31 @@ export class ComputerOpponent {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'scout' })
     }
     const assigned = new Map<string, number>()
+    const jobKey = (at: Point) => at.x + ',' + at.y
+    for (const worker of workers) {
+      const job = match.units.get(worker.id)?.job
+      if (job?.kind === 'gather') {
+        const key = jobKey(job.at)
+        assigned.set(key, (assigned.get(key) ?? 0) + 1)
+      }
+    }
     workers.forEach((worker, index) => {
       const state = match.units.get(worker.id)
       const job = state?.job
       if (state?.assigned || (job && job.kind !== 'gather')) return
       const resource = resourceAssignments[index] ?? 'gold'
-      const key = (at: Point) => at.x + ',' + at.y
       const available = (at: Point, kind: ResourceKind) => match.availableDeposit(this.faction, at) &&
-        (assigned.get(key(at)) ?? 0) < (match.settings.sources[kind].workers ?? Infinity)
+        (assigned.get(jobKey(at)) ?? 0) - Number(job?.kind === 'gather' && jobKey(job.at) === jobKey(at)) < (match.settings.sources[kind].workers ?? Infinity)
       const preferred = this.gatherSites[resource].find(at => available(at, resource))
       const at = preferred ?? (job && available(job.at, job.resource) ? job.at :
         Object.entries(this.gatherSites).flatMap(([kind, sites]) =>
           sites.find(at => available(at, kind as ResourceKind)) ?? []).at(0))
       if (!at) return
-      if (!job || key(job.at) !== key(at)) {
-        if (!match.command(this.faction, [worker.id], { kind: 'gather', at })) return
-      }
-      assigned.set(key(at), (assigned.get(key(at)) ?? 0) + 1)
+      if (job && jobKey(job.at) === jobKey(at)) return
+      if (!match.command(this.faction, [worker.id], { kind: 'gather', at })) return
+      if (job) assigned.set(jobKey(job.at), (assigned.get(jobKey(job.at)) ?? 1) - 1)
+      const current = state?.job
+      if (current?.kind === 'gather') assigned.set(jobKey(current.at), (assigned.get(jobKey(current.at)) ?? 0) + 1)
     })
     const smith = structures.find(unit => unit.kind === 'smithy' && unit.construction === undefined && !unit.research)
     if (smith && !savingForTier) {
@@ -200,7 +208,10 @@ export class ComputerOpponent {
     const supportCount = army.filter(unit => unit.kind === 'support').length
     const support = (race === 'elf' || race === 'undead') && supportCount < (race === 'undead' && army.length >= 14 ? 2 : 1) &&
       available.find(site => trainedAt(site.kind, race).includes('support'))
-    const mortar = race === 'dwarf' && !army.some(unit => unit.kind === 'siege') && available.find(site => site.kind === 'elite')
+    const towers = view.entities.filter(unit => unit.faction !== this.faction && unit.kind === 'tower' && unit.construction === undefined).length
+    const mortar = (race === 'dwarf' || towers >= 2) &&
+      army.filter(unit => unit.kind === 'siege').length < (towers >= 2 ? 2 : 1) &&
+      available.find(site => trainedAt(site.kind, race).includes('siege'))
     const crypt = race === 'undead' && available.find(site => site.kind === 'barracks')
     const building = support || mortar || ranged || elite || crypt || available.find(site => site.kind === 'barracks') || available[0]
     if (!building) return
@@ -327,8 +338,12 @@ export class ComputerOpponent {
     const early = race === 'undead' ? 12 * TICK_HZ : 0
     if (match.tick + early < this.nextAssault || reserve.length < guard + 4) return
     const waveSize = plan.wave + (race === 'undead' ? 3 : 0)
-    if (race === 'dwarf') reserve.sort((a, b) => Number(b.kind === 'siege') - Number(a.kind === 'siege'))
-    const wave = reserve.slice(0, Math.min(waveSize, reserve.length - guard))
+    const towers = view.entities.filter(unit => unit.faction !== this.faction && unit.kind === 'tower' &&
+      unit.construction === undefined && distance(unit, this.enemyBase) < 12 * TILE).length
+    const siegeReady = reserve.some(unit => unit.kind === 'siege')
+    if (towers >= 2 && !siegeReady && reserve.length < guard + waveSize + towers * 2) return
+    if (race === 'dwarf' || towers >= 2) reserve.sort((a, b) => Number(b.kind === 'siege') - Number(a.kind === 'siege'))
+    const wave = reserve.slice(0, Math.min(waveSize + (towers >= 2 ? towers : 0), reserve.length - guard))
     const worker = (this.strategy === 'rush' || this.difficulty === 'hard') ?
       view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'worker') : undefined
     const hall = view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'headquarters')

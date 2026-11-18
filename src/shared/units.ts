@@ -10,6 +10,8 @@ export type UnitStats = {
   radius: number
 }
 
+export const siegeBalance = { structureRange: 211, structureBonus: 16, unitPenalty: 4 }
+
 const economyStats = {
   support: { health: 88, damage: 0, armor: 1, range: 0, speed: 75, cooldown: 0, radius: 9 },
   siege: { health: 165, damage: 28, armor: 3, range: 185, speed: 47, cooldown: 32, radius: 13 },
@@ -81,7 +83,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     heavy: { health: 248, armor: 8, speed: 76.5, cooldown: 21 },
     siege: { health: 205, damage: 38, armor: 5, range: 180, speed: 36, cooldown: 39 },
     headquarters: { health: 1725, armor: 6 }, tower: { health: 552, armor: 4, range: 205 },
-    wall: { health: 432, armor: 5 }, scout: { speed: 128 }, warship: { health: 665, speed: 73.8 },
+    wall: { health: 432, armor: 5 }, scout: { speed: 128 }, warship: { health: 665, speed: 73.8, cooldown: 29 },
     vanguard: { health: 385, speed: 69, damage: 32 }, pathfinder: { speed: 72, damage: 26, range: 149 }
   }),
   undead: roster({

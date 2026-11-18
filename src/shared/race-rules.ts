@@ -27,7 +27,7 @@ export const raceRules: Record<Race, RaceRules> = {
   undead: {
     description: 'Cheap skeletons and corpse magic. Weak defenses and slower gathering.',
     gathering: 0.9, production: { barracks: ['blade', 'polearm', 'ranged'], range: ['marksman'], elite: ['heavy', 'siege'], smithy: ['support'] },
-    training: { blade: { gold: 60, ticks: 76 }, ranged: { gold: 72, ticks: 96 }, warship: { gold: 207, wood: 167 } }
+    training: { blade: { gold: 64, ticks: 76 }, ranged: { gold: 76, ticks: 96 }, warship: { gold: 207, wood: 167 } }
   }
 }
 

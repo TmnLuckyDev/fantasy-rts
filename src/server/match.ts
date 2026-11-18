@@ -8,7 +8,7 @@ import type { ArmyOrder, BuildingKind, ControlSite, Corpse, TroopGroup, Effect, 
 import { heroAbilities, heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
-import { unitStats } from '../shared/units.ts'
+import { siegeBalance, unitStats } from '../shared/units.ts'
 import { BASE_POPULATION, FARM_POPULATION, GATHERING,
   buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, researchCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
@@ -59,7 +59,7 @@ type Unit = Entity & {
   job: WorkerJob | null
   cargo: ResourceKind | null
   cargoAmount?: number
-  queue: Array<{ kind: UnitKind, left: number, count?: number, heroCost?: Partial<Resources> }>
+  queue: Array<{ kind: UnitKind, left: number, count?: number, paidCost?: Partial<Resources>, heroCost?: Partial<Resources> }>
   buildTicks: number
   buildDuration: number
   embarkedOn?: number
@@ -323,11 +323,11 @@ export class Match {
       } else {
         // A single authoritative AoE hit. Respect current sight and never hit allies.
         const enemies = this.nearby[opposite(faction)]
-        for (const enemy of enemies.near(hero, ability.radius)) {
-          if (squaredDistance(hero, enemy) > ability.radius ** 2 ||
-              !this.canSee(faction, enemy)) continue
-          this.heroSkillHit(hero, enemy, ability.bonus)
-        }
+        const targets = [...enemies.near(hero, ability.radius)]
+          .filter(enemy => squaredDistance(hero, enemy) <= ability.radius ** 2 && this.canSee(faction, enemy))
+          .sort((a, b) => squaredDistance(hero, a) - squaredDistance(hero, b) || a.id - b.id)
+          .slice(0, 6)
+        for (const target of targets) this.heroSkillHit(hero, target, ability.bonus)
       }
       return true
     }
@@ -645,11 +645,55 @@ export class Match {
       const resource = resourceAt(this.map, order.at)
       if (!resource || !this.availableDeposit(faction, order.at)) return false
       const at = snapToCell(order.at)
-      for (const worker of workers) {
-        this.resetOrders(worker)
-        worker.job = { kind: 'gather', at, resource, workTicks: 0 }
+      const source = this.settings.sources[resource]
+      const limit = source.stock === null ? source.workers : null
+      const picked = new Set(workers)
+      const assignments = new Map<number, number>()
+      if (limit !== null) {
+        for (const unit of this.units.values()) {
+          if (picked.has(unit) || unit.embarkedOn || unit.job?.kind !== 'gather') continue
+          if (unit.faction !== faction && !this.canSee(faction, unit)) continue
+          const index = this.depositIndex(unit.job.at)
+          assignments.set(index, (assignments.get(index) ?? 0) + 1)
+        }
       }
-      return true
+      const preferred = this.depositIndex(at)
+      let accepted = false
+      for (const worker of workers) {
+        let target: Point = at
+        if (limit !== null && (assignments.get(preferred) ?? 0) >= limit) {
+          const coast = this.coast ??= new Coast(this.map)
+          const region = coast.region(worker)
+          let nearest = Infinity
+          let alternative: Point | undefined
+          for (const site of this.deposits) {
+            if (site.resource !== resource || (assignments.get(site.index) ?? 0) >= limit ||
+                !this.availableDeposit(faction, site.at)) continue
+            const gap = squaredDistance(at, site.at)
+            if (gap >= nearest || !coast.canReachDeposit(region, site.at)) continue
+            nearest = gap
+            alternative = site.at
+          }
+          if (!alternative) {
+            const current = worker.job
+            if (current?.kind === 'gather') {
+              const index = this.depositIndex(current.at)
+              if (index === preferred && (assignments.get(index) ?? 0) >= limit) this.resetOrders(worker)
+              else assignments.set(index, (assignments.get(index) ?? 0) + 1)
+            }
+            continue
+          }
+          target = alternative
+        }
+        const index = this.depositIndex(target)
+        assignments.set(index, (assignments.get(index) ?? 0) + 1)
+        if (worker.job?.kind !== 'gather' || this.depositIndex(worker.job.at) !== index) {
+          this.resetOrders(worker)
+          worker.job = { kind: 'gather', at: target, resource, workTicks: 0 }
+        }
+        accepted = true
+      }
+      return accepted
     }
     if (order.kind === 'repair') {
       const site = this.units.get(order.target)
@@ -949,9 +993,22 @@ export class Match {
 
   private appendTraining(building: Unit, kind: UnitKind, count: number) {
     const tail = building.queue.at(-1)
-    if (tail?.kind === kind) tail.count = (tail.count ?? 1) + count
-    else building.queue.push({ kind, left: trainingRule(kind, this.races[building.faction]).ticks, count,
-      ...(isHeroKind(kind) ? { heroCost: trainingCost(kind, this.races[building.faction]) } : {}) })
+    const paidCost = trainingCost(kind, this.races[building.faction])
+    const previousCost = tail?.kind === kind ? this.queuedTrainingCost(building.faction, tail) : undefined
+    if (previousCost && tail && resourceKinds.every(resource => (paidCost[resource] ?? 0) ===
+        (previousCost[resource] ?? 0))) tail.count = (tail.count ?? 1) + count
+    else building.queue.push({ kind, left: trainingRule(kind, this.races[building.faction]).ticks, count, paidCost })
+  }
+
+  private queuedTrainingCost(faction: Faction, entry: Unit['queue'][number]) {
+    if (entry.paidCost) return entry.paidCost
+    if (isHeroKind(entry.kind)) return entry.heroCost ?? { gold: 225 }
+    // Checkpoints from before skeleton prices changed did not record the amount paid.
+    if (this.races[faction] === 'undead') {
+      if (entry.kind === 'blade') return { gold: 60 }
+      if (entry.kind === 'ranged') return { gold: 72 }
+    }
+    return trainingCost(entry.kind, this.races[faction])
   }
 
   private cancelTraining(building: Unit, count: number) {
@@ -962,7 +1019,7 @@ export class Match {
       const size = tail.count ?? 1
       const removed = Math.min(count, size)
       count -= removed
-      const cost = isHeroKind(tail.kind) ? tail.heroCost ?? { gold: 225 } : trainingCost(tail.kind, this.races[building.faction])
+      const cost = this.queuedTrainingCost(building.faction, tail)
       for (const resource of resourceKinds) stock[resource] += removed * (cost[resource] ?? 0)
       if (removed === size) building.queue.pop()
       else tail.count = size - removed
@@ -1228,7 +1285,8 @@ export class Match {
         research += value(researchCost(kind, level))
       }
       const territory = this.territory[faction]
-      const score = value(bank) + military + research + territory
+      const reserves = value(bank)
+      const score = Math.min(reserves, 2000) + Math.floor(Math.max(0, reserves - 2000) / 2) + military + research + territory
       sides[faction] = { ...this.stats[faction], gathered: { ...this.stats[faction].gathered }, bank, army, military, research, territory, score }
     }
     return { elapsedSeconds: Math.floor(this.tick / TICK_HZ), sides }
@@ -1315,7 +1373,10 @@ export class Match {
         this.work(unit, obstacles, dropOffs[unit.faction])
         continue
       }
-      const automaticRange = stats.damage === 0 ? 0 : unit.order?.kind === 'advance' ? Math.max(180, this.attackRange(unit) + 30) : this.attackRange(unit)
+      const normalReach = this.attackRange(unit)
+      const siegeReach = unit.kind === 'siege' ? normalReach + Math.max(0, siegeBalance.structureRange - stats.range) : normalReach
+      const advancing = unit.order?.kind === 'advance'
+      const automaticRange = stats.damage === 0 ? 0 : advancing ? Math.max(180, siegeReach + 30) : siegeReach
       let target: Unit | undefined
       if (unit.order?.kind === 'attack') {
         target = this.units.get(unit.order.target)
@@ -1341,6 +1402,8 @@ export class Match {
           const radius = unitStats[this.races[other.faction]][other.kind].radius
           const gap = squaredDistance(unit, other)
           if (gap > (nearest + radius) ** 2) continue
+          if (unit.kind === 'siege' && isUnitKind(other.kind) &&
+              gap > ((advancing ? Math.max(180, normalReach + 30) : normalReach) + radius) ** 2) continue
           const separation = Math.sqrt(gap) - radius
           if ((separation < nearest || (separation === nearest && target && enemies.before(other, target))) && this.canSee(unit.faction, other)) {
             nearest = separation
@@ -1357,7 +1420,7 @@ export class Match {
 
       let destination = unit.assigned
       if (target && (defenderTarget || unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
-        const range = this.attackRange(unit) + unitStats[this.races[target.faction]][target.kind].radius - 4
+        const range = this.attackRange(unit, target) + unitStats[this.races[target.faction]][target.kind].radius - 4
         const separation = distance(unit, target) || 1
         if (unit.flank && (unit.order?.kind === 'attack' || unit.order?.kind === 'advance')) {
           const bearing = Math.atan2(unit.y - target.y, unit.x - target.x) + unit.flank
@@ -1417,9 +1480,12 @@ export class Match {
       if (!isUnitKind(unit.kind) || unit.order?.kind === 'move' || unit.order?.kind === 'halt' || unit.order?.kind === 'board' ||
           !unitStats[this.races[unit.faction]][unit.kind].damage ||
           (unit !== victim && unit.order?.kind === 'attack') || squaredDistance(unit, at) > radius ** 2) continue
-      const current = this.defendedAgainst(unit)
-      if (current && current !== attacker && squaredDistance(unit, current) <= squaredDistance(unit, attacker)) continue
-      unit.defense = { targetId: attacker.id, at, until: this.tick + defenseDuration }
+      const current = unit.defense?.targetId === attacker.id ? undefined : this.defendedAgainst(unit)
+      if (current && squaredDistance(unit, current) <= squaredDistance(unit, attacker)) continue
+      if (unit.defense?.targetId === attacker.id) {
+        unit.defense.at = at
+        unit.defense.until = this.tick + defenseDuration
+      } else unit.defense = { targetId: attacker.id, at, until: this.tick + defenseDuration }
     }
   }
 
@@ -1663,15 +1729,16 @@ export class Match {
     return base * (1 + this.upgrades[unit.faction].filter(kind => kind === 'speed').length * upgrades.speed.bonus / 100) * (1 + wind)
   }
 
-  private attackRange(unit: Unit): number {
-    const base = unitStats[this.races[unit.faction]][unit.kind].range
+  private attackRange(unit: Unit, target?: Unit): number {
+    const range = unitStats[this.races[unit.faction]][unit.kind].range
+    const base = unit.kind === 'siege' && target && !isUnitKind(target.kind) ? Math.max(siegeBalance.structureRange, range) : range
     const moonshot = this.races[unit.faction] === 'elf' && unit.kind === 'pathfinder' && this.activeSkill(unit) ? 24 : 0
     return base + moonshot + (benefitsFromRange(unit.kind) ? this.upgrades[unit.faction].filter(kind => kind === 'range').length * upgrades.range.bonus : 0)
   }
 
   private fight(unit: Unit, target: Unit): boolean {
     const stats = unitStats[this.races[unit.faction]][unit.kind]
-    if (squaredDistance(unit, target) > (this.attackRange(unit) + unitStats[this.races[target.faction]][target.kind].radius) ** 2) return false
+    if (squaredDistance(unit, target) > (this.attackRange(unit, target) + unitStats[this.races[target.faction]][target.kind].radius) ** 2) return false
     if (isHeroKind(unit.kind)) unit.recoverAt = this.tick + 8 * TICK_HZ
     if (unit.nextStrike > this.tick) return true
     this.reveal(unit)
@@ -1723,8 +1790,8 @@ export class Match {
     const race = this.races[attacker.faction]
     const allyArmor = this.races[target.faction] === 'dwarf' && isUnitKind(target.kind) && target.kind !== 'worker' && !isShipKind(target.kind) &&
       this.hasAura(target, 'vanguard', 128) ? 3 : 0
-    const siegeBonus = attacker.kind === 'siege' && !isUnitKind(target.kind) ? 10 +
-      (this.hasAura(attacker, 'pathfinder', 152) ? 12 : 0) : 0
+    const siegeBonus = attacker.kind !== 'siege' ? 0 : isUnitKind(target.kind) ? -siegeBalance.unitPenalty : siegeBalance.structureBonus +
+      (this.hasAura(attacker, 'pathfinder', 152) ? 12 : 0)
     const ghoulBonus = race === 'undead' && attacker.kind === 'polearm' && target.kind === 'worker' ? 5 : 0
     const activeBonus = this.activeSkill(attacker) ?
       race === 'elf' && attacker.kind === 'marksman' ? 3 :

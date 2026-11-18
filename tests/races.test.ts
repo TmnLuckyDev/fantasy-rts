@@ -177,3 +177,18 @@ test('expired summons release population and never leave a corpse', () => {
   assert.equal(match.view('human').population.used, 10)
   assert.ok(!match.view('human').corpses?.length)
 })
+
+test('Undead training refunds preserve the actual price of old and new orders across saves', () => {
+  const match = new Match(undefined, undefined, { human: 'undead', orc: 'human' })
+  const hall = match['spawn']('human', 'barracks', cellCenter(10, 13))
+  match['spawn']('human', 'farm', cellCenter(10, 14))
+  hall.queue.push({ kind: 'blade', left: 35 })
+  assert.ok(match.command('human', [hall.id], { kind: 'train', unit: 'blade' }))
+  assert.equal(hall.queue.length, 2)
+  const restored = Match.restore(structuredClone(match.checkpoint()))
+  const before = restored.view('human').resources.gold
+  assert.ok(restored.command('human', [hall.id], { kind: 'cancel-train', count: 1 }))
+  assert.equal(restored.view('human').resources.gold - before, 64)
+  assert.ok(restored.command('human', [hall.id], { kind: 'cancel-train', count: 1 }))
+  assert.equal(restored.view('human').resources.gold - before, 64 + 60)
+})

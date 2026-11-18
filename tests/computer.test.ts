@@ -19,7 +19,7 @@ for (const faction of factions) {
     const view = match.view(faction)
     const base = view.entities.filter(unit => unit.faction === faction)
     assert.equal(view.entities.some(unit => unit.faction === other), false)
-    assert.equal(base.filter(unit => unit.kind === 'worker').length, 4)
+    assert.equal(base.filter(unit => unit.kind === 'worker').length, 5)
     for (const kind of ['barracks', 'farm', 'range', 'tower']) {
       assert.ok(base.some(unit => unit.kind === kind && unit.construction === undefined), kind)
     }
