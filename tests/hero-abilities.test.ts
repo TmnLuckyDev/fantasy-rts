@@ -31,3 +31,16 @@ test('hero active skills are server-authoritative and respect cooldown', () => {
   const saved = Match.restore(structuredClone(match.checkpoint()))
   assert.equal(saved.units.get(hero.id)?.abilityReadyAt, hero.abilityReadyAt)
 })
+
+test('Arrow Storm hits the six nearest visible enemies in a packed formation', () => {
+  const match = new Match()
+  const at = match.units.get(1)!
+  const hero = match['spawn']('human', 'pathfinder', { x: at.x, y: at.y + 80 })
+  hero.nextStrike = Infinity
+  const targets = Array.from({ length: 8 }, (_, i) =>
+    match['spawn']('orc', 'worker', { x: hero.x + 30 + i * 8, y: hero.y }))
+  match.step()
+  assert.ok(match.command('human', [hero.id], { kind: 'hero-ability' }))
+  assert.deepEqual(targets.map(unit => unit.hp < unit.maxHp), [true, true, true, true, true, true, false, false])
+  assert.equal(match.command('human', [hero.id], { kind: 'hero-ability' }), false)
+})

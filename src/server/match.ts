@@ -326,7 +326,7 @@ export class Match {
         const targets = [...enemies.near(hero, ability.radius)]
           .filter(enemy => squaredDistance(hero, enemy) <= ability.radius ** 2 && this.canSee(faction, enemy))
           .sort((a, b) => squaredDistance(hero, a) - squaredDistance(hero, b) || a.id - b.id)
-          .slice(0, 6)
+          .slice(0, heroAbilities.pathfinder.maxTargets)
         for (const target of targets) this.heroSkillHit(hero, target, ability.bonus)
       }
       return true
