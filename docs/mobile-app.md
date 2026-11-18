@@ -31,7 +31,7 @@ Run `npm ci` from the repository root. The native projects use Capacitor 8.6.2 a
 3. Choose either an emulator or a phone with USB debugging enabled. Run the `app` configuration from Android Studio, or use `npm run android:run` to pick a target from the terminal.
 4. To produce a debug APK, run `npm run build:android`. Install it on a connected phone with `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`. Alternatively transfer the APK to the phone and let Android install the file, when prompted.
 
-The APK uses Android's normal debug signing. GitHub Actions publishes the debug APK under **Ash-and-Iron-Android-debug** in the mobile workflow's Artifacts section. The Gradle wrapper is versioned with the native project. Built APKs and copied web files are ignored.
+The APK uses Android's normal debug signing. GitHub Actions publishes the debug APK under **Ash-and-Iron-Android-debug** in the mobile workflow's Artifacts section. The Gradle wrapper is versioned with the native project. Built APKs and copied web files are ignored. Android requires the same signing certificate to install over an existing app. If you switch between CI and local debug builds, uninstalling the old build may be necessary and will remove its local solo save.
 
 ## iOS
 
@@ -62,7 +62,7 @@ After updating the shared source, run the usual web build, then the sync or buil
 
 Local checks use `npm run check`, `npm test`, `npm run build`, `npm run test:browser` and `MOBILE_BROWSER=webkit npm run test:browser`. The browser offline test loads the web files, blocks the game socket, and verifies that solo can pause, resume and reopen from a checkpoint. WebSocket integration tests use both packaged origin headers and exercise match start, snapshot delivery and seat recovery. They also check that unrelated and opaque origins remain rejected.
 
-The mobile workflow builds a debug APK and runs the native Android WebView solo smoke test. It builds the iOS simulator app and uses XCUITest to tap through solo, pause, resume and relaunch against an unreachable multiplayer endpoint. Physical-device testing still needs to cover Android and iPhone touch gestures, backgrounding and process restart, speaker and mute behavior, and complete cross-platform matches against a backend that accepts the app origins.
+The mobile workflow builds a debug APK and runs the native Android WebView solo smoke test in airplane mode. It builds the iOS simulator app and uses XCUITest to tap through solo, pause, resume and relaunch against an unreachable multiplayer endpoint. Physical-device testing still needs to cover Android and iPhone touch gestures, backgrounding and process restart, speaker and mute behavior, and complete cross-platform matches against a backend that accepts the app origins.
 
 For performance, run `BENCH_COUNTS=25,50,100,250,500 BENCH_CASES=move,combat,bridge node scripts/benchmark-armies.mjs` for reproducible simulation timings. To compare native and browser frame rate, memory and touch latency, repeat the same scenarios on the same hardware using Android Studio's profiler or Xcode Instruments and Web Inspector. The Node timings measure engine ticks and snapshot work rather than WebView rendering.
 

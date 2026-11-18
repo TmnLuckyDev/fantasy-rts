@@ -13,6 +13,9 @@ final class PackagedGameTests: XCTestCase {
         pause.tap()
         let resume = app.buttons["Resume"]
         XCTAssertTrue(resume.waitForExistence(timeout: 5))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(resume.waitForExistence(timeout: 5))
         resume.tap()
         XCTAssertTrue(pause.waitForExistence(timeout: 5))
 

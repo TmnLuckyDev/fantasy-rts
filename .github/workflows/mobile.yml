@@ -43,7 +43,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest
+          script: adb shell cmd connectivity airplane-mode enable && cd android && ./gradlew :app:connectedDebugAndroidTest
 
   ios:
     runs-on: macos-26
@@ -62,10 +62,11 @@ jobs:
       - name: Test offline solo with native iPhone taps
         run: |
           set -euo pipefail
-          device=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
-          test -n "$device" && test "$device" != null
-          xcrun simctl boot "$device"
-          xcrun simctl bootstatus "$device" -b
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          runtime=com.apple.CoreSimulator.SimRuntime.iOS-${sdk//./-}
+          device=$(xcrun simctl list devices available -j | jq -er --arg runtime "$runtime" '
+            [.devices[$runtime][]? | select(.name | startswith("iPhone"))][0].udid')
+          echo "Selected $device on $runtime"
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
             -destination "platform=iOS Simulator,id=$device" -derivedDataPath ios/DerivedData \
             -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
