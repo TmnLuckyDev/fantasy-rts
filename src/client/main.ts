@@ -334,8 +334,9 @@ function preferredBattleRenderer() {
   const info = gl.getExtension('WEBGL_debug_renderer_info')
   const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : ''
   gl.getExtension('WEBGL_lose_context')?.loseContext()
-  const knownMobileGpu = /apple|adreno|mali-|powervr|tegra/i.test(renderer)
-  return /swiftshader|llvmpipe|software/i.test(renderer) || (touch && !knownMobileGpu) ? Phaser.CANVAS : Phaser.AUTO
+  const touchDevice = touch || navigator.maxTouchPoints > 0
+  const knownMobileGpu = /apple [am]\d|adreno|mali-|powervr|tegra/i.test(renderer)
+  return /swiftshader|llvmpipe|software/i.test(renderer) || (touchDevice && !knownMobileGpu) ? Phaser.CANVAS : Phaser.AUTO
 }
 
 function showBattle() {
