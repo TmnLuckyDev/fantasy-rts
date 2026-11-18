@@ -235,6 +235,8 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     await human.getByRole('button', { name: 'Build', exact: true }).click()
     await human.getByRole('button', { name: 'Barracks · 90 wood · 45 stone', exact: true }).click()
     await expect(human.locator('#placement-tip')).toBeVisible()
+    await human.mouse.click(mine.x, mine.y)
+    await expect(human.locator('#placement-message')).toHaveText('Blocked by terrain.')
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
     await expect(human.locator('#placement-tip')).toBeHidden()
     await human.getByRole('button', { name: 'Production', exact: true }).click()
