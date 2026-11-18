@@ -578,7 +578,7 @@ function drawSelection(entities: Entity[], interactive = false) {
   economyAction.textContent = nextContext === 'build' ? 'Build' : smithy ? 'Upgrade' : (building && (building.kind === 'tower' || building.kind === 'wall')) ? 'Upgrade' : foundation ? 'Construction' : trainer ? 'Train' : 'Manage'
   if (!productionSheet.open) {
     if (changed || !nextContext) closeEconomyMenu()
-    if (!touch && !workers && (changed || interactive) && nextContext !== 'build') openEconomyMenu(true)
+    if (!touch && !workers && (changed || interactive) && nextContext !== 'build' && building?.kind !== 'headquarters') openEconomyMenu(true)
   }
   if (!menu.hidden) updateEconomyOptions()
   button('gather-open').hidden = !workers
@@ -586,6 +586,22 @@ function drawSelection(entities: Entity[], interactive = false) {
   if (changed || !workers) setGatherOpen(false)
   const label = element('selection-name')
   const detail = element('selection-detail')
+  const upgrade = button('hall-upgrade')
+  upgrade.hidden = !hasProgression || building?.kind !== 'headquarters' || Boolean(room?.result)
+  let hallHint = ''
+  if (!upgrade.hidden && building) {
+    const next = hallLevel < 2 ? 2 : 3
+    const rule = hallUpgrades[next]
+    const missing = rule.required.filter(kind => !ownEntities.some(unit => unit.kind === kind && unit.construction === undefined))
+    const shortage = resourceKinds.filter(kind => resources[kind] < rule.cost[kind])
+    upgrade.disabled = hallLevel >= 3 || building.upgradeProgress !== undefined || Boolean(missing.length || shortage.length)
+    hallHint = hallLevel >= 3 ? 'Max level' : building.upgradeProgress !== undefined ?
+      'Upgrading · ' + percentage(building.upgradeProgress) :
+      'Level ' + next + ' · ' + costLabel(rule.cost) +
+      (missing.length ? ' · Requires ' + missing.map(kind => entityNames[chosenRace][kind]).join(', ') : '') +
+      (shortage.length ? ' · Not enough ' + shortage.join(', ') : '')
+    upgrade.title = hallHint
+  }
   const meter = element<HTMLMeterElement>('selection-health')
   formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
@@ -647,6 +663,7 @@ function drawSelection(entities: Entity[], interactive = false) {
       ? gatherHint()
       : (touch ? 'Tap ground to move or an enemy to attack.' : 'Right-click ground to move or an enemy to attack.')
   }
+  if (hallHint) detail.textContent += ' · ' + hallHint
   if (building && !foundation && building.hp < building.maxHp) {
     const pulse = repairPulse(chosenRace, researched.includes('fortress'), building.kind)
     const cost = repairPrice(building, pulse)
@@ -791,18 +808,6 @@ function updateEconomyOptions() {
     }
     if (hint.textContent !== reason) hint.textContent = reason
   }
-  const hallUpgrade = menu.querySelector<HTMLButtonElement>('[data-hall-upgrade]')
-  if (hallUpgrade) {
-    const level = hallLevel >= 3 ? 3 : hallLevel === 2 ? 3 : 2
-    const rule = hallUpgrades[level]
-    const missing = rule.required.filter(kind => !ownEntities.some(unit => unit.kind === kind && unit.construction === undefined))
-    const label = hallLevel >= 3 ? 'Headquarters level 3 · Max level' :
-      selection[0]?.upgradeProgress !== undefined ? 'Upgrading headquarters · ' + percentage(selection[0].upgradeProgress) :
-      'Upgrade to level ' + level + ' · ' + resourceKinds.map(kind => rule.cost[kind] + ' ' + kind).join(' · ') +
-      (missing.length ? ' · Missing ' + missing.map(kind => entityNames[chosenRace][kind]).join(', ') : '')
-    if (hallUpgrade.textContent !== label) hallUpgrade.textContent = label
-    hallUpgrade.disabled = hallLevel >= 3 || selection[0]?.upgradeProgress !== undefined || Boolean(missing.length) || !canAfford(resources, rule.cost)
-  }
   const fortify = menu.querySelector<HTMLButtonElement>('[data-fortify]')
   if (fortify) {
     const site = selection[0]
@@ -940,11 +945,7 @@ function productionChoices(building: Entity) {
     const findHero = actionButton('Find hero', () => scene?.selectHero())
     findHero.dataset.findHero = ''
     choices.push(findHero)
-    if (hasProgression) {
-      const upgrade = actionButton('Upgrade headquarters', () => issueOrder([building.id], { kind: 'structure-upgrade' }))
-      upgrade.dataset.hallUpgrade = ''
-      choices.push(upgrade)
-    }
+
   }
   const cancelLast = actionButton('Cancel last', () =>
     issueOrder([building.id], { kind: 'cancel-train', count: 1 }))
@@ -1461,6 +1462,11 @@ function haltSelection() {
   scene.halt()
 }
 button('halt').onclick = haltSelection
+button('hall-upgrade').onclick = () => {
+  if (selection.length === 1 && selection[0].kind === 'headquarters') {
+    issueOrder([selection[0].id], { kind: 'structure-upgrade' })
+  }
+}
 button('deselect').onclick = () => scene?.deselect()
 button('home').onclick = () => scene?.home()
 button('camera-back').onclick = () => {
