@@ -1,4 +1,4 @@
-import { trainedAt, trainingRule } from '../shared/economy.ts'
+import { trainedAt, trainingRule, unitTier } from '../shared/economy.ts'
 import { hasHero } from '../shared/heroes.ts'
 import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
 import { entityNames, isHeroKind, unitKinds } from '../shared/protocol.ts'
@@ -44,7 +44,7 @@ export class GlobalProduction {
 
   message(text: string) { if (this.status.textContent !== text) this.status.textContent = text }
 
-  update(faction: Race, entities: readonly Entity[], resources: Resources, population: Population) {
+  update(faction: Race, entities: readonly Entity[], resources: Resources, population: Population, hallLevel: number) {
     const ready = new Map<UnitKind, number>()
     const queued = new Map<UnitKind, { count: number, end: number }>()
     let total = 0
@@ -79,13 +79,13 @@ export class GlobalProduction {
       if (ui.label.textContent !== name) ui.label.textContent = name
       this.paint(ui.portrait, faction, kind)
       const queue = queued.get(kind)
-      const detail = rule.gold + ' gold · ' + rule.population + ' pop · ' + buildings + ' ready' +
+      const detail = rule.gold + ' gold' + (rule.wood ? ' · ' + rule.wood + ' wood' : '') + ' · ' + rule.population + ' pop · ' + buildings + ' ready' +
         (queue ? ' · ' + queue.count + ' queued · est. ' + Math.ceil(queue.end / TICKS_PER_SECOND) + 's' : '')
       if (ui.detail.textContent !== detail) ui.detail.textContent = detail
       ui.buttons.forEach((button, index) => {
         const count = [1, 5, 10][index]
-        const error = isHeroKind(kind) && hero ? 'Hero already active or queued' :
-          resources.gold < count * rule.gold ? 'Need more gold' : available < count * rule.population ? 'Need more population' : ''
+        const error = unitTier(kind) > hallLevel ? 'Requires Town Hall 3' : isHeroKind(kind) && hero ? 'Hero already active or queued' :
+          resources.gold < count * rule.gold ? 'Need more gold' : resources.wood < count * (rule.wood ?? 0) ? 'Need more wood' : available < count * rule.population ? 'Need more population' : ''
         if (error && !isHeroKind(kind)) blocked.add(error)
         const label = 'Train ' + count + ' ' + name + (error ? ' · ' + error : '')
         button.disabled = Boolean(error)

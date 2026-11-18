@@ -74,6 +74,7 @@ const defaults = defaultMatchSettings()
 const fixedAshford = {
   ...defaults,
   randomStarts: false,
+  progression: false,
   sources: {
     ...defaults.sources,
     gold: { ...defaults.sources.gold, stock: 600 },
@@ -344,16 +345,10 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await page.getByRole('button', { name: 'Cancel last', exact: true }).tap()
     await expect(page.locator('#production-count')).toHaveText('0')
     await expect(page.locator('#gold')).toHaveText('300')
-    const vanguard = page.getByRole('button', { name: 'Gorak Ironhand · 225 gold', exact: true })
-    const ranger = page.getByRole('button', { name: 'Vesha Emberbow · 225 gold', exact: true })
-    await expect(vanguard).toBeEnabled()
-    await expect(ranger).toBeEnabled()
-    await ranger.tap()
-    await expect(page.locator('#selection-detail')).toContainText('Vesha Emberbow')
+    const vanguard = page.getByRole('button', { name: 'Gorak Ironhand · 460 gold · 80 wood', exact: true })
+    const ranger = page.getByRole('button', { name: 'Vesha Emberbow · 460 gold · 80 wood', exact: true })
     await expect(vanguard).toBeDisabled()
-    await page.getByRole('button', { name: 'Cancel last', exact: true }).tap()
-    await expect(vanguard).toBeEnabled()
-    await expect(page.locator('#gold')).toHaveText('300')
+    await expect(ranger).toBeDisabled()
     await page.getByRole('button', { name: 'Mute sound' }).tap()
     await expect(page.getByRole('button', { name: 'Enable sound' })).toHaveAttribute('aria-pressed', 'false')
 

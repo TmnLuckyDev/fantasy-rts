@@ -1,3 +1,4 @@
+import { buildingTier } from '../shared/economy.ts'
 import { buildings, canAfford, researchCost, trainedAt, upgrades, validPlacement } from '../shared/economy.ts'
 import { TILE, ashfordMap, cellCenter, distance, isWalkable, isWater, resourceAt, tileAt } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
@@ -128,6 +129,9 @@ export class ComputerOpponent {
     if (workers.length < workerTarget && !hall.training) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
+    if (match.settings.progression && match.hallLevel(this.faction) < 3 && !hall.upgradeProgress) {
+      match.command(this.faction, [hall.id], { kind: 'structure-upgrade' })
+    }
     if (builder) this.build(match, view, builder, structures, race)
     const scout = own.find(entity => entity.kind === 'scout')
     if (scout && !match.units.get(scout.id)?.order) match.command(this.faction, [scout.id], { kind: 'explore' })
@@ -225,6 +229,7 @@ export class ComputerOpponent {
     const needsFarm = population.limit - population.used - population.reserved <= (this.difficulty === 'hard' ? 3 : 1)
     const desired: Array<[BuildingKind, boolean]> = [
       ['barracks', !has('barracks')],
+      ['smithy', Boolean(match.settings.progression) && !has('smithy')],
       ['farm', needsFarm && population.limit < (match.settings.populationCap ?? 500)],
       ['port', Boolean(this.landing) && !has('port')],
       ['tower', (race === 'dwarf' || this.strategy === 'defensive') && !has('tower')],
@@ -236,7 +241,7 @@ export class ComputerOpponent {
       ['smithy', (race === 'undead' || this.difficulty !== 'easy') && match.tick >= (race === 'undead' ? 55 : 100) * TICK_HZ && !has('smithy')]
     ]
     for (const [kind, needed] of desired) {
-      if (!needed || !canAfford(view.resources, buildings[kind].cost)) continue
+      if (!needed || buildingTier(kind) > match.hallLevel(this.faction) || !canAfford(view.resources, buildings[kind].cost)) continue
       for (const at of this.constructionSites.get(kind) ?? []) {
         if (match.command(this.faction, [builder.id], { kind: 'build', building: kind, at })) return
       }

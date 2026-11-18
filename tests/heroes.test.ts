@@ -12,6 +12,8 @@ function advance(match: Match, ticks: number) {
 
 test('one hero per side can train through the hall, with independent choices and normal population', () => {
   const match = new Match()
+  match.checkpoint().resources.human.gold = 600
+  match.checkpoint().resources.orc.gold = 600
   const trainingOrder = { kind: 'train', unit: 'vanguard' } as const
   const rangerOrder = { kind: 'train', unit: 'pathfinder' } as const
   assert.equal(match.command('human', [1], { ...trainingOrder, count: 2 }), false)
@@ -19,7 +21,7 @@ test('one hero per side can train through the hall, with independent choices and
   assert.equal(match.command('human', [1], rangerOrder), false)
   assert.ok(match.command('orc', [8], rangerOrder))
   assert.equal(match.view('human').population.reserved, 1)
-  assert.equal(match.view('human').resources.gold, 75)
+  assert.equal(match.view('human').resources.gold, 600 - training.vanguard.gold)
   advance(match, training.vanguard.ticks)
   const human = [...match.units.values()].find(unit => unit.faction === 'human' && isHeroKind(unit.kind))!
   const orc = [...match.units.values()].find(unit => unit.faction === 'orc' && isHeroKind(unit.kind))!
@@ -33,6 +35,8 @@ test('one hero per side can train through the hall, with independent choices and
 
 test('nearby allied kills level a hero, preserve health and XP across saves and redeployment', () => {
   const match = new Match()
+  match.checkpoint().resources.human.gold = 600
+  match.checkpoint().resources.orc.gold = 600
   assert.ok(match.command('human', [1], { kind: 'train', unit: 'vanguard' }))
   advance(match, training.vanguard.ticks)
   const hero = [...match.units.values()].find(unit => unit.kind === 'vanguard')!
@@ -67,6 +71,7 @@ test('nearby allied kills level a hero, preserve health and XP across saves and 
   advance(saved, 40)
   assert.equal(saved.units.has(hero.id), false)
   saved.checkpoint().resources.human.gold = 600
+  saved.checkpoint().resources.human.wood = 180
   assert.ok(saved.command('human', [1], { kind: 'train', unit: 'vanguard' }))
   advance(saved, training.vanguard.ticks)
   const returned = [...saved.units.values()].find(unit => unit.kind === 'vanguard')!

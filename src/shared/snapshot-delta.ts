@@ -10,7 +10,7 @@ export type SnapshotDelta = {
   pose?: Pose[]
   upsert?: Entity[]
   removed?: number[]
-} & Partial<Pick<Snapshot, 'fog' | 'controlSites' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
+} & Partial<Pick<Snapshot, 'fog' | 'templates' | 'hallLevel' | 'controlSites' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
 
 function sameTraining(a: Entity['training'], b: Entity['training']) {
   return a === b || Boolean(a && b && a.kind === b.kind && a.progress === b.progress &&
@@ -46,6 +46,8 @@ export function makeDelta(previous: Snapshot, next: Snapshot): SnapshotDelta {
     }
   }
   if (old.size) delta.removed = [...old.keys()]
+  if (next.templates !== previous.templates && JSON.stringify(next.templates) !== JSON.stringify(previous.templates)) delta.templates = next.templates ?? []
+  if (next.hallLevel !== previous.hallLevel) delta.hallLevel = next.hallLevel
   if (next.fog !== previous.fog) delta.fog = next.fog
   if (next.controlSites?.length !== previous.controlSites?.length || next.controlSites?.some((site, i) => {
     const oldSite = previous.controlSites?.[i]
@@ -86,6 +88,8 @@ export function applyDelta(previous: Snapshot | undefined, delta: SnapshotDelta)
   }
   return {
     type: 'snapshot', tick: delta.tick, entities, effects: delta.effects ?? [],
+    ...(delta.templates || previous.templates ? { templates: delta.templates ?? previous.templates } : {}),
+    ...(delta.hallLevel || previous.hallLevel ? { hallLevel: delta.hallLevel ?? previous.hallLevel } : {}),
     fog: delta.fog ?? previous.fog, resources: delta.resources ?? previous.resources,
     population: delta.population ?? previous.population, upgrades: delta.upgrades ?? previous.upgrades,
     ...(delta.controlSites || previous.controlSites ? { controlSites: delta.controlSites ?? previous.controlSites } : {}),

@@ -1,3 +1,4 @@
+import { isHeroKind } from './protocol.ts'
 import { TILE, distance, isWater, snapToCell, tileAt } from './map.ts'
 import type { BattleMap } from './map.ts'
 import { heroKinds, isUnitKind, raceOf, resourceKinds } from './protocol.ts'
@@ -78,8 +79,8 @@ export const training: Record<UnitKind, { gold: number, wood?: number, ticks: nu
   ranged: { gold: 90, ticks: 120, population: 1 },
   marksman: { gold: 135, ticks: 145, population: 1 },
   heavy: { gold: 220, ticks: 180, population: 2 },
-  vanguard: { gold: 225, ticks: 190, population: 1 },
-  pathfinder: { gold: 225, ticks: 190, population: 1 }
+  vanguard: { gold: 460, wood: 80, ticks: 480, population: 1 },
+  pathfinder: { gold: 460, wood: 80, ticks: 480, population: 1 }
 }
 
 const production: Partial<Record<EntityKind, readonly UnitKind[]>> = {
@@ -142,3 +143,18 @@ export function validPlacement(map: BattleMap, kind: BuildingKind, position: Poi
   }
   return true
 }
+
+
+export const hallUpgrades = {
+  2: { required: ['barracks', 'smithy'], cost: { gold: 240, wood: 150, stone: 70 }, ticks: 480 },
+  3: { required: ['range', 'tower'], cost: { gold: 480, wood: 280, stone: 150 }, ticks: 880 }
+} as const
+
+export function buildingTier(kind: BuildingKind) {
+  return kind === 'elite' || kind === 'port' ? 3 : kind === 'range' || kind === 'tower' ? 2 : 1
+}
+
+export const unitTier = (kind: UnitKind) => isHeroKind(kind) ? 3 : 1
+export const researchTier = (level: number) => level >= 4 ? 3 : level >= 2 ? 2 : 1
+export const researchTicks = (kind: UpgradeKind, level: number) =>
+  Math.ceil(upgrades[kind].ticks * (1 + (level - 1) * .35))

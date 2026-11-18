@@ -169,11 +169,23 @@
           <button id="global-train-toggle" type="button" aria-controls="global-train-panel" aria-pressed="true">Recruit</button>
           <button id="global-upgrade-toggle" type="button" aria-controls="production-upgrades" aria-pressed="false">Upgrades</button>
           <button id="production-toggle" type="button" aria-controls="production-panel" aria-pressed="false">Queues</button>
+          <button id="army-templates" type="button" aria-haspopup="dialog">Army groups</button>
           <button id="close-production" type="button">Close</button>
         </div>
         <section id="global-train-panel" aria-label="Global production" hidden></section>
         <section id="production-upgrades" aria-label="Research upgrades" hidden></section>
         <section id="production-panel" class="production-panel" aria-label="Production queues" hidden></section>
+      </dialog>
+      <dialog id="template-sheet" aria-label="Army groups">
+        <div class="production-tabs"><button id="new-template" type="button">New group</button><button id="close-templates" type="button">Close</button></div>
+        <div id="template-list"></div>
+        <form id="template-editor" hidden>
+          <label>Group name <input name="template-name" required maxlength="32"></label>
+          <div id="template-targets"></div>
+          <button type="submit">Save group</button>
+          <button id="cancel-template" type="button">Cancel</button>
+        </form>
+        <p id="template-feedback" role="status"></p>
       </dialog>
       <dialog id="result">
         <p id="result-map" class="eyebrow"></p>

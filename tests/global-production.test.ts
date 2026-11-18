@@ -34,6 +34,7 @@ test('global production shares authoritative affordability, population and queue
   const lowCap = new Match()
   assert.match(lowCap.trainGlobally('human', 'worker', 2)!, /population/)
   assert.equal(lowCap.snapshot().resources.human.gold, 300)
+  lowCap.checkpoint().resources.human.gold = 600
   assert.equal(lowCap.trainGlobally('human', 'vanguard', 1), null)
   assert.match(lowCap.trainGlobally('human', 'pathfinder', 1)!, /one active or queued hero/)
   assert.equal(parseMessage('{"type":"global-train","unit":"blade","count":-1}'), null)

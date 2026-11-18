@@ -94,3 +94,11 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     vanguard: { armor: 5, damage: 35 }, pathfinder: { health: 230, range: 146, damage: 26 }
   })
 }
+
+// Heroes have more staying power without changing collision or population.
+for (const stats of Object.values(unitStats)) {
+  for (const kind of ['vanguard', 'pathfinder'] as const) {
+    stats[kind].health = Math.round(stats[kind].health * 1.12)
+    stats[kind].damage += 2
+  }
+}

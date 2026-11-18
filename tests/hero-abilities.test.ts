@@ -16,6 +16,8 @@ test('heroes have upgraded health, damage, and individual skills', () => {
 
 test('hero active skills are server-authoritative and respect cooldown', () => {
   const match = new Match()
+  match.checkpoint().resources.human.gold = 600
+  match.checkpoint().resources.orc.gold = 600
   assert.ok(match.command('human', [1], { kind: 'train', unit: 'vanguard' }))
   for (let i = 0; i < training.vanguard.ticks + 2; i++) match.step()
   const hero = [...match.units.values()].find(unit => unit.faction === 'human' && unit.kind === 'vanguard')!
