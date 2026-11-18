@@ -20,17 +20,30 @@ export class SoloClient {
   private worker: Worker | null = null
   private owner = ''
   private practicing = false
+  private manualPause = false
   private storageAvailable = false
 
   constructor(private receive: (message: ServerMessage) => void, private changed: () => void) {
-    document.addEventListener('visibilitychange', () => this.post({ type: 'pause', paused: document.hidden }))
+    document.addEventListener('visibilitychange', () => this.syncPause())
     window.addEventListener('pagehide', () => this.post({ type: 'pause', paused: true }))
-    window.addEventListener('pageshow', () => this.post({ type: 'pause', paused: document.hidden }))
+    window.addEventListener('pageshow', () => this.syncPause())
     window.addEventListener('storage', event => {
       if (event.key !== key) return
       if (this.active && this.storageAvailable && readSlot()?.owner !== this.owner) this.replaced()
       this.changed()
     })
+  }
+
+  get paused() { return this.manualPause }
+  togglePause() {
+    if (!this.active) return
+    this.manualPause = !this.manualPause
+    this.syncPause()
+    this.changed()
+  }
+
+  private syncPause() {
+    this.post({ type: 'pause', paused: this.manualPause || document.hidden })
   }
 
   get active() { return Boolean(this.worker) }
@@ -42,6 +55,7 @@ export class SoloClient {
 
   start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice = false) {
     if (this.worker) return
+    this.manualPause = false
     this.practicing = practice
     const save = resume && !practice ? readSlot()?.save ?? null : null
     this.worker = new Worker(new URL('./solo.worker.ts', import.meta.url), { type: 'module' })
@@ -82,6 +96,7 @@ export class SoloClient {
   private stop() {
     this.worker?.terminate()
     this.worker = null
+    this.manualPause = false
     this.practicing = false
     try { sessionStorage.removeItem(activeKey) } catch { /* Storage may be restricted. */ }
   }

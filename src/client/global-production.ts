@@ -1,7 +1,7 @@
 import { trainedAt, trainingRule, unitTier } from '../shared/economy.ts'
 import { hasHero } from '../shared/heroes.ts'
 import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
-import { entityNames, isHeroKind, unitKinds } from '../shared/protocol.ts'
+import { entityNames, buildingKinds, isHeroKind, unitKinds } from '../shared/protocol.ts'
 import type { Entity, Race, Population, Resources, UnitKind } from '../shared/protocol.ts'
 import { trainingTimeline } from '../shared/production.ts'
 
@@ -10,6 +10,8 @@ export class GlobalProduction {
     portrait: HTMLCanvasElement, buttons: HTMLButtonElement[] }>()
   private readonly status = document.createElement('p')
   private readonly total = document.createElement('strong')
+  private readonly locked = document.createElement('details')
+  private readonly requirements = document.createElement('p')
 
   constructor(panel: HTMLElement, order: (unit: UnitKind, count: number) => void,
     private paint: (canvas: HTMLCanvasElement, faction: Race, kind: UnitKind) => void) {
@@ -40,6 +42,10 @@ export class GlobalProduction {
       this.rows.set(kind, { row, label, detail, portrait, buttons })
       panel.append(row)
     }
+    const summary = document.createElement('summary')
+    summary.textContent = 'Locked recruits'
+    this.locked.append(summary, this.requirements)
+    panel.append(this.locked)
   }
 
   message(text: string) { if (this.status.textContent !== text) this.status.textContent = text }
@@ -70,10 +76,16 @@ export class GlobalProduction {
     const headline = total ? total + ' queued · est. ' + Math.ceil(end / TICKS_PER_SECOND) + 's total' : ready.size ? 'No troops queued' : 'Build a production building first'
     if (headline !== this.total.textContent) this.total.textContent = headline
     const blocked = new Set<string>()
+    const missingBuildings: string[] = []
     for (const [kind, ui] of this.rows) {
       const buildings = ready.get(kind) ?? 0
       ui.row.hidden = !buildings
-      if (!buildings) continue
+      if (!buildings) {
+        const producers = (['headquarters', ...buildingKinds] as const).filter(site => trainedAt(site, faction).includes(kind))
+        if (producers.length) missingBuildings.push(entityNames[faction][kind] + ' requires ' +
+          producers.map(site => entityNames[faction][site]).join(' or '))
+        continue
+      }
       const rule = trainingRule(kind, faction)
       const name = entityNames[faction][kind]
       if (ui.label.textContent !== name) ui.label.textContent = name
@@ -93,6 +105,9 @@ export class GlobalProduction {
         if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label)
       })
     }
+    const missing = missingBuildings.join(' · ')
+    if (this.requirements.textContent !== missing) this.requirements.textContent = missing
+    this.locked.hidden = !missing
     this.total.dataset.limits = [...blocked].join(' · ')
   }
 }

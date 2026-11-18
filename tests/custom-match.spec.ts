@@ -110,6 +110,8 @@ test('army templates can be created, replenished and selected in practice', asyn
   await sheet.getByRole('button', { name: 'Save group' }).click()
   await expect(sheet).toContainText('Vanguard · 0/1')
   await sheet.getByRole('button', { name: 'Replenish', exact: true }).click()
+  await expect(sheet).toContainText('Footman · 1 missing · 0 queued · +1 to queue')
+  await sheet.getByRole('button', { name: 'Confirm replenish', exact: true }).click()
   await expect(sheet).toContainText('Vanguard · 1/1', { timeout: 12000 })
   await sheet.getByRole('button', { name: 'Select group', exact: true }).click()
   await expect(page.locator('#selection-name')).toHaveText('Footman')

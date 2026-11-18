@@ -462,3 +462,56 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 #template-editor label { display: grid; gap: .2rem; }
 #template-editor input { min-width: 0; width: 100%; }
 .match-finished #army-templates { display: none; }
+
+#match-options-sheet {
+  width: min(32rem, calc(100vw - 1rem));
+  max-height: 80dvh;
+  overflow: auto;
+  background: #1b2629;
+  color: var(--pale);
+  border: 1px solid var(--edge);
+  border-radius: .65rem;
+}
+#match-options-sheet::backdrop { background: #0c110dbb; }
+.qol-options { display: grid; gap: .55rem; }
+.qol-options label { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.qol-options p { margin: .35rem 0; }
+#close-match-options { margin-left: auto; }
+#template-list section > small, .queue-building > small { display: block; color: var(--muted); }
+.queue-building { padding: .45rem; border-bottom: 1px solid var(--edge); }
+.queue-building > div { display: flex; align-items: center; justify-content: space-between; gap: .45rem; margin-top: .25rem; }
+#hero-quick:not([hidden]) { display: inline-flex; align-items: center; gap: .3rem; }
+#hero-quick canvas { image-rendering: pixelated; }
+#hero-skill:not([hidden])::before {
+  content: '';
+  display: inline-block;
+  vertical-align: middle;
+  width: .8rem;
+  height: .8rem;
+  margin-right: .3rem;
+  border-radius: 50%;
+  background: conic-gradient(#a3dc8f var(--cooldown, 0deg), #554c3a 0deg);
+}
+#hero-skill[data-ready="true"] { border-color: #a3dc8f; }
+#action-feedback:not([hidden]) {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: .5rem;
+  max-width: 90%;
+  transform: translateX(-50%);
+  border: 1px solid #a25b48;
+  border-radius: .4rem;
+  background: #232421ef;
+  color: #ffc6ac;
+  padding: .3rem .55rem;
+  font-size: .8rem;
+  pointer-events: none;
+}
+.economy-menu .requirement { color: #ffc6ac; }
+.economy-menu .requirement:empty { display: none; }
+@media (pointer: coarse) {
+  .head-actions button, .queue-building button, #template-sheet button, .qol-options button,
+  .qol-options select, .economy-menu button, .placement-tip button, #formation-options button, #map-button { min-height: 44px; }
+  .head-actions { flex-wrap: wrap; }
+}
