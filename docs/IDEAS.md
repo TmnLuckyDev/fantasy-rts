@@ -8,15 +8,15 @@ Forslagene er ikke implementeret, medmindre status udtrykkeligt er ændret. Nye 
 
 | ID | Idé | Status |
 | --- | --- | --- |
-| 001 | Army Group Templates | Idé, ikke implementeret |
-| 002 | Town Hall progression og dyrere enhedsopgraderinger | Idé, ikke implementeret |
-| 003 | Dyrere, vigtigere og større helte | Idé, ikke implementeret |
+| 001 | Army Group Templates | Implementeret |
+| 002 | Town Hall progression og dyrere enhedsopgraderinger | Implementeret |
+| 003 | Dyrere, vigtigere og større helte | Implementeret |
 
 ---
 
 ## 001: Army Group Templates
 
-**Status:** Idé, ikke implementeret  
+**Status:** Implementeret
 **Område:** Hærstyring og rekruttering
 
 ### Formål
@@ -51,7 +51,7 @@ En knap med navnet **Replenish Group** kan automatisk sætte gruppens manglende 
 
 Eksempel: Har Main Army 15/20 Archers, forsøger funktionen at sætte 5 Archers i kø.
 
-Dette er en senere udvidelse og ikke et krav til den første version af Army Group Templates.
+Replenish er implementeret. Eksisterende køer trækkes fra behovet, og gruppens placering i oprettelsesrækkefølgen afgør prioriteten.
 
 ### Afklares ved planlægning
 
@@ -59,13 +59,13 @@ Dette er en senere udvidelse og ikke et krav til den første version af Army Gro
 - Hvordan skal spilleren kunne flytte enheder mellem grupper eller fjerne dem fra en gruppe?
 - Hvordan skal systemet håndtere kapacitet, rekrutteringskøer og ressourcemangel?
 
-**Implementeringsbeslutning:** Ingen ændringer i spillet nu. Idéen er kun registreret til senere prioritering.
+**Implementeringsbeslutning:** Se implementeringen nedenfor.
 
 ---
 
 ## 002: Town Hall progression og dyrere enhedsopgraderinger
 
-**Status:** Idé, ikke implementeret  
+**Status:** Implementeret
 **Område:** Teknologitræ, bygninger, enheder og balance
 
 ### Formål
@@ -114,13 +114,13 @@ Designretning:
 - Hvad er de nuværende opgraderingsniveauer, effekter og omkostninger, og hvor meget skal priserne hæves?
 - Skal eksisterende bygninger beholde deres funktion, hvis Town Hall senere ødelægges?
 
-**Implementeringsbeslutning:** Ingen ændringer i spillet nu. Idéen er kun registreret til senere prioritering.
+**Implementeringsbeslutning:** Se implementeringen nedenfor.
 
 ---
 
 ## 003: Dyrere, vigtigere og større helte
 
-**Status:** Idé, ikke implementeret  
+**Status:** Implementeret
 **Område:** Helte, visuel fremtoning og spilbalance
 
 ### Formål
@@ -153,4 +153,12 @@ Helte skal være sjældnere og væsentligt sværere at få, men til gengæld spi
 - Hvilke konsekvenser skal det have at miste en helt?
 - Hvor hurtigt skal passiv HP-regenerering ske, og skal den pauses under kamp?
 
-**Implementeringsbeslutning:** Ingen ændringer i spillet nu. Idéen er kun registreret til senere prioritering.
+**Implementeringsbeslutning:** Se implementeringen nedenfor.
+
+## Regler i spillet
+
+- **Army groups** findes i Production. Nye rekrutter går til den første gruppe med plads til typen. En enhed kan kun tilhøre én gruppe. Spilleren kan også tildele eller fjerne enheder manuelt.
+- **Town Hall** starter på niveau 1 i nye kampe. Niveau 2 kræver færdige Barracks og Blacksmith eller racens tilsvarende bygninger. Det koster 240 guld, 150 træ og 70 sten og tager 24 sekunder. Niveau 3 kræver en færdig ranged-bygning og et tårn. Det koster 480 guld, 280 træ og 150 sten og tager 44 sekunder.
+- Forskningens pris tredobles fortsat pr. trin. Forskningstrin 2 og 3 kræver Town Hall 2. Trin 4 og 5 kræver Town Hall 3. Forskningstiden stiger med 35 procent af grundtiden pr. trin.
+- Helte kræver Town Hall 3, koster 460 guld og 80 træ og tager 24 sekunder. Hver side kan have én aktiv eller køsat helt. Helte har 12 procent mere grund-HP, 2 mere grundskade og genvinder cirka 1,5 procent af maksimalt HP pr. sekund efter 8 sekunder uden kamp.
+- Ældre gemte kampe bevarer deres adgang til bygninger og forskning. Øvelseskampen bruger åbne bygninger til de guidede opgaver.

@@ -237,7 +237,7 @@ export class BattleScene extends Phaser.Scene {
       } else {
         const sprite = this.add.image(entity.x, entity.y, entity.faction + entity.kind + '0')
           .setOrigin(0.5, 0.83)
-          .setScale(isHeroKind(entity.kind) ? 1.95 : isUnitKind(entity.kind) ? 1.21 : entity.kind === 'headquarters' ? 1.55 : 1.4)
+          .setScale(isHeroKind(entity.kind) ? 2.35 : isUnitKind(entity.kind) ? 1.21 : entity.kind === 'headquarters' ? 1.55 : 1.4)
         this.visuals.set(entity.id, { entity, sprite, lastHp: entity.hp, offsetX: 0, offsetY: 0 })
       }
     }
@@ -369,6 +369,12 @@ export class BattleScene extends Phaser.Scene {
       const sum = members.reduce((sum, unit) => ({ x: sum.x + unit.x, y: sum.y + unit.y }), { x: 0, y: 0 })
       this.focus({ x: sum.x / members.length, y: sum.y / members.length })
     }
+    this.selectionChanged(true)
+  }
+
+  selectTemplate(ids: readonly number[]) {
+    this.deselect()
+    this.selected = new Set(ids.filter(id => this.visuals.get(id)?.entity.faction === this.faction))
     this.selectionChanged(true)
   }
 
@@ -605,7 +611,7 @@ export class BattleScene extends Phaser.Scene {
       .filter(({ entity, sprite }) => {
         const dx = Math.abs(point.x - sprite.x)
         const dy = sprite.y - point.y
-        if (isUnitKind(entity.kind)) return dx < (isShipKind(entity.kind) ? 30 : touch ? 21 : 14) && dy > -12 && dy < 35
+        if (isUnitKind(entity.kind)) return dx < (isShipKind(entity.kind) ? 30 : isHeroKind(entity.kind) ? 26 : touch ? 21 : 14) && dy > -12 && dy < (isHeroKind(entity.kind) ? 64 : 35)
         const radius = unitStats[raceOf(entity)][entity.kind].radius
         const height = entity.kind === 'headquarters' ? 76 : entity.kind === 'tower' ? 61 : 35
         return dx < radius + 10 && dy > -14 && dy < height

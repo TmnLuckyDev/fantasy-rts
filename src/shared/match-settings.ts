@@ -18,6 +18,7 @@ type ResourceSettings = { count: number, stock: number | null, workers: number |
 export type MatchSettings = {
   map: MapId
   randomStarts?: boolean
+  progression?: boolean
   sources: Record<ResourceKind, ResourceSettings>
   starting: Resources
   minutes: number | null
@@ -66,11 +67,13 @@ const bounded = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max
 
 export function parseMatchSettings(value: unknown): MatchSettings | null {
-  const { map, randomStarts, sources, starting, minutes, populationCap } = record(value)
+  const { map, randomStarts, progression, sources, starting, minutes, populationCap } = record(value)
   const selected = mapIds.find(id => id === map)
   if (!selected || (randomStarts !== undefined && typeof randomStarts !== 'boolean')) return null
   if (minutes !== null && !bounded(minutes, 1, TIME_LIMIT_MAX_MINUTES)) return null
   const validated = defaultMatchSettings(selected)
+  if (progression !== undefined && typeof progression !== 'boolean') return null
+  if (progression !== undefined) validated.progression = progression
   validated.randomStarts = randomStarts ?? true
   validated.minutes = minutes
   if (populationCap !== undefined && !bounded(populationCap, 10, MAX_POPULATION_CAP)) return null

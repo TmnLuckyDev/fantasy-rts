@@ -444,3 +444,21 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   pointer-events: none;
 }
 #finish-practice { pointer-events: auto; margin-left: .35rem; }
+
+#template-sheet {
+  width: min(34rem, 96vw);
+  max-height: 82dvh;
+  overflow: auto;
+  color: var(--pale);
+  background: #1b2629;
+  border: 1px solid var(--edge);
+  border-radius: .65rem;
+}
+#template-sheet::backdrop { background: #0c110dbb; }
+#template-list section { padding-block: .65rem; border-bottom: 1px solid var(--edge); }
+#template-list p { margin: .35rem 0; }
+#template-list button { margin: .15rem; }
+#template-targets { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .4rem; margin-block: .5rem; }
+#template-editor label { display: grid; gap: .2rem; }
+#template-editor input { min-width: 0; width: 100%; }
+.match-finished #army-templates { display: none; }

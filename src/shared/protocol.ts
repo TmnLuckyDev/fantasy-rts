@@ -150,7 +150,14 @@ export type RoomState = {
 export const formations = ['line', 'compact', 'spread'] as const
 export type Formation = typeof formations[number]
 
+export const templateKinds = [...combatKinds, 'siege', 'support', 'scout', 'transport', 'warship', ...heroKinds] as const
+export type TemplateKind = typeof templateKinds[number]
+export type TemplateTarget = { kind: TemplateKind, count: number }
+export type ArmyTemplate = { id: number, name: string, targets: TemplateTarget[], members: Array<{ id: number, kind: TemplateKind }> }
 export type Order =
+  | { kind: 'template-save', template: number, name: string, targets: TemplateTarget[] }
+  | { kind: 'template-remove' | 'template-replenish', template: number }
+  | { kind: 'template-assign' | 'template-release', template: number, members: number[] }
   | { kind: 'rally', to: Point }
   | { kind: 'move' | 'advance', to: Point, formation?: Formation }
   | { kind: 'attack', target: number, formation?: Formation }
@@ -201,7 +208,7 @@ export type ControlSite = Point & { owner?: Faction }
 export type DepositInfo = { index: number, remaining: number | null }
 export type Corpse = Point & { id: number, expiresAt: number }
 
-export type Snapshot = { controlSites?: ControlSite[], corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
+export type Snapshot = { templates?: ArmyTemplate[], hallLevel?: number, controlSites?: ControlSite[], corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }

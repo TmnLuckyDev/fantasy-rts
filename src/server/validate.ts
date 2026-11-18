@@ -1,3 +1,4 @@
+import { templateKinds } from '../shared/protocol.ts'
 import { parseMatchSettings } from '../shared/match-settings.ts'
 import { MAX_SELECTION, formations, isArmyOrder, isBuildingKind, isFaction, isRace, isUnitKind, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
@@ -65,6 +66,26 @@ export function parseMessage(raw: string): ClientMessage | null {
 
 function parseOrder(order: Record<string, unknown>): Order | null {
   if (order.kind === 'halt' || order.kind === 'build-queue' || order.kind === 'explore' || order.kind === 'unit-ability' || order.kind === 'hero-ability' || order.kind === 'structure-upgrade' || order.kind === 'dismiss') return { kind: order.kind }
+  if (order.kind === 'template-save' && (order.template === 0 || validId(order.template)) &&
+      typeof order.name === 'string' && order.name.trim().length > 0 && order.name.length <= 32 &&
+      Array.isArray(order.targets) && order.targets.length <= templateKinds.length) {
+    const targets: import('../shared/protocol.ts').TemplateTarget[] = []
+    for (const target of order.targets) {
+      if (!object(target)) return null
+      const kind = templateKinds.find(kind => kind === target.kind)
+      if (!kind || !validId(target.count) || target.count > 500 || targets.some(row => row.kind === kind)) return null
+      targets.push({ kind, count: target.count })
+    }
+    if (targets.reduce((sum, target) => sum + target.count, 0) > 500) return null
+    return { kind: order.kind, template: order.template, name: order.name.trim(), targets }
+  }
+  if ((order.kind === 'template-remove' || order.kind === 'template-replenish') && validId(order.template)) {
+    return { kind: order.kind, template: order.template }
+  }
+  if ((order.kind === 'template-assign' || order.kind === 'template-release') && validId(order.template) &&
+      Array.isArray(order.members) && order.members.length <= 500 && order.members.every(validId)) {
+    return { kind: order.kind, template: order.template, members: order.members }
+  }
   const formation = formations.find(kind => kind === order.formation)
   if (order.formation !== undefined && !formation) return null
   const options = formation ? { formation } : {}

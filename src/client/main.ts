@@ -1,3 +1,6 @@
+import { buildingTier, hallUpgrades, researchTier, unitTier } from '../shared/economy.ts'
+import { templateKinds } from '../shared/protocol.ts'
+import type { ArmyTemplate } from '../shared/protocol.ts'
 import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
@@ -139,7 +142,14 @@ let ownEntities: Entity[] = []
 let researched: UpgradeKind[] = []
 let currentTick = 0
 let population: Population = { used: 0, reserved: 0, limit: 0 }
-const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind, hero?: boolean }>()
+const templateSheet = element<HTMLDialogElement>('template-sheet')
+const templateEditor = element<HTMLFormElement>('template-editor')
+let templateId = 0
+let templates: ArmyTemplate[] = []
+let templatesSignature = ''
+let hallLevel = 3
+let hasProgression = false
+const choiceRules = new WeakMap<HTMLButtonElement, { cost: Cost, population: number, upgrade?: UpgradeKind, hero?: boolean, tier?: number }>()
 let selection: Entity[] = []
 let placing = false
 let economyContext = ''
@@ -196,6 +206,7 @@ function selectRace(race: Race) {
 
 function showLobby() {
   result.close()
+  templateSheet.close()
   closeProduction()
   settingsMenu.close()
   button('match-settings').textContent = 'Match settings'
@@ -246,6 +257,7 @@ function receive(message: ServerMessage) {
           button('view-stats').hidden = false
           scene?.place(null)
           closeProduction()
+          templateSheet.close()
           closeEconomyMenu()
           if (result.open) updatePlayAgain()
         }
@@ -256,6 +268,10 @@ function receive(message: ServerMessage) {
       currentTick = message.tick
       const minutes = room?.settings?.minutes
       if (minutes) setText('match-clock', clockText(Math.max(0, minutes * 60 - Math.floor(message.tick / TICKS_PER_SECOND))))
+      templates = message.templates ?? []
+      hasProgression = message.hallLevel !== undefined
+      hallLevel = message.hallLevel ?? 3
+      if (templateSheet.open) drawTemplates()
       resources = message.resources
       population = message.population
       ownEntities = message.entities.filter(entity => entity.faction === faction)
@@ -264,7 +280,7 @@ function receive(message: ServerMessage) {
       if (solo.practice && practiceStep === 3 && practiceMoving &&
           ownEntities.some(entity => entity.kind !== 'worker' && isUnitKind(entity.kind) && entity.moving)) setPracticeStep(4)
       drawProduction()
-      if (!globalTrainPanel.hidden) globalProduction.update(chosenRace, ownEntities, resources, population)
+      if (!globalTrainPanel.hidden) globalProduction.update(chosenRace, ownEntities, resources, population, hallLevel)
       drawEconomy()
       const idle = message.entities.filter(entity => entity.faction === faction && entity.idle).length
       button('idle-worker').disabled = idle === 0
@@ -277,6 +293,7 @@ function receive(message: ServerMessage) {
       if (message.resetSession) showLobby()
       if (scene) {
         if (!globalTrainPanel.hidden) globalProduction.message(message.message)
+        if (templateSheet.open) setText('template-feedback', message.message)
         banner.textContent = message.message
         window.clearTimeout(orderMessageTimer)
         orderMessageTimer = window.setTimeout(() => updateBanner(client.connected), 2500)
@@ -660,6 +677,31 @@ function updateEconomyOptions() {
     if (rule.hero) choice.title = heroTaken ? 'You already have a hero or one is in training.' : 'One hero per faction.'
     if (rule.upgrade) choice.title = researched.filter(kind => kind === rule.upgrade).length >= upgradeLevelLimit(rule.upgrade) ? 'Max level' : ''
   }
+  for (const choice of menu.querySelectorAll<HTMLButtonElement>('button')) {
+    const rule = choiceRules.get(choice)
+    const required = rule?.upgrade ? researchTier(researched.filter(kind => kind === rule.upgrade).length + 1) : rule?.tier ?? 1
+    if (required > hallLevel) {
+      choice.disabled = true
+      choice.title = 'Requires headquarters level ' + required
+      const detail = choice.querySelector('small')
+      if (detail && !detail.textContent?.includes(choice.title)) detail.textContent += ' · ' + choice.title
+    } else if (rule && !rule.upgrade) {
+      const detail = choice.querySelector('small')
+      if (detail?.textContent?.includes(' · Requires headquarters')) detail.textContent = detail.textContent.split(' · Requires headquarters')[0]
+    }
+  }
+  const hallUpgrade = menu.querySelector<HTMLButtonElement>('[data-hall-upgrade]')
+  if (hallUpgrade) {
+    const level = hallLevel >= 3 ? 3 : hallLevel === 2 ? 3 : 2
+    const rule = hallUpgrades[level]
+    const missing = rule.required.filter(kind => !ownEntities.some(unit => unit.kind === kind && unit.construction === undefined))
+    const label = hallLevel >= 3 ? 'Headquarters level 3 · Max level' :
+      selection[0]?.upgradeProgress !== undefined ? 'Upgrading headquarters · ' + percentage(selection[0].upgradeProgress) :
+      'Upgrade to level ' + level + ' · ' + resourceKinds.map(kind => rule.cost[kind] + ' ' + kind).join(' · ') +
+      (missing.length ? ' · Missing ' + missing.map(kind => entityNames[chosenRace][kind]).join(', ') : '')
+    if (hallUpgrade.textContent !== label) hallUpgrade.textContent = label
+    hallUpgrade.disabled = hallLevel >= 3 || selection[0]?.upgradeProgress !== undefined || Boolean(missing.length) || !canAfford(resources, rule.cost)
+  }
   const fortify = menu.querySelector<HTMLButtonElement>('[data-fortify]')
   if (fortify) {
     const site = selection[0]
@@ -756,10 +798,14 @@ buildQueueAction.hidden = true
 button('gather-open').after(buildQueueAction)
 
 function buildChoices() {
-  return buildingKinds.map(kind => economyChoice(kind, buildings[kind].cost, 0, () => {
-    scene?.place(kind)
-    closeEconomyMenu()
-  }))
+  return buildingKinds.map(kind => {
+    const choice = economyChoice(kind, buildings[kind].cost, 0, () => {
+      scene?.place(kind)
+      closeEconomyMenu()
+    })
+    choiceRules.get(choice)!.tier = buildingTier(kind)
+    return choice
+  })
 }
 
 function actionButton(label: string, run: () => void) {
@@ -776,6 +822,7 @@ function productionChoices(building: Entity) {
       issueOrder([building.id], { kind: 'train', unit: kind }))
     if (isHeroKind(kind)) {
       choiceRules.get(choice)!.hero = true
+      choiceRules.get(choice)!.tier = unitTier(kind)
       const price = choice.querySelector('small')!
       price.textContent += ' · ' + heroRoles[kind]
     }
@@ -785,6 +832,11 @@ function productionChoices(building: Entity) {
     const findHero = actionButton('Find hero', () => scene?.selectHero())
     findHero.dataset.findHero = ''
     choices.push(findHero)
+    if (hasProgression) {
+      const upgrade = actionButton('Upgrade headquarters', () => issueOrder([building.id], { kind: 'structure-upgrade' }))
+      upgrade.dataset.hallUpgrade = ''
+      choices.push(upgrade)
+    }
   }
   const cancelLast = actionButton('Cancel last', () =>
     issueOrder([building.id], { kind: 'cancel-train', count: 1 }))
@@ -936,7 +988,7 @@ function openProductionTab(tab: 'recruit' | 'upgrades' | 'queues') {
   }
   if (tab === 'recruit') {
     globalProduction.message('')
-    globalProduction.update(chosenRace, ownEntities, resources, population)
+    globalProduction.update(chosenRace, ownEntities, resources, population, hallLevel)
   } else if (tab === 'queues') drawProduction()
   else {
     globalUpgradeOpen = true
@@ -1066,6 +1118,99 @@ for (const item of factionButtons) {
     else selectRace(choice)
   }
 }
+function templateOrder(order: Order) {
+  const hall = ownEntities.find(entity => entity.kind === 'headquarters')
+  if (hall) {
+    setText('template-feedback', '')
+    issueOrder([hall.id], order)
+  }
+}
+
+function drawTemplates() {
+  const signature = JSON.stringify([templates, chosenRace])
+  if (signature === templatesSignature) return
+  templatesSignature = signature
+  const list = element('template-list')
+  list.replaceChildren()
+  if (!templates.length) list.textContent = 'Create a group to automatically assign matching recruits.'
+  for (const group of templates) {
+    const section = document.createElement('section')
+    const title = document.createElement('strong')
+    title.textContent = group.name + ' · ' + group.members.length + '/' + group.targets.reduce((total, row) => total + row.count, 0)
+    const breakdown = document.createElement('p')
+    breakdown.textContent = group.targets.map(row =>
+      entityNames[chosenRace][row.kind] + ' ' + group.members.filter(unit => unit.kind === row.kind).length + '/' + row.count).join(' · ')
+    const select = actionButton('Select group', () => {
+      templateSheet.close()
+      scene?.selectTemplate(group.members.map(unit => unit.id))
+    })
+    select.disabled = !group.members.length
+    const members = () => selection.filter(unit => unit.kind !== 'worker').slice(0, 500).map(unit => unit.id)
+    section.append(title, breakdown, select,
+      actionButton('Edit', () => editTemplate(group)),
+      actionButton('Assign selection', () => templateOrder({ kind: 'template-assign', template: group.id, members: members() })),
+      actionButton('Remove selection', () => templateOrder({ kind: 'template-release', template: group.id, members: members() })),
+      actionButton('Replenish', () => templateOrder({ kind: 'template-replenish', template: group.id })),
+      actionButton('Delete group', () => templateOrder({ kind: 'template-remove', template: group.id })))
+    list.append(section)
+  }
+}
+
+function editTemplate(group?: ArmyTemplate) {
+  templateId = group?.id ?? 0
+  templateEditor.hidden = false
+  const name = templateEditor.elements.namedItem('template-name') as HTMLInputElement
+  name.value = group?.name ?? ''
+  const targets = element('template-targets')
+  targets.replaceChildren()
+  for (const kind of templateKinds) {
+    if (!buildingKinds.some(building => trainedAt(building, chosenRace).includes(kind)) &&
+        !trainedAt('headquarters', chosenRace).includes(kind)) continue
+    const label = document.createElement('label')
+    label.textContent = entityNames[chosenRace][kind]
+    const input = document.createElement('input')
+    input.name = kind
+    input.type = 'number'
+    input.inputMode = 'numeric'
+    input.min = '0'
+    input.max = '500'
+    input.value = String(group?.targets.find(row => row.kind === kind)?.count ?? 0)
+    label.append(input)
+    targets.append(label)
+  }
+  name.focus()
+}
+
+templateEditor.onsubmit = event => {
+  event.preventDefault()
+  const fields = new FormData(templateEditor)
+  const name = String(fields.get('template-name') ?? '').trim()
+  const targets = templateKinds.flatMap(kind => {
+    const count = Number(fields.get(kind))
+    return count > 0 ? [{ kind, count }] : []
+  })
+  if (!name || !targets.length || targets.reduce((total, row) => total + row.count, 0) > 500) {
+    setText('template-feedback', 'Choose a name and 1 to 500 units total.')
+    return
+  }
+  templateOrder({ kind: 'template-save', template: templateId, name, targets })
+  templateEditor.hidden = true
+}
+
+button('army-templates').onclick = () => {
+  if (room?.result) return
+  closeProduction()
+  scene?.cancelTargeting()
+  closeEconomyMenu()
+  templateEditor.hidden = true
+  setText('template-feedback', '')
+  drawTemplates()
+  templateSheet.showModal()
+}
+button('close-templates').onclick = () => templateSheet.close()
+button('new-template').onclick = () => editTemplate()
+button('cancel-template').onclick = () => { templateEditor.hidden = true }
+
 button('practice').onclick = () => {
   if (!client.hasSeat) solo.start('human', false, 'easy', undefined, 'human', 'orc', true)
 }
@@ -1189,7 +1334,7 @@ mapButton.addEventListener('click', event => {
 })
 result.oncancel = event => event.preventDefault()
 window.addEventListener('keydown', event => {
-  if (!scene || result.open || productionSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
+  if (!scene || result.open || productionSheet.open || templateSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
   switch (event.key.toLowerCase()) {
     case 'escape': scene.deselect(); break
     case 'i': scene.selectIdleWorker(); break
