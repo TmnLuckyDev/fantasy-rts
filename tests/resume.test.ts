@@ -17,27 +17,67 @@ function peer() {
   return { messages, socket }
 }
 
-test('an active online game pauses and remains resumable long after a disconnect', () => {
+function activeRoom() {
   const rooms = new Rooms()
   const host = peer()
   const guest = peer()
   const now = Date.now()
   rooms.handle(host.socket, { type: 'create', faction: 'human' }, now)
-  const session = host.messages.find(message => message.type === 'session')!
-  rooms.handle(guest.socket, { type: 'join', faction: 'orc', code: session.code }, now)
+  const { code } = host.messages.find(message => message.type === 'session')!
+  rooms.handle(guest.socket, { type: 'join', faction: 'orc', code }, now)
   const invite = guest.messages.find(message => message.type === 'session')!
   rooms.handle(host.socket, { type: 'ready', ready: true }, now)
   rooms.handle(guest.socket, { type: 'ready', ready: true }, now)
+  return { rooms, host, guest, now, invite }
+}
+
+test('a disconnected player sees a 45-second grace period and can resume before it ends', () => {
+  const { rooms, host, guest, now, invite } = activeRoom()
   rooms.disconnect(guest.socket, false, now)
-  assert.equal(host.messages.filter(message => message.type === 'room').at(-1)?.room.paused, true)
-  for (let i = 0; i < 50; i++) rooms.step(now + 86_400_000 + i * 50)
+  assert.equal(host.messages.filter(message => message.type === 'room').at(-1)?.room.reconnectSeconds, 45)
+  rooms.step(now + 30_000)
+  assert.equal(host.messages.filter(message => message.type === 'room').at(-1)?.room.reconnectSeconds, 15)
   const returned = peer()
-  rooms.handle(returned.socket, { type: 'resume', code: invite.code, token: invite.token }, now + 86_500_000)
+  rooms.handle(returned.socket, { type: 'resume', code: invite.code, token: invite.token }, now + 44_999)
   assert.equal(returned.messages.find(message => message.type === 'snapshot')?.tick, 0)
   assert.equal(returned.messages.find(message => message.type === 'room')?.room.paused, false)
-  rooms.step(now + 86_500_050)
-  rooms.step(now + 86_500_100)
+  rooms.step(now + 45_050)
+  rooms.step(now + 45_100)
   assert.equal(returned.messages.filter(message => message.type === 'snapshot').at(-1)?.tick, 2)
+})
+
+test('a reconnect timeout awards the connected player and clears an abandoned match', () => {
+  const active = activeRoom()
+  active.rooms.disconnect(active.guest.socket, false, active.now)
+  active.rooms.step(active.now + 45_000)
+  assert.deepEqual(active.rooms.checkpoint()[0].match.result, { winner: 'human', reason: 'disconnect' })
+  const abandoned = activeRoom()
+  abandoned.rooms.disconnect(abandoned.guest.socket, false, abandoned.now)
+  abandoned.rooms.disconnect(abandoned.host.socket, false, abandoned.now + 1_000)
+  abandoned.rooms.step(abandoned.now + 45_000)
+  assert.deepEqual(abandoned.rooms.checkpoint(), [])
+})
+
+test('both players must vote to rematch with the same settings and fresh commands', () => {
+  const previous = activeRoom()
+  const { host, guest, now } = previous
+  const [saved] = previous.rooms.checkpoint()
+  saved.match.result = { winner: 'human', reason: 'headquarters' }
+  saved.finishedAt = now
+  const rooms = new Rooms()
+  rooms.restore([saved], now)
+  for (const [index, player] of [host, guest].entries()) {
+    rooms.handle(player.socket, { type: 'resume', code: saved.code, token: saved.seats[index].token }, now)
+  }
+  rooms.handle(host.socket, { type: 'rematch' }, now)
+  assert.deepEqual(host.messages.filter(message => message.type === 'room').at(-1)?.room.rematchReady, ['human'])
+  assert.ok(rooms.checkpoint()[0].match.result)
+  rooms.handle(guest.socket, { type: 'rematch' }, now)
+  const restarted = rooms.checkpoint()[0]
+  assert.equal(restarted.match.result, null)
+  assert.equal(restarted.match.tick, 0)
+  assert.deepEqual(restarted.match.settings, saved.match.settings)
+  assert.deepEqual(restarted.match.races, saved.match.races)
 })
 
 test('a serialized solo match restores worker tasks, stockpiles and the computer plan', () => {

@@ -30,6 +30,8 @@ type Room = {
   settings: MatchSettings
   match: Match | null
   computer: ComputerOpponent | null
+  reconnectSeconds?: number
+  rematchReady?: Set<Faction>
   updatedAt: number
   finishedAt: number
 }
@@ -81,7 +83,8 @@ export class Rooms {
     if (message.type === 'resume') {
       if (session) return
       const room = this.rooms.get(message.code)
-      const seat = room?.seats.find(candidate => candidate.token === message.token)
+      if (room) this.expireDisconnected(room, now)
+      const seat = room && this.rooms.has(room.code) ? room.seats.find(candidate => candidate.token === message.token) : undefined
       if (!room || !seat) {
         send(peer, { type: 'error', message: 'This room is no longer available.', resetSession: true })
         return
@@ -91,7 +94,7 @@ export class Rooms {
         this.sessions.delete(previous)
         previous.close(4000, 'Session replaced')
       }
-      this.attach(peer, room, seat)
+      this.attach(peer, room, seat, now)
       return
     }
     if (message.type === 'create' || message.type === 'solo' || message.type === 'join') {
@@ -118,6 +121,23 @@ export class Rooms {
     const { room, seat } = session
     if (message.type === 'leave') {
       this.disconnect(peer, true, now)
+      return
+    }
+    if (message.type === 'rematch') {
+      if (!room.match?.result || room.computer || room.seats.length !== 2 || !room.seats.every(member => member.peer)) return
+      const votes = room.rematchReady ??= new Set()
+      votes.add(seat.faction)
+      if (votes.size === 2) {
+        room.match = Match.start(room.settings, room.match.races)
+        room.finishedAt = 0
+        room.rematchReady = undefined
+        for (const member of room.seats) {
+          this.revealed.delete(member.peer!)
+          this.snapshots.delete(member.peer!)
+        }
+        this.broadcastRoom(room, now)
+        this.broadcastSnapshot(room)
+      } else this.broadcastRoom(room, now)
       return
     }
     if (message.type === 'command' || message.type === 'group-command' || message.type === 'global-train') {
@@ -190,12 +210,12 @@ export class Rooms {
     this.attach(peer, room, seat)
   }
 
-  private attach(peer: WebSocket, room: Room, seat: Seat) {
+  private attach(peer: WebSocket, room: Room, seat: Seat, now = Date.now()) {
     seat.peer = peer
     seat.disconnectedAt = 0
     this.sessions.set(peer, { room, seat })
     send(peer, { type: 'session', code: room.code, token: seat.token, faction: seat.faction })
-    this.broadcastRoom(room)
+    this.broadcastRoom(room, now)
     this.snapshots.delete(peer)
     this.revealed.delete(peer)
     if (room.match) this.sendSnapshot(peer, room.match.view(seat.faction), Boolean(room.match.result))
@@ -209,6 +229,7 @@ export class Rooms {
     const { room, seat } = session
     seat.peer = null
     seat.disconnectedAt = now
+    room.rematchReady = undefined
     if (explicit && room.computer) {
       this.close(room)
       return
@@ -221,7 +242,7 @@ export class Rooms {
       room.match.result = { winner: opposite(seat.faction), reason: 'disconnect' }
       room.finishedAt = now
     }
-    this.broadcastRoom(room)
+    this.broadcastRoom(room, now)
   }
 
   step(now = Date.now()) {
@@ -239,7 +260,12 @@ export class Rooms {
         else if (room.seats.some(seat => seat.peer && !this.revealed.has(seat.peer))) this.broadcastSnapshot(room)
         continue
       }
-      if (this.paused(room)) continue
+      if (this.paused(room)) {
+        if (!this.expireDisconnected(room, now) && this.secondsToReconnect(room, now) !== room.reconnectSeconds) {
+          this.broadcastRoom(room, now)
+        }
+        continue
+      }
       room.computer?.think(room.match)
       room.match.step()
       if (room.match.result) {
@@ -248,6 +274,26 @@ export class Rooms {
         this.broadcastRoom(room)
       } else if (room.match.tick % 2 === 0) this.broadcastSnapshot(room)
     }
+  }
+
+  private secondsToReconnect(room: Room, now: number) {
+    if (!this.paused(room)) return
+    const missing = room.seats.filter(seat => !seat.peer)
+    const deadline = Math.min(...missing.map(seat => seat.disconnectedAt + reconnectWindow))
+    return Math.max(0, Math.ceil((deadline - now) / 1000))
+  }
+
+  private expireDisconnected(room: Room, now: number) {
+    if (this.secondsToReconnect(room, now) !== 0) return false
+    const connected = room.seats.find(seat => seat.peer)
+    if (!connected) this.close(room)
+    else if (room.match) {
+      room.match.result = { winner: connected.faction, reason: 'disconnect' }
+      room.finishedAt = now
+      this.broadcastSnapshot(room)
+      this.broadcastRoom(room, now)
+    }
+    return true
   }
 
   private paused(room: Room) {
@@ -284,7 +330,8 @@ export class Rooms {
     this.snapshots.set(peer, view)
   }
 
-  private broadcastRoom(room: Room) {
+  private broadcastRoom(room: Room, now = Date.now()) {
+    room.reconnectSeconds = this.secondsToReconnect(room, now)
     const players = room.seats.map(({ faction, race, ready, peer }) => ({ faction, ...(race === faction ? {} : { race }), ready, connected: Boolean(peer) }))
     if (room.computer) {
       const faction = room.computer.faction
@@ -302,6 +349,8 @@ export class Rooms {
       phase: room.match?.result ? 'finished' : room.match ? 'playing' : 'lobby',
       result: room.match?.result ?? null,
       paused: this.paused(room),
+      reconnectSeconds: room.reconnectSeconds,
+      rematchReady: room.rematchReady ? [...room.rematchReady] : undefined,
       players
     }
     for (const seat of room.seats) send(seat.peer, { type: 'room', room: state, faction: seat.faction })

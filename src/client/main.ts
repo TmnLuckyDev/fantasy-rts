@@ -145,6 +145,7 @@ let placing = false
 let economyContext = ''
 let globalUpgradeOpen = false
 let gatherOpen = false
+let practiceStep = 0
 
 const invite = new URLSearchParams(location.search).get('room')
 if (invite && /^[A-Z2-9]{5}$/i.test(invite)) joinCode.value = invite.toUpperCase()
@@ -157,6 +158,7 @@ if (!invite && !client.hasSeat && solo.restoreOnReload) solo.start(faction, true
 function refreshSoloButton() {
   button('solo').textContent = solo.saved ? 'Resume solo match' : 'Play vs Computer'
   button('solo').disabled = client.hasSeat
+  button('practice').disabled = client.hasSeat
 }
 
 function status(state: 'waiting' | 'open' | 'closed') {
@@ -180,7 +182,8 @@ function updateBanner(online: boolean) {
     const winner = room.result.winner
     const outcome = winner === null ? 'Draw' : winner === faction ? 'Victory' : 'Defeat'
     banner.textContent = outcome + ' · Review the battlefield'
-  } else if (room?.paused) banner.textContent = 'Match paused · Waiting for opponent to reconnect'
+  } else if (room?.paused) banner.textContent = room.reconnectSeconds === undefined ? 'Match paused · Waiting for opponent to reconnect' :
+    'Match paused · Opponent has ' + clockText(room.reconnectSeconds) + ' to reconnect'
   else banner.textContent = factionNames[chosenRace] + (room?.mode === 'solo' ? ' vs Computer' : '') +
     (room?.settings?.minutes ? ' · Destroy the enemy headquarters or win on score' : ' · Destroy the enemy headquarters')
 }
@@ -200,6 +203,7 @@ function showLobby() {
   scene = null
   room = null
   match.hidden = true
+  element('practice-guide').hidden = true
   match.classList.remove('match-finished')
   button('view-stats').hidden = true
   lobby.hidden = false
@@ -217,8 +221,17 @@ function receive(message: ServerMessage) {
     case 'session':
       faction = message.faction
       break
-    case 'room':
+    case 'room': {
+      const restarting = Boolean(room?.result && message.room.phase === 'playing')
       room = message.room
+      if (restarting) {
+        result.close()
+        game?.destroy(true)
+        game = null
+        scene = null
+        match.classList.remove('match-finished')
+        button('view-stats').hidden = true
+      }
       faction = message.faction
       playerRaces = { human: 'human', orc: 'orc' }
       for (const seat of room.players) playerRaces[seat.faction] = seat.race ?? seat.faction
@@ -233,9 +246,11 @@ function receive(message: ServerMessage) {
           scene?.place(null)
           closeProduction()
           closeEconomyMenu()
+          if (result.open) updatePlayAgain()
         }
       }
       break
+    }
     case 'snapshot': {
       currentTick = message.tick
       const minutes = room?.settings?.minutes
@@ -244,6 +259,7 @@ function receive(message: ServerMessage) {
       population = message.population
       ownEntities = message.entities.filter(entity => entity.faction === faction)
       researched = message.upgrades ?? []
+      if (solo.practice && practiceStep === 2 && ownEntities.some(entity => entity.training?.kind === 'blade')) setPracticeStep(3)
       drawProduction()
       if (!globalTrainPanel.hidden) globalProduction.update(chosenRace, ownEntities, resources, population)
       drawEconomy()
@@ -291,8 +307,6 @@ function drawLobby() {
 }
 
 function preferredBattleRenderer() {
-  // Touch devices can mask their GPU information. Use the faster renderer from the mobile load tests.
-  if (touch) return Phaser.CANVAS
   // A CPU-backed WebGL context can be slower than drawing this pixel art with Canvas 2D.
   const probe = document.createElement('canvas')
   const gl = probe.getContext('webgl', { failIfMajorPerformanceCaveat: true })
@@ -300,13 +314,15 @@ function preferredBattleRenderer() {
   const info = gl.getExtension('WEBGL_debug_renderer_info')
   const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : ''
   gl.getExtension('WEBGL_lose_context')?.loseContext()
-  return /swiftshader|llvmpipe|software/i.test(renderer) ? Phaser.CANVAS : Phaser.AUTO
+  return /swiftshader|llvmpipe|software/i.test(renderer) || (touch && !renderer) ? Phaser.CANVAS : Phaser.AUTO
 }
 
 function showBattle() {
   settingsMenu.close()
   lobby.hidden = true
   match.hidden = false
+  element('practice-guide').hidden = !solo.practice
+  if (solo.practice) setPracticeStep(0)
   const minutes = room?.settings?.minutes
   clock.hidden = !minutes
   if (minutes) setText('match-clock', clockText(minutes * 60))
@@ -439,6 +455,7 @@ function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
   const message: GroupCommand = { type: 'group-command', group, order }
   if (solo.active) solo.sendArmyCommand(message)
   else client.send(message)
+  practiceAttack(order)
   audio.play('order')
 }
 
@@ -446,12 +463,30 @@ function issueOrder(ids: number[], order: Order) {
   if (room?.result) return
   if (solo.active) solo.command(ids, order)
   else client.send({ type: 'command', ids, order })
+  practiceAttack(order)
   if (order.kind === 'train') audio.play('train')
   else if (order.kind === 'build' || order.kind === 'wall-line') audio.play('build')
   else audio.play('order')
 }
 
+function setPracticeStep(step: number) {
+  practiceStep = step
+  setText('practice-hint', [
+    '1/4 · Tap Workers to select your workers.',
+    '2/4 · Tap a gold mine near your base to inspect it.',
+    '3/4 · Open Production, then Recruit, and train one basic melee unit.',
+    '4/4 · Select All troops, tap Attack move and choose a spot on the battlefield.',
+    'Practice complete. Keep experimenting or return to the lobby.'
+  ][step])
+  button('finish-practice').hidden = step !== 4
+}
+
+function practiceAttack(order: Order) {
+  if (solo.practice && practiceStep === 3 && (order.kind === 'advance' || order.kind === 'attack')) setPracticeStep(4)
+}
+
 function showResourceInfo(kind: ResourceKind, remaining: number | null) {
+  if (solo.practice && practiceStep === 1 && kind === 'gold') setPracticeStep(2)
   button('gather-deposit').hidden = !selection.some(unit => unit.kind === 'worker') || remaining === 0
   element('selection-name').textContent = kind === 'wood' ? 'Tree' : kind === 'gold' ? 'Gold mine' : 'Stone quarry'
   element('selection-detail').textContent = remaining === null ? 'Unlimited ' + kind : `${remaining.toLocaleString()} ${kind} remaining`
@@ -461,6 +496,7 @@ function drawSelection(entities: Entity[], interactive = false) {
   selection = entities
   button('gather-deposit').hidden = true
   const selected = entities[0]
+  if (solo.practice && practiceStep === 0 && entities.some(entity => entity.kind === 'worker')) setPracticeStep(1)
   const workers = entities.some(entity => entity.kind === 'worker')
   const trainer = entities.length === 1 && selected && selected.construction === undefined &&
     trainedAt(selected.kind, chosenRace).length ? selected : undefined
@@ -542,6 +578,16 @@ function drawSelection(entities: Entity[], interactive = false) {
       ? gatherHint()
       : (touch ? 'Tap ground to move or an enemy to attack.' : 'Right-click ground to move or an enemy to attack.')
   }
+  let total = 0
+  let remaining = 0
+  let waiting = false
+  for (const entity of entities) {
+    if (!entity.landing) continue
+    total += entity.landing.total
+    remaining += entity.passengers?.length ?? 0
+    waiting ||= entity.landing.waiting
+  }
+  if (total) detail.textContent += ` · ${total - remaining}/${total} ashore` + (waiting ? ' · Waiting for space' : remaining ? ' · Landing' : '')
 }
 
 function drawEconomy() {
@@ -958,7 +1004,16 @@ function drawResult(outcome: NonNullable<RoomState['result']>) {
   }
   element('result-detail').textContent = detail
   drawMatchStats(element('match-stats'), room?.report, playerRaces)
+  updatePlayAgain()
   if (!result.open) result.showModal()
+}
+
+function updatePlayAgain() {
+  const playAgain = button('play-again')
+  const votes = room?.rematchReady ?? []
+  playAgain.hidden = !solo.active && !room?.players.every(player => player.connected)
+  playAgain.disabled = votes.includes(faction)
+  playAgain.textContent = playAgain.disabled ? 'Waiting for opponent…' : votes.length ? 'Accept rematch' : 'Play again'
 }
 
 function leave() {
@@ -998,6 +1053,24 @@ for (const item of factionButtons) {
     if (room) client.send({ type: 'race', race: choice })
     else selectRace(choice)
   }
+}
+button('practice').onclick = () => {
+  if (!client.hasSeat) solo.start('human', false, 'easy', undefined, 'human', 'orc', true)
+}
+button('finish-practice').onclick = leave
+button('play-again').onclick = () => {
+  if (!room?.result) return
+  if (!solo.active) {
+    client.send({ type: 'rematch' })
+    return
+  }
+  const previous = room
+  const side = faction
+  const race = playerRaces[side]
+  const opponent = playerRaces[opposite(side)]
+  const practice = solo.practice
+  leave()
+  solo.start(side, false, previous.difficulty, previous.settings, race, opponent, practice)
 }
 button('solo').onclick = () => {
   const opponent = opponentChoice.value

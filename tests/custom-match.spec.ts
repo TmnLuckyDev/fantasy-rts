@@ -1,4 +1,5 @@
 import { devices, expect, test, webkit } from '@playwright/test'
+import { ashfordClassic, cellCenter, TILE } from '../src/shared/map.ts'
 
 test('mobile can customize a solo game and see the timed match statistics', async ({ browser, baseURL }) => {
   test.setTimeout(100_000)
@@ -37,8 +38,57 @@ test('mobile can customize a solo game and see the timed match statistics', asyn
     await expect(page.getByRole('rowheader', { name: 'Gold gathered' })).toBeVisible()
     await expect(page.getByRole('rowheader', { name: 'Final score' })).toBeVisible()
     await expect(page.getByRole('rowheader', { name: 'Enemy buildings razed' })).toBeVisible()
-    await page.getByRole('button', { name: 'Back to lobby' }).tap()
+    await expect(page.getByRole('rowheader', { name: 'Completed research' })).toBeVisible()
+    await page.getByRole('button', { name: 'Play again' }).tap()
+    await expect(page.locator('#result')).not.toBeVisible()
+    await expect(page.locator('#gold')).toHaveText('123')
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: 'Leave', exact: true }).tap()
     await expect(page.getByRole('button', { name: 'Play vs Computer' })).toBeVisible()
+  } finally {
+    await context.close()
+    if (mobile !== browser) await mobile.close()
+  }
+})
+
+test('practice teaches selection, mine inspection, training and attack-move without writing a save', async ({ browser, baseURL }) => {
+  const mobile = process.env.MOBILE_BROWSER === 'webkit' ? await webkit.launch() : browser
+  const context = await mobile.newContext(devices[mobile === browser ? 'Pixel 7' : 'iPhone 14'])
+  try {
+    const page = await context.newPage()
+    await page.goto(baseURL!)
+    await page.getByRole('button', { name: 'Practice', exact: true }).tap()
+    const hint = page.locator('#practice-hint')
+    await expect(hint).toContainText('1/4')
+    await page.getByRole('button', { name: 'Workers', exact: true }).tap()
+    await expect(hint).toContainText('2/4')
+    const field = page.locator('#battlefield')
+    await expect(field.locator('canvas')).toBeVisible()
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    const box = (await field.boundingBox())!
+    const mine = cellCenter(5, 18)
+    const zoom = .88
+    const center = (focus: number, screen: number, world: number) => {
+      const half = screen / zoom / 2
+      return Math.max(half, Math.min(focus, world - half))
+    }
+    const home = ashfordClassic.bases.human
+    const x = box.x + box.width / 2 + (mine.x - center(home.x, box.width, ashfordClassic.width * TILE)) * zoom
+    const y = box.y + box.height / 2 + (mine.y - center(home.y, box.height, ashfordClassic.height * TILE)) * zoom
+    await page.touchscreen.tap(x, y)
+    await expect(hint).toContainText('3/4')
+    await page.getByRole('button', { name: 'Production', exact: true }).tap()
+    await page.getByRole('button', { name: 'Train 1 Footman', exact: true }).tap()
+    await expect(hint).toContainText('4/4')
+    await page.getByRole('button', { name: 'Close', exact: true }).tap()
+    await page.getByRole('button', { name: 'All troops', exact: true }).tap()
+    await page.getByRole('button', { name: 'Attack move', exact: true }).tap()
+    const target = (await field.boundingBox())!
+    await page.touchscreen.tap(target.x + target.width * .7, target.y + target.height * .47)
+    await expect(hint).toContainText('Practice complete')
+    await page.getByRole('button', { name: 'Finish practice', exact: true }).tap()
+    await expect(page.getByRole('button', { name: 'Play vs Computer' })).toBeVisible()
+    expect(await page.evaluate(() => localStorage.getItem('ash-and-iron-solo'))).toBeNull()
   } finally {
     await context.close()
     if (mobile !== browser) await mobile.close()

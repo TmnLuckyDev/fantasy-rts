@@ -153,9 +153,9 @@ test('all races keep standard tower and warship reach and their naval cost chang
     assert.equal(match['attackRange'](warship), 180)
     assert.equal(trainingRule('warship', race).population, 2)
   }
-  assert.equal(unitStats.dwarf.warship.health, 715)
-  assert.equal(unitStats.elf.warship.health, 585)
-  assert.equal(unitStats.undead.warship.health, 585)
+  assert.equal(unitStats.dwarf.warship.health, 690)
+  assert.equal(unitStats.elf.warship.health, 620)
+  assert.equal(unitStats.undead.warship.health, 620)
   assert.equal(trainingRule('warship', 'undead').gold, 207)
   assert.equal(trainingRule('warship', 'undead').wood, 167)
 })

@@ -19,6 +19,7 @@ function readSlot(): Slot | null {
 export class SoloClient {
   private worker: Worker | null = null
   private owner = ''
+  private practicing = false
   private storageAvailable = false
 
   constructor(private receive: (message: ServerMessage) => void, private changed: () => void) {
@@ -33,14 +34,16 @@ export class SoloClient {
   }
 
   get active() { return Boolean(this.worker) }
+  get practice() { return this.practicing }
   get saved() { return Boolean(readSlot()?.save) }
   get restoreOnReload() {
     try { return this.saved && sessionStorage.getItem(activeKey) === '1' } catch { return false }
   }
 
-  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race) {
+  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice = false) {
     if (this.worker) return
-    const save = resume ? readSlot()?.save ?? null : null
+    this.practicing = practice
+    const save = resume && !practice ? readSlot()?.save ?? null : null
     this.worker = new Worker(new URL('./solo.worker.ts', import.meta.url), { type: 'module' })
     this.worker.addEventListener('message', (event: MessageEvent<SoloOutput>) => {
       const message = event.data
@@ -58,10 +61,12 @@ export class SoloClient {
       this.receive({ type: 'error', message: 'The solo game could not run. Try opening it again.', resetSession: true })
     })
     this.owner = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')
-    this.storageAvailable = this.write(save)
-    try { sessionStorage.setItem(activeKey, '1') } catch { /* Storage may be restricted. */ }
-    this.post({ type: 'start', faction, save, difficulty, settings, race, opponentRace, paused: document.hidden })
-    if (!this.storageAvailable) this.storageError()
+    this.storageAvailable = !practice && this.write(save)
+    if (!practice) {
+      try { sessionStorage.setItem(activeKey, '1') } catch { /* Storage may be restricted. */ }
+    }
+    this.post({ type: 'start', faction, save, difficulty, settings, race, opponentRace, practice, paused: document.hidden })
+    if (!practice && !this.storageAvailable) this.storageError()
   }
 
   sendArmyCommand(message: GroupCommand | GlobalTrainCommand) { this.post(message) }
@@ -69,7 +74,7 @@ export class SoloClient {
   command(ids: number[], order: Order) { this.post({ type: 'command', ids, order }) }
 
   leave() {
-    try { if (readSlot()?.owner === this.owner) localStorage.removeItem(key) } catch { /* Storage may be restricted. */ }
+    try { if (!this.practicing && readSlot()?.owner === this.owner) localStorage.removeItem(key) } catch { /* Storage may be restricted. */ }
     this.stop()
     this.changed()
   }
@@ -77,6 +82,7 @@ export class SoloClient {
   private stop() {
     this.worker?.terminate()
     this.worker = null
+    this.practicing = false
     try { sessionStorage.removeItem(activeKey) } catch { /* Storage may be restricted. */ }
   }
 

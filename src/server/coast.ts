@@ -1,4 +1,4 @@
-import { TILE, cellCenter, isWalkable, isWater } from '../shared/map.ts'
+import { TILE, cellCenter, isWalkable, isWater, tileAt } from '../shared/map.ts'
 import type { BattleMap } from '../shared/map.ts'
 import type { Point } from '../shared/protocol.ts'
 
@@ -59,14 +59,31 @@ export class Coast {
     return x >= 0 && x < this.map.width && y >= 0 && y < this.map.height ? this.regions[y * this.map.width + x] : 0
   }
 
-  landingNear(target: Point, ship: Point) {
-    let best: Landing | undefined
-    let closest = 4 * TILE
-    for (const site of this.shoresBySea.get(this.region(ship)) ?? []) {
+  landingNear(target: Point, ship: Point, reserved: readonly Point[]) {
+    const shores = this.shoresBySea.get(this.region(ship)) ?? []
+    const region = isWalkable(tileAt(this.map, Math.floor(target.x / TILE), Math.floor(target.y / TILE))) ? this.region(target) : 0
+    let nearest: Landing | undefined
+    let nearestGap = 4 * TILE
+    for (const site of shores) {
+      if (region && region !== this.region(site.land)) continue
       const gap = Math.hypot(site.land.x - target.x, site.land.y - target.y)
-      if (gap > closest) continue
+      if (gap > nearestGap) continue
+      nearest = site
+      nearestGap = gap
+    }
+    if (!nearest) return
+    const destination = this.region(nearest.land)
+    let best = nearest
+    let bestScore = Infinity
+    for (const site of shores) {
+      if (this.region(site.land) !== destination) continue
+      const gap = Math.hypot(site.land.x - target.x, site.land.y - target.y)
+      if (gap > (reserved.length ? 14 : 4) * TILE) continue
+      const congestion = reserved.reduce((total, other) => total +
+        Math.max(0, 8 * TILE - Math.hypot(site.sea.x - other.x, site.sea.y - other.y)) * 4, 0)
+      if (gap + congestion >= bestScore) continue
       best = site
-      closest = gap
+      bestScore = gap + congestion
     }
     return best
   }

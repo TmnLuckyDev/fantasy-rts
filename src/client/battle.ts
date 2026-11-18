@@ -5,6 +5,7 @@ import { raceOf, MAX_SELECTION, entityKinds, isArmyOrder, isHeroKind, isShipKind
 import { decodeFog } from '../shared/fog.ts'
 import { validPlacement, buildingFootprint } from '../shared/economy.ts'
 import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, PlayerRaces, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
+import { CONTROL_RADIUS } from '../shared/match-settings.ts'
 import { heroLevel } from '../shared/heroes.ts'
 import { unitStats } from '../shared/units.ts'
 import { factionColor, propTexture, randomAt, terrainColor, terrainTexture } from './art.ts'
@@ -17,7 +18,7 @@ import type { SelectionRect } from './input.ts'
 
 const terrainChunkTiles = 24
 const largeBattleCount = 220
-const effectBudget: Record<Effect['kind'], number> = { shot: 24, hit: 16, fallen: 12 }
+const effectBudget: Record<Effect['kind'], number> = { shot: 16, hit: 8, fallen: 6 }
 type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number, offsetX: number, offsetY: number, ring?: Phaser.GameObjects.Image }
 type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObjects.Image }
 type BattleActions = {
@@ -246,7 +247,7 @@ export class BattleScene extends Phaser.Scene {
       if (crowded && (!nearby || counts[effect.kind] >= effectBudget[effect.kind])) continue
       counts[effect.kind]++
       let sprite: Phaser.GameObjects.Image | undefined
-      if (effect.kind === 'fallen' && isUnitKind(effect.entityKind)) {
+      if (!crowded && effect.kind === 'fallen' && isUnitKind(effect.entityKind)) {
         sprite = this.add.image(effect.at.x, effect.at.y, effect.faction + effect.entityKind + '0')
           .setOrigin(0.5, 0.83).setScale(1.21).setDepth(effect.at.y - 1)
       }
@@ -779,8 +780,9 @@ export class BattleScene extends Phaser.Scene {
     const horizontal = Number(this.keys?.RIGHT.isDown ?? false) - Number(this.keys?.LEFT.isDown ?? false)
     const vertical = Number(this.keys?.DOWN.isDown ?? false) - Number(this.keys?.UP.isDown ?? false)
     if (horizontal || vertical) this.pan(-horizontal * delta * 0.37, -vertical * delta * 0.37)
+    const crowded = this.visuals.size >= largeBattleCount
     this.water.clear()
-    const glints = Math.min(48, this.waterTiles.length)
+    const glints = crowded ? 0 : Math.min(48, this.waterTiles.length)
     for (let i = 0; i < glints; i++) {
       const tile = this.waterTiles[Math.floor(i * this.waterTiles.length / glints)]
       const x = tile % this.map.width * TILE + 3 + (i * 13) % 12
@@ -790,7 +792,6 @@ export class BattleScene extends Phaser.Scene {
       this.water.fillStyle(0x72cbd1, glint).fillRect(x + 4, y + 2, 8 + i % 5, 1)
     }
     this.graphics.clear()
-    const crowded = this.visuals.size >= largeBattleCount
     const blend = Math.min(1, delta / 70)
     const camera = this.cameras.main
     const center = this.cameraCenter()
@@ -802,7 +803,9 @@ export class BattleScene extends Phaser.Scene {
       if (!crowded) this.graphics.fillStyle(0xa087af, 0.5).fillEllipse(corpse.x, corpse.y + 2, 13, 4)
     }
     this.updateTerrain(center, halfWidth, halfHeight)
-    const walkFrame = Math.floor(time / 125) % 2
+    const walkFrame = Math.floor(time / (crowded ? 200 : 125)) % 2
+    let healthBars = 0
+    const groupMarkers = new Set<number>()
     for (const visual of this.visuals.values()) {
       const { entity, sprite, lastHp } = visual
       const visible = Math.abs(entity.x - center.x) < halfWidth && Math.abs(entity.y - center.y) < halfHeight
@@ -815,7 +818,7 @@ export class BattleScene extends Phaser.Scene {
       const building = !isUnitKind(entity.kind)
       sprite.x += (entity.x + visual.offsetX - sprite.x) * blend
       sprite.y += (entity.y + visual.offsetY - sprite.y) * blend
-      const depth = Math.round(sprite.y)
+      const depth = crowded && !building ? Math.round(sprite.y / 6) * 6 : Math.round(sprite.y)
       if (sprite.depth !== depth) sprite.setDepth(depth)
       if (!building) {
         const texture = entity.faction + entity.kind +
@@ -843,16 +846,26 @@ export class BattleScene extends Phaser.Scene {
       }
       const selected = this.selected.has(entity.id)
       const color = factionColor[entity.faction]
-      if (selected) {
+      if (selected && (!crowded || building || this.selected.size < 30)) {
         if (!visual.ring) {
           const texture = 'selection-' + (building ? entity.kind : 'unit')
           visual.ring = this.ringPool.pop()?.setTexture(texture).setVisible(true) ??
             this.add.image(sprite.x, sprite.y, texture).setDepth(this.mapHeight + 1)
         }
         visual.ring.setPosition(sprite.x, sprite.y + 2)
-      } else this.releaseRing(visual)
+      } else {
+        this.releaseRing(visual)
+        if (selected) {
+          const cell = Math.floor(sprite.x / 14) + Math.floor(sprite.y / 14) * 65536
+          if (!groupMarkers.has(cell)) {
+            groupMarkers.add(cell)
+            this.graphics.fillStyle(0xe9d996, 0.85).fillRect(sprite.x - 4, sprite.y + 3, 8, 2)
+          }
+        }
+      }
       const fullDetail = !crowded || building || isHeroKind(entity.kind)
-      if (entity.hp > 0) {
+      if (entity.hp > 0 && (fullDetail || selected && this.selected.size === 1 ||
+          entity.hp < entity.maxHp && healthBars++ < 30)) {
         const w = building ? radius * 1.8 : 22
         const x = sprite.x - w / 2
         const y = sprite.y - (entity.kind === 'headquarters' ? 85 : entity.kind === 'tower' ? 65 : entity.kind === 'wall' ? 31 : building ? 46 : 37)
@@ -906,10 +919,15 @@ export class BattleScene extends Phaser.Scene {
         this.graphics.fillStyle(0xffd575, 1).fillRect(sprite.x - 7, y + 1, level * 2.8, 3)
       }
       if (building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
-      if (entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
+      if (!crowded && entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
     this.paintEffects(time, center, halfWidth, halfHeight, crowded)
     this.ui.clear()
+    for (const site of this.newest?.controlSites ?? []) {
+      const color = site.owner ? factionColor[site.owner] : 0xffdf98
+      this.ui.lineStyle(2, color, 0.55).strokeCircle(site.x, site.y, CONTROL_RADIUS)
+      this.ui.fillStyle(color, 0.85).fillRect(site.x - 4, site.y - 4, 8, 8)
+    }
     this.markers = this.markers.filter(mark => {
       const t = (time - mark.born) / 410
       if (t > 1) return false
@@ -998,7 +1016,7 @@ export class BattleScene extends Phaser.Scene {
         if (sprite && sprite.visible !== inView) sprite.setVisible(inView)
         if (!inView) return true
         if (sprite) sprite.setRotation(Math.min(1.4, age / 130)).setAlpha(1 - age / 950)
-        else {
+        else if (!crowded) {
           for (let i = 0; i < 3; i++) this.paintFire(x + (i - 1) * 22, y - i * 10, time)
           this.graphics.fillStyle(0x352721, 0.62 * (1 - age / 950)).fillEllipse(x, y, 82, 38)
         }
@@ -1018,6 +1036,10 @@ export class BattleScene extends Phaser.Scene {
       ctx.fillStyle = entity.faction === 'human' ? '#a3d6ff' : '#ff9575'
       const r = entity.kind === 'headquarters' ? 3 : isUnitKind(entity.kind) ? 1.3 : 1.8
       ctx.fillRect(entity.x / this.mapWidth * w - r, entity.y / this.mapHeight * h - r, r * 2, r * 2)
+    }
+    for (const site of this.newest?.controlSites ?? []) {
+      ctx.fillStyle = site.owner === 'human' ? '#a3d6ff' : site.owner === 'orc' ? '#ff9575' : '#ffdf98'
+      ctx.fillRect(site.x / this.mapWidth * w - 2, site.y / this.mapHeight * h - 2, 4, 4)
     }
     const camera = this.cameras.main
     const start = this.world({ x: 0, y: 0 })

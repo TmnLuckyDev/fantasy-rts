@@ -4,7 +4,7 @@ import { Match, TICK_HZ } from '../src/server/match.ts'
 import { parseMessage } from '../src/server/validate.ts'
 import { GATHERING, training } from '../src/shared/economy.ts'
 import { ashfordMap, cellCenter, mapForSettings } from '../src/shared/map.ts'
-import { ARMY_SCORE_PER_UNIT, MAX_DEPOSITS, defaultMatchSettings, parseMatchSettings, treeLimit } from '../src/shared/match-settings.ts'
+import { MAX_DEPOSITS, defaultMatchSettings, parseMatchSettings, treeLimit } from '../src/shared/match-settings.ts'
 import { applyDelta, makeDelta } from '../src/shared/snapshot-delta.ts'
 
 const advance = (match: Match, ticks: number) => {
@@ -94,7 +94,7 @@ test('time limit resolves by live army and resources, ties draw, and unlimited g
   match.tick = 60 * TICK_HZ - 2
   match.step()
   assert.equal(match.result, null)
-  assert.equal(match.report().sides.human.score, 108 + 6 * ARMY_SCORE_PER_UNIT)
+  assert.equal(match.report().sides.human.score, 108 + 3 * 75 + 2 * 90 + 105)
   const tied = serialize(match)
   tied.step()
   assert.deepEqual(tied.result, { reason: 'time', winner: null })
@@ -135,4 +135,25 @@ test('completed production, construction and combat count once and survive resto
   assert.equal(human.buildingsRazed, 1)
   assert.equal(orc.unitsLost, 1)
   assert.equal(orc.buildingsLost, 1)
+})
+
+test('timed score credits research and uncontested objectives, excluding temporary summons', () => {
+  const settings = { ...defaultMatchSettings('ashford-original'), minutes: 1, randomStarts: false }
+  const match = Match.configured(settings)
+  const smithy = match['spawn']('human', 'smithy', cellCenter(12, 13))
+  const [objective] = match.view('human').controlSites!
+  const unresearched = match.report().sides.human.score
+  assert.ok(match.command('human', [smithy.id], { kind: 'upgrade', upgrade: 'weapons' }))
+  for (let i = 0; i < 250; i++) match.step()
+  const researched = match.report().sides.human
+  assert.equal(researched.research, 108)
+  assert.equal(researched.score, unresearched)
+  const temporary = match['spawn']('human', 'blade', objective)
+  temporary.summonedUntil = match.tick + 2 * TICK_HZ
+  for (let i = 0; i < TICK_HZ; i++) match.step()
+  assert.equal(match.report().sides.human.score, researched.score)
+  match['spawn']('human', 'blade', objective)
+  for (let i = 0; i < TICK_HZ; i++) match.step()
+  assert.equal(match.report().sides.human.territory, 1)
+  assert.equal(serialize(match).report().sides.human.territory, 1)
 })

@@ -96,19 +96,23 @@ test('two browser players issue orders to 500 troops each and receive authoritat
       await page.getByRole('button', { name: 'Attack move', exact: true }).click()
     }))
     const first = state.map(client => client.snapshot()!)
+    const sentAt = [0, 0]
     await Promise.all(clients.map(async (page, i) => {
       const box = (await page.locator('#battlefield').boundingBox())!
       const x = box.x + box.width * (i ? .27 : .73)
       const y = box.y + box.height * .44
+      sentAt[i] = performance.now()
       if (i) await page.touchscreen.tap(x, y)
       else await page.mouse.click(x, y, { button: 'right' })
     }))
     const samples = Promise.all(clients.map(frameSample))
-    await Promise.all(state.map(async (client, i) => {
+    const orderToMovement = await Promise.all(state.map(async (client, i) => {
       await expect.poll(client.ordered).toBe(500)
       await expect.poll(() => client.snapshot()?.entities.some(entity => entity.faction === fixture.seats[i].faction &&
         entity.moving), { timeout: 3500 }).toBe(true)
+      const movedAfterMs = Math.round(performance.now() - sentAt[i])
       await expect.poll(client.shots, { timeout: 15000 }).toBeGreaterThan(0)
+      return movedAfterMs
     }))
     const frames = await samples
     for (let i = 0; i < state.length; i++) {
@@ -117,7 +121,7 @@ test('two browser players issue orders to 500 troops each and receive authoritat
       expect(new Set(snap.entities.map(entity => entity.id)).size).toBe(snap.entities.length)
       console.log('ASH_BROWSER_BENCH ' + JSON.stringify({
         player: fixture.seats[i].faction, race: races?.[fixture.seats[i].faction], mobileEngine: isWebKit ? 'webkit' : 'chromium',
-        ...frames[i], bytes: state[i].bytes(), shots: state[i].shots(), tick: snap.tick
+        ...frames[i], orderToMovementMs: orderToMovement[i], bytes: state[i].bytes(), shots: state[i].shots(), tick: snap.tick
       }))
     }
   } finally {

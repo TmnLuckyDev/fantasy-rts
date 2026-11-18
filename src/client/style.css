@@ -428,3 +428,18 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   }
   #production-sheet, #result { visibility: hidden; }
 }
+
+#practice-guide {
+  position: absolute;
+  z-index: 2;
+  inset: .45rem .5rem auto;
+  width: fit-content;
+  max-width: calc(100% - 1rem);
+  padding: .35rem .55rem;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: #172423ee;
+  font-size: .8rem;
+  pointer-events: none;
+}
+#finish-practice { pointer-events: auto; margin-left: .35rem; }

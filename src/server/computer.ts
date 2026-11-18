@@ -253,11 +253,17 @@ export class ComputerOpponent {
     const home = this.shoreline.find(site => distance(site.land, port) < 2 * TILE) ?? this.shoreline[0]
     const ferry = army.find(unit => unit.kind === 'transport')
     const fleet = army.filter(unit => unit.kind === 'warship')
-    if (!port.training && (!ferry || fleet.length < 2)) {
+    const objectives = view.controlSites ?? []
+    const patrol = match.tick >= 120 * TICK_HZ && objectives.length > 0
+    if (!port.training && (!ferry || fleet.length < (patrol ? 3 : 2))) {
       match.command(this.faction, [port.id], { kind: 'train', unit: ferry ? 'warship' : 'transport' })
     }
-    for (const ship of fleet) {
-      if (!match.units.get(ship.id)?.assigned) match.command(this.faction, [ship.id], { kind: 'advance', to: landing.sea })
+    for (const [index, ship] of fleet.entries()) {
+      const objective = patrol && index >= 2 ? objectives.reduce((nearest, site) =>
+        distance(ship, site) < distance(ship, nearest) ? site : nearest) : undefined
+      if (match.units.get(ship.id)?.assigned) continue
+      const target = objective ?? landing.sea
+      if (distance(ship, target) > TILE) match.command(this.faction, [ship.id], { kind: 'advance', to: target })
     }
     if (!ferry || !home || match.units.get(ferry.id)?.pickup) return
     const own = army.filter(unit => !isShipKind(unit.kind) && unit.kind !== 'scout' && !this.attacking.has(unit.id))
@@ -318,7 +324,11 @@ export class ComputerOpponent {
     const wave = reserve.slice(0, Math.min(waveSize, reserve.length - guard))
     const worker = (this.strategy === 'rush' || this.difficulty === 'hard') ?
       view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'worker') : undefined
-    if (match.command(this.faction, wave.map(unit => unit.id), { kind: 'advance', to: worker ?? view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'headquarters') ?? this.enemyBase })) {
+    const hall = view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'headquarters')
+    const objectives = (view.controlSites ?? []).filter(site => site.owner !== this.faction)
+    const objective = match.tick >= 120 * TICK_HZ && this.strategy !== 'rush' && objectives.length ?
+      objectives.reduce((nearest, site) => distance(this.home, site) < distance(this.home, nearest) ? site : nearest) : undefined
+    if (match.command(this.faction, wave.map(unit => unit.id), { kind: 'advance', to: worker ?? hall ?? objective ?? this.enemyBase })) {
       for (const unit of wave) this.attacking.add(unit.id)
       this.nextAssault = match.tick + plan.interval * TICK_HZ
     }

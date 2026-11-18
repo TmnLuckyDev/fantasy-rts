@@ -5,7 +5,7 @@ import { resourceKinds } from './protocol.ts'
 import type { ResourceKind, Resources } from './protocol.ts'
 
 export const TICKS_PER_SECOND = 20
-export const ARMY_SCORE_PER_UNIT = 100
+export const CONTROL_RADIUS = 96
 export const MAX_DEPOSITS = 24
 export const STARTING_RESOURCE_MAX = 100_000
 export const DEPOSIT_STOCK_MAX = 1_000_000
@@ -34,7 +34,7 @@ export type MatchStats = {
   unitsLost: number
   buildingsLost: number
 }
-export type FinalStats = MatchStats & { bank: Resources, army: number, score: number }
+export type FinalStats = MatchStats & { bank: Resources, army: number, score: number, military: number, research: number, territory: number }
 export type MatchReport = { elapsedSeconds: number, sides: Record<'human' | 'orc', FinalStats> }
 
 export const treeLimit = (map: MapId) => mapOptions.find(option => option.id === map)!.trees

@@ -9,7 +9,7 @@ import type { Difficulty, Faction, Race, GlobalTrainCommand, GroupCommand, Order
 
 export type SoloSave = { faction: Faction, match: MatchCheckpoint, computer: ComputerCheckpoint }
 export type SoloInput =
-  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, paused: boolean }
+  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice?: boolean, paused: boolean }
   | { type: 'pause', paused: boolean }
   | GroupCommand
   | GlobalTrainCommand
@@ -18,10 +18,11 @@ export type SoloOutput = ServerMessage | { type: 'save', save: SoloSave }
 
 let game: { faction: Faction, match: Match, computer: ComputerOpponent } | null = null
 let paused = false
+let practice = false
 const send = (message: SoloOutput) => self.postMessage(message)
 
 function save() {
-  if (!game) return
+  if (!game || practice) return
   const { faction, match, computer } = game
   send({ type: 'save', save: { faction, match: match.checkpoint(), computer: computer.checkpoint() } })
 }
@@ -30,7 +31,7 @@ function announce() {
   if (!game) return
   const { faction, match, computer } = game
   send({ type: 'room', faction, room: {
-    code: '', map: match.map.id, mapSeed: match.map.seed, settings: match.settings, report: match.result ? match.report() : undefined, mode: 'solo', phase: match.result ? 'finished' : 'playing', result: match.result,
+    code: '', map: match.map.id, mapSeed: match.map.seed, settings: match.settings, report: match.result ? match.report() : undefined, mode: 'solo', difficulty: computer.checkpoint().difficulty, phase: match.result ? 'finished' : 'playing', result: match.result,
     players: [faction, computer.faction].map(side => ({ faction: side, race: match.races[side], ready: true, connected: true }))
   } })
 }
@@ -40,10 +41,13 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
   if (message.type === 'start') {
     try {
       const faction = message.save?.faction ?? message.faction
-      const match = message.save ? Match.restore(message.save.match) : Match.start(message.settings ?? defaultMatchSettings(), {
+      practice = message.practice === true
+      const races = {
         human: faction === 'human' ? message.race ?? faction : message.opponentRace ?? 'human',
         orc: faction === 'orc' ? message.race ?? faction : message.opponentRace ?? 'orc'
-      })
+      }
+      const match = message.save ? Match.restore(message.save.match) : practice ? Match.practice(faction, races) :
+        Match.start(message.settings ?? defaultMatchSettings(), races)
       const computer = new ComputerOpponent(opposite(faction), match.map, message.save?.computer.difficulty ?? message.difficulty, message.save?.computer.strategy)
       if (message.save) computer.restore(message.save.computer)
       game = { faction, match, computer }
@@ -74,7 +78,7 @@ self.addEventListener('message', (event: MessageEvent<SoloInput>) => {
 setInterval(() => {
   if (!game || paused || game.match.result) return
   const { match, computer, faction } = game
-  computer.think(match)
+  if (!practice) computer.think(match)
   match.step()
   if (match.tick % 2 === 0 || match.result) send(match.view(faction, match.snapshot(true)))
   if (match.result) announce()

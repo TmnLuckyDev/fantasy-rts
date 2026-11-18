@@ -22,13 +22,25 @@ export class BattlefieldInput {
   private frame = 0
   private listeners = new AbortController()
 
-  constructor(private element: HTMLElement, private actions: Actions) {
+  private readonly element: HTMLElement
+  private readonly actions: Actions
+
+  constructor(element: HTMLElement, actions: Actions) {
+    this.element = element
+    this.actions = actions
     const options = { signal: this.listeners.signal }
     element.addEventListener('contextmenu', event => event.preventDefault(), options)
     element.addEventListener('pointerdown', this.start, options)
     element.addEventListener('pointermove', this.move, options)
-    element.addEventListener('pointerup', this.end, options)
-    element.addEventListener('pointercancel', this.cancel, options)
+    const document = element.ownerDocument
+    const capture = { ...options, capture: true }
+    document.defaultView?.addEventListener('pointerup', this.end, capture)
+    document.defaultView?.addEventListener('pointercancel', this.cancel, capture)
+    document.defaultView?.addEventListener('blur', this.resetInput, options)
+    document.defaultView?.addEventListener('pagehide', this.resetInput, options)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.resetInput()
+    }, options)
     element.addEventListener('lostpointercapture', this.cancel, options)
     element.addEventListener('wheel', event => {
       event.preventDefault()
@@ -39,7 +51,14 @@ export class BattlefieldInput {
 
   destroy() {
     this.listeners.abort()
-    cancelAnimationFrame(this.frame)
+    this.resetInput()
+  }
+
+  private resetInput = () => {
+    this.pointers.clear()
+    this.down = null
+    this.selection = null
+    this.resetGesture()
   }
 
   private point(event: MouseEvent): Point {
@@ -55,6 +74,8 @@ export class BattlefieldInput {
       return
     }
     if (event.button !== 0) return
+    // A new primary touch means the browser has no earlier active touch contacts.
+    if (event.pointerType === 'touch' && event.isPrimary) this.resetInput()
     try {
       this.element.setPointerCapture(event.pointerId)
     } catch {
@@ -96,7 +117,7 @@ export class BattlefieldInput {
   }
 
   private resetGesture() {
-    cancelAnimationFrame(this.frame)
+    if (this.frame) cancelAnimationFrame(this.frame)
     this.frame = 0
     this.gesture = null
     if (this.pointers.size === 2) {
@@ -124,7 +145,7 @@ export class BattlefieldInput {
     this.down = null
     this.selection = null
     this.resetGesture()
-    if (!from || event.type !== 'pointerup') return
+    if (!from || event.type !== 'pointerup' || !event.composedPath().includes(this.element)) return
     const to = this.point(event)
     if (dragged || distance(from, to) >= dragThreshold) this.actions.selectBox({ from, to }, event.shiftKey)
     else this.actions.select(to, event.shiftKey, event.pointerType !== 'mouse')

@@ -1,7 +1,7 @@
 import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine, isWalkable, isWater, tileAt } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
 import { MAX_SELECTION, defaultRaces, factions, inTroopGroup, isBuildingKind, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds } from '../shared/protocol.ts'
-import type { ArmyOrder, BuildingKind, Corpse, TroopGroup, Effect, Entity, EntityKind, Faction, PlayerRaces, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
+import type { ArmyOrder, BuildingKind, ControlSite, Corpse, TroopGroup, Effect, Entity, EntityKind, Faction, PlayerRaces, HeroKind, Order, Point, Population, ResourceKind, Resources, Result, Snapshot, UnitKind, UpgradeKind } from '../shared/protocol.ts'
 import { heroAbilities, heroDamagePerLevel, heroHealthPerLevel, heroLevel, heroMaxExperience } from '../shared/heroes.ts'
 import { allocateTraining, trainingTimeline } from '../shared/production.ts'
 import { raceRules, raceSkills } from '../shared/race-rules.ts'
@@ -10,7 +10,7 @@ import { BASE_POPULATION, FARM_POPULATION, GATHERING,
   buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, researchCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
-import { ARMY_SCORE_PER_UNIT, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
+import { CONTROL_RADIUS, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
 import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
 import { formationSlots } from './formations.ts'
 import { AttackAlerts } from './attack-alerts.ts'
@@ -63,6 +63,8 @@ type Unit = Entity & {
   passengers?: number[]
   buildQueue?: number[]
   pickup?: Landing & { until: number }
+  unloadTotal?: number
+  unloadRetryAt?: number
   upgradeJob?: { kind: UpgradeKind, left: number }
   structureJob?: { left: number, total: number }
   level?: number
@@ -81,6 +83,7 @@ export type MatchCheckpoint = {
   mapSeed?: number
   settings?: MatchSettings
   stats?: Record<Faction, MatchStats>
+  territory?: Record<Faction, number>
   extracted?: Array<[number, number]>
   knownDepletion?: Partial<Record<Faction, number[]>>
   tick: number
@@ -104,6 +107,9 @@ export class Match {
   private readonly activeHeroes: Partial<Record<Faction, Unit>> = {}
   private readonly heroExperience: Record<Faction, Partial<Record<HeroKind, number>>> = { human: {}, orc: {} }
   private coast?: Coast
+  private readonly controlSites: ControlSite[]
+  private readonly deposits: Array<{ index: number, resource: ResourceKind, at: Point }>
+  private readonly territory = { human: 0, orc: 0 }
   private readonly routes = new Map<Unit, Point>()
   private readonly navigation: Partial<Record<Faction, { key: string, grid: NavigationGrid }>> = {}
   tick = 0
@@ -129,6 +135,11 @@ export class Match {
     this.races = { ...races }
     this.usesCorpses = Object.values(races).includes('undead')
     this.settings = settings
+    this.controlSites = settings.minutes ? this.scoreSites() : []
+    this.deposits = map.tiles.flatMap((tile, index) => {
+      const resource = tile === 'forest' ? 'wood' : tile === 'mine' ? 'gold' : tile === 'quarry' ? 'stone' : null
+      return resource ? [{ index, resource, at: cellCenter(index % map.width, Math.floor(index / map.width)) }] : []
+    })
     this.resources = { human: { ...settings.starting }, orc: { ...settings.starting } }
     this.visibility = new Visibility(map)
     for (const faction of factions) {
@@ -158,6 +169,25 @@ export class Match {
     return Match.configured(settings, seed, races)
   }
 
+  static practice(faction: Faction, races: PlayerRaces) {
+    const settings = { ...defaultMatchSettings('ashford-original'), randomStarts: false, populationCap: 30 }
+    const match = Match.configured(settings, undefined, races)
+    const base = match.map.bases[faction]
+    const clear = (kind: BuildingKind) => {
+      for (let y = -4; y <= 4; y++) {
+        for (let x = -4; x <= 4; x++) {
+          const site = snapToCell({ x: base.x + x * TILE, y: base.y + y * TILE })
+          if (validPlacement(match.map, kind, site, match.units.values())) return site
+        }
+      }
+      throw Error('No room for practice buildings')
+    }
+    match.spawn(faction, 'barracks', clear('barracks'))
+    match.spawn(faction, 'farm', clear('farm'))
+    match.visibility.update(match.units.values())
+    return match
+  }
+
   static configured(settings: MatchSettings, seed?: number, races = defaultRaces) {
     return new Match(mapForSettings(settings, seed), settings, races)
   }
@@ -166,6 +196,7 @@ export class Match {
     ? mapForSettings(checkpoint.settings, checkpoint.mapSeed) : ashfordMap(checkpoint.map ?? 'ashford-original')) {
     const match = new Match(map, checkpoint.settings, checkpoint.races)
     Object.assign(match.stats, checkpoint.stats)
+    Object.assign(match.territory, checkpoint.territory)
     for (const [index, amount] of checkpoint.extracted ?? []) {
       match.extracted.set(index, amount)
       const resource = resourceAt(map, cellCenter(index % map.width, Math.floor(index / map.width)))
@@ -211,13 +242,14 @@ export class Match {
     match.missiles = checkpoint.missiles.map(missile =>
       ({ ...missile, attacker: match.units.get(missile.attacker.id) ?? missile.attacker }))
     match.visibility.restore(checkpoint.fog)
+    match.scoreControl(false)
     return match
   }
 
   checkpoint(): MatchCheckpoint {
     return {
       map: this.map.id, races: this.races, ...(this.corpses.size ? { corpses: [...this.corpses.values()] } : {}), mapSeed: this.map.seed, settings: this.settings, stats: this.stats, extracted: [...this.extracted],
-      knownDepletion: this.visibleDepletion, tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
+      territory: { ...this.territory }, knownDepletion: this.visibleDepletion, tick: this.tick, result: this.result, sequence: this.sequence, resources: this.resources,
       units: [...this.units.values()], missiles: this.missiles, upgrades: this.upgrades,
       heroExperience: this.heroExperience,
       fog: { human: this.visibility.mask('human'), orc: this.visibility.mask('orc') }
@@ -304,14 +336,19 @@ export class Match {
     if (order.kind === 'unload') {
       if (!order.at) return this.unload(units)
       const coast = this.coast ??= new Coast(this.map)
+      const selected = new Set(units)
+      const reserved = [...this.units.values()].flatMap(ship =>
+        !selected.has(ship) && ship.faction === faction && ship.order?.kind === 'unload' && ship.assigned ? [ship.assigned] : [])
       let accepted = false
       for (const ship of units) {
         if (ship.kind !== 'transport' || !ship.passengers?.length) continue
-        const landing = coast.landingNear(order.at, ship)
+        const landing = coast.landingNear(order.at, ship, reserved)
         if (!landing) continue
         this.resetOrders(ship)
         ship.order = { kind: 'unload', at: landing.land }
         ship.assigned = landing.sea
+        ship.unloadTotal = ship.passengers.length
+        reserved.push(landing.sea)
         accepted = true
       }
       return accepted
@@ -430,6 +467,8 @@ export class Match {
     this.routes.delete(unit)
     unit.order = null
     unit.pickup = undefined
+    unit.unloadTotal = undefined
+    unit.unloadRetryAt = undefined
     unit.job = null
     unit.buildQueue = undefined
     unit.path = []
@@ -443,7 +482,7 @@ export class Match {
   }
 
   private board(faction: Faction, units: Unit[], transport?: number) {
-    const ships = [...this.units.values()].filter(unit => unit.kind === 'transport' && unit.faction === faction &&
+    const ships = [...this.units.values()].filter(unit => unit.kind === 'transport' && unit.faction === faction && unit.order?.kind !== 'unload' &&
       (transport === undefined || unit.id === transport))
     if (!ships.length || units.some(unit => !isUnitKind(unit.kind) || isShipKind(unit.kind) || unit.embarkedOn)) return false
     const coast = this.coast ??= new Coast(this.map)
@@ -509,7 +548,7 @@ export class Match {
       for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
         if (!isWalkable(tileAt(this.map, x + dx, y + dy))) continue
         const at = cellCenter(x + dx, y + dy)
-        if (target && (coast?.region(at) !== landRegion || squaredDistance(target, at) > (5 * TILE) ** 2)) continue
+        if (target && (coast?.region(at) !== landRegion || squaredDistance(target, at) > (6 * TILE) ** 2)) continue
         const gap = squaredDistance(ship, at)
         if (gap <= (7 * TILE) ** 2) sites.push({ at, cell: (y + dy) * this.map.width + x + dx, gap: target ? squaredDistance(target, at) : gap })
       }
@@ -544,6 +583,7 @@ export class Match {
     unit.embarkedOn = ship.id
     unit.moving = false
     this.nearby[unit.faction].remove(unit)
+    ship.unloadTotal = undefined
     const passengers = ship.passengers ??= []
     passengers.push(unit.id)
   }
@@ -1039,16 +1079,59 @@ export class Match {
     }
   }
 
+  private scoreSites(): ControlSite[] {
+    const sites: ControlSite[] = []
+    const mid = Math.floor(this.map.width / 2)
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      const row = Math.floor(this.map.height * fraction)
+      let best = Infinity
+      let site: Point | undefined
+      for (let y = Math.max(1, row - 7); y < Math.min(this.map.height - 1, row + 8); y++) {
+        for (let x = mid - 8; x <= mid + 8; x++) {
+          const tile = tileAt(this.map, x, y)
+          const gap = (x - mid) ** 2 + (y - row) ** 2
+          if (!(this.map.id === 'shattered-isles' ? isWater(tile) : isWalkable(tile)) || gap >= best) continue
+          best = gap
+          site = cellCenter(x, y)
+        }
+      }
+      if (site) sites.push(site)
+    }
+    return sites
+  }
+
+  private scoreControl(increase: boolean) {
+    for (const site of this.controlSites) {
+      const present = factions.filter(faction => [...this.nearby[faction].near(site, CONTROL_RADIUS)].some(unit =>
+        isUnitKind(unit.kind) && unitStats[this.races[faction]][unit.kind].damage > 0 &&
+        !unit.summonedUntil && !unit.embarkedOn && squaredDistance(unit, site) <= CONTROL_RADIUS ** 2))
+      site.owner = present.length === 1 ? present[0] : undefined
+      if (increase && site.owner) this.territory[site.owner]++
+    }
+  }
+
   report(): MatchReport {
     const sides = {} as Record<Faction, FinalStats>
+    const value = (cost: Partial<Resources>) => (cost.gold ?? 0) + (cost.wood ?? 0) + (cost.stone ?? 0)
     for (const faction of factions) {
       const bank = { ...this.resources[faction] }
       let army = 0
+      let military = 0
       for (const unit of this.units.values()) {
-        if (unit.faction === faction && isUnitKind(unit.kind) && unit.kind !== 'worker') army++
+        if (unit.faction !== faction || !isUnitKind(unit.kind) || unit.kind === 'worker' || unit.summonedUntil) continue
+        army++
+        military += value(trainingCost(unit.kind, this.races[faction]))
       }
-      const score = bank.gold + bank.wood + bank.stone + army * ARMY_SCORE_PER_UNIT
-      sides[faction] = { ...this.stats[faction], gathered: { ...this.stats[faction].gathered }, bank, army, score }
+      const levels = new Map<UpgradeKind, number>()
+      let research = 0
+      for (const kind of this.upgrades[faction]) {
+        const level = (levels.get(kind) ?? 0) + 1
+        levels.set(kind, level)
+        research += value(researchCost(kind, level))
+      }
+      const territory = this.territory[faction]
+      const score = value(bank) + military + research + territory
+      sides[faction] = { ...this.stats[faction], gathered: { ...this.stats[faction].gathered }, bank, army, military, research, territory, score }
     }
     return { elapsedSeconds: Math.floor(this.tick / TICK_HZ), sides }
   }
@@ -1097,8 +1180,9 @@ export class Match {
       const stats = unitStats[this.races[unit.faction]][unit.kind]
       const obstacles = hostileBuildings[unit.faction]
       if (unit.order?.kind === 'unload' && unit.assigned) {
-        if (distance(unit, unit.assigned) < TILE * .5) readyToUnload.push(unit)
-        else this.sail(unit, unit.assigned)
+        if (distance(unit, unit.assigned) < TILE * .5) {
+          if (this.tick >= (unit.unloadRetryAt ?? 0)) readyToUnload.push(unit)
+        } else this.sail(unit, unit.assigned)
         continue
       }
       if (unit.pickup) {
@@ -1192,11 +1276,19 @@ export class Match {
     }
     if (readyToUnload.length) {
       this.unload(readyToUnload)
-      for (const ship of readyToUnload) this.resetOrders(ship)
+      for (const ship of readyToUnload) {
+        if (ship.passengers?.length) ship.unloadRetryAt = this.tick + TICK_HZ / 2
+        else {
+          const total = ship.unloadTotal
+          this.resetOrders(ship)
+          ship.unloadTotal = total
+        }
+      }
     }
     this.resolveRoutes(hostileBuildings)
     this.spaceMovingUnits(hostileBuildings)
     this.visibility.update(this.units.values())
+    if (this.tick % TICK_HZ === 0) this.scoreControl(true)
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
     else if (this.settings.minutes !== null && this.tick >= this.settings.minutes * 60 * TICK_HZ) {
@@ -1651,30 +1743,41 @@ export class Match {
     if (depleted.size && depleted.size !== this.visibleDepletion[faction]?.length) this.visibleDepletion[faction] = [...depleted]
     const knownDepletion = this.visibleDepletion[faction]
     const alerts = this.attackAlerts[faction].current
-    const deposits = this.map.tiles.flatMap((tile, index) => {
-      if (tile !== 'forest' && tile !== 'mine' && tile !== 'quarry') return []
-      if (!visible(cellCenter(index % this.map.width, Math.floor(index / this.map.width)))) return []
-      const resource = tile === 'forest' ? 'wood' : tile === 'mine' ? 'gold' : 'stone'
+    const deposits = this.deposits.flatMap(({ index, resource, at }) => {
+      if (!visible(at)) return []
       const stock = this.settings.sources[resource].stock
       return [{ index, remaining: stock === null ? null : Math.max(0, stock - (this.extracted.get(index) ?? 0)) }]
     })
+    const effectLimit = world.entities.length >= 440 ? { shot: 18, hit: 10, fallen: 12 } : undefined
+    const effects = world.effects.filter(effect => {
+      if (effectLimit && effectLimit[effect.kind] === 0) return false
+      if (!visible(effect.at) || effect.to && !visible(effect.to)) return false
+      if (effectLimit) effectLimit[effect.kind]--
+      return true
+    })
     return {
-      type: 'snapshot', tick: world.tick, fog, ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
+      type: 'snapshot', tick: world.tick, fog,
+      ...(this.controlSites.length ? { controlSites: this.controlSites.map(({ x, y, owner }) =>
+        ({ x, y, ...(owner && (owner === faction || visible({ x, y })) ? { owner } : {}) })) } : {}), ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
       resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction], deposits,
       ...(this.usesCorpses && this.corpses.size ? { corpses: [...this.corpses.values()].filter(visible) } : {}),
       entities: world.entities.flatMap(entity => {
         if (entity.embarkedOn) return []
         if (entity.faction === faction) return [entity]
         if (!finished && !this.canSee(faction, entity)) return []
-        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, passengers: _passengers, passengerPop: _passengerPop, concealed: _concealed, rally: _rally, ...seen } = entity
+        const { idle: _idle, repairing: _repair, constructionStatus: _status, research: _research, training: _training, passengers: _passengers, passengerPop: _passengerPop, landing: _landing, concealed: _concealed, rally: _rally, ...seen } = entity
         return [seen]
       }),
-      effects: world.effects.filter(effect => visible(effect.at) && (!effect.to || visible(effect.to)))
+      effects
     }
   }
 
   snapshot(consumeEffects = false): WorldSnapshot {
     const effects = this.effects
+    const levels = { human: new Map<UpgradeKind, number>(), orc: new Map<UpgradeKind, number>() }
+    for (const faction of factions) {
+      for (const kind of this.upgrades[faction]) levels[faction].set(kind, (levels[faction].get(kind) ?? 0) + 1)
+    }
     const construction = new Map<number, Entity['constructionStatus']>()
     const repairs = new Set<number>()
     for (const unit of this.units.values()) {
@@ -1695,10 +1798,11 @@ export class Match {
         const { id, x, y, kind, faction, hp, maxHp, facing, moving, cargo, queue, buildDuration, buildTicks } = unit
         const next = queue[0]
         return {
-          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, ...(unit.race ? { race: unit.race } : {}), ...(unit.rally ? { rally: unit.rally } : {}), hp, maxHp, facing, moving, weaponLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'weapons').length : undefined, armorLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'armor').length : undefined, precisionLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'precision').length : undefined, vitalityLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'vitality').length : undefined, rangeLevel: benefitsFromRange(kind) ? this.upgrades[faction].filter(value => value === 'range').length : undefined, speedLevel: isUnitKind(kind) ? this.upgrades[faction].filter(value => value === 'speed').length : undefined, level: unit.level, upgradeProgress: unit.structureJob ? 1 - unit.structureJob.left / unit.structureJob.total : undefined, passengers: unit.passengers?.slice(), passengerPop: unit.kind === 'transport' ? (unit.passengers ?? []).reduce((total, id) => {
+          id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, kind, faction, ...(unit.race ? { race: unit.race } : {}), ...(unit.rally ? { rally: unit.rally } : {}), hp, maxHp, facing, moving, weaponLevel: isUnitKind(kind) ? (levels[faction].get('weapons') ?? 0) : undefined, armorLevel: isUnitKind(kind) ? (levels[faction].get('armor') ?? 0) : undefined, precisionLevel: isUnitKind(kind) ? (levels[faction].get('precision') ?? 0) : undefined, vitalityLevel: isUnitKind(kind) ? (levels[faction].get('vitality') ?? 0) : undefined, rangeLevel: benefitsFromRange(kind) ? (levels[faction].get('range') ?? 0) : undefined, speedLevel: isUnitKind(kind) ? (levels[faction].get('speed') ?? 0) : undefined, level: unit.level, upgradeProgress: unit.structureJob ? 1 - unit.structureJob.left / unit.structureJob.total : undefined, passengers: unit.passengers?.slice(), passengerPop: unit.kind === 'transport' ? (unit.passengers ?? []).reduce((total, id) => {
              const passenger = this.units.get(id)
              return total + (passenger ? training[passenger.kind as UnitKind].population : 0)
            }, 0) : undefined, embarkedOn: unit.embarkedOn, experience: unit.experience, ...(unit.concealed ? { concealed: true } : {}), ...(unit.summonedUntil ? { summonedUntil: unit.summonedUntil } : {}), abilityReadyAt: unit.abilityReadyAt, abilityActiveUntil: unit.abilityActiveUntil,
+          ...(unit.unloadTotal ? { landing: { total: unit.unloadTotal, waiting: Boolean(unit.unloadRetryAt) } } : {}),
           construction: buildDuration ? buildTicks / buildDuration : undefined,
           constructionStatus: buildDuration ? construction.get(id) ?? 'paused' : undefined,
           research: unit.upgradeJob ? { kind: unit.upgradeJob.kind, progress: 1 - unit.upgradeJob.left / upgrades[unit.upgradeJob.kind].ticks } : undefined,
