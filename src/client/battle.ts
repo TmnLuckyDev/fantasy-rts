@@ -574,7 +574,6 @@ export class BattleScene extends Phaser.Scene {
       const error = this.buildError(this.placing, at)
       if (!error) {
         this.actions.order(ids, { kind: 'build', building: this.placing, at })
-        this.place(null)
       } else this.actions.placement(this.placing, error)
       return
     }
@@ -705,7 +704,6 @@ export class BattleScene extends Phaser.Scene {
     if (this.placing) {
       if (this.placing === 'wall' && wallLine(this.map, a, b).length) {
         this.actions.order(this.workerIds(), { kind: 'wall-line', from: a, to: b })
-        this.place(null)
       } else if (this.placing !== 'wall') this.click(rect.to, false, false)
       return
     }

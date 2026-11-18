@@ -389,6 +389,7 @@ function showBattle() {
     buildRequirement,
     placement: (kind, error, segmentCount) => {
       placing = Boolean(kind)
+      button('deselect').hidden = !placing && !selection.length
       placementTip.hidden = !kind
       syncWorkerActions()
       if (!kind) return
@@ -629,7 +630,7 @@ function drawSelection(entities: Entity[], interactive = false) {
   const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').hidden = !movable || workers && entities.every(entity => entity.kind === 'worker')
   button('halt').hidden = !movable
-  button('deselect').hidden = !selected
+  button('deselect').hidden = !selected && !placing
   updateCommandTarget()
   meter.hidden = !selected
   portrait.hidden = !selected

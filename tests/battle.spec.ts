@@ -238,6 +238,8 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     await human.mouse.click(mine.x, mine.y)
     await expect(human.locator('#placement-message')).toHaveText('Blocked by terrain.')
     await human.mouse.click(barracksSpot.x, barracksSpot.y)
+    await expect(human.locator('#placement-tip')).toBeVisible()
+    await human.getByRole('button', { name: 'Deselect selected units' }).click()
     await expect(human.locator('#placement-tip')).toBeHidden()
     await human.getByRole('button', { name: 'Production', exact: true }).click()
     await human.getByRole('button', { name: 'Queues', exact: true }).click()
@@ -277,6 +279,7 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     await expect.poll(() => newest(orcHistory)?.entities.some(entity =>
       entity.kind === 'tower' && entity.faction === 'orc' && entity.construction === undefined), { timeout: 25_000 }).toBe(true)
 
+    await orc.locator('#cancel-placement').tap()
     const before = unit(humanHistory, 2)!
     const start = await screenPoint(human, { x: 229, y: 310 }, ashford.bases.human)
     const end = await screenPoint(human, { x: 350, y: 418 }, ashford.bases.human)
@@ -413,16 +416,21 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await page.getByRole('button', { name: 'Stone Rampart · 28 stone', exact: true }).tap()
     await page.getByRole('button', { name: 'Base', exact: true }).tap()
     const start = await screenPoint(page, cellCenter(ashford.width - 12, ashford.height - 15), hall)
-    const end = await screenPoint(page, cellCenter(ashford.width - 14, ashford.height - 15), hall)
+    const end = await screenPoint(page, cellCenter(ashford.width - 13, ashford.height - 15), hall)
+    const last = await screenPoint(page, cellCenter(ashford.width - 14, ashford.height - 15), hall)
     // Inject pointer events for the drag so both engines exercise the same path
     // and can continue with Playwright touchscreen taps after the gesture.
     const field = page.locator('#battlefield')
     const dragPointer = { button: 0, pointerId: 7, pointerType: 'touch' }
     await field.dispatchEvent('pointerdown', { ...dragPointer, clientX: start.x, clientY: start.y })
     await field.dispatchEvent('pointermove', { ...dragPointer, clientX: end.x, clientY: end.y })
-    await expect(page.locator('#placement-message')).toContainText('3 wall segments')
+    await expect(page.locator('#placement-message')).toContainText('2 wall segments')
     await field.dispatchEvent('pointerup', { ...dragPointer, clientX: end.x, clientY: end.y })
+    await expect(page.locator('#stone')).toHaveText('64')
+    await expect(page.locator('#placement-tip')).toBeVisible()
+    await page.touchscreen.tap(last.x, last.y)
     await expect(page.locator('#stone')).toHaveText('36')
+    await page.locator('#cancel-placement').tap()
     await expect(page.locator('#production-count')).toHaveText('3')
     await expect(page.locator('#placement-tip')).toBeHidden()
     await page.getByRole('button', { name: 'Production', exact: true }).tap()
