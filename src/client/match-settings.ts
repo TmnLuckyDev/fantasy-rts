@@ -1,5 +1,5 @@
 import { mapOptions } from '../shared/map.ts'
-import { ARMY_SCORE_PER_UNIT, DEPOSIT_STOCK_MAX, MAX_DEPOSITS, STARTING_RESOURCE_MAX, TIME_LIMIT_MAX_MINUTES,
+import { DEPOSIT_STOCK_MAX, MAX_DEPOSITS, STARTING_RESOURCE_MAX, TIME_LIMIT_MAX_MINUTES,
   WORKER_LIMIT_MAX, MAX_POPULATION_CAP, defaultMatchSettings, parseMatchSettings, treeLimit } from '../shared/match-settings.ts'
 import type { MatchReport, MatchSettings } from '../shared/match-settings.ts'
 import type { PlayerRaces } from '../shared/protocol.ts'
@@ -54,8 +54,7 @@ export class MatchSettingsMenu {
     this.input('minutes').max = String(TIME_LIMIT_MAX_MINUTES)
     this.input('population-cap').max = String(MAX_POPULATION_CAP)
     document.querySelector('#score-rule')!.textContent =
-      'At the time limit, one point per gold, wood or stone in reserve and ' + ARMY_SCORE_PER_UNIT +
-      ' points per surviving soldier or hero. Equal scores draw. Losing your headquarters ends the match.'
+      'At the time limit, score includes reserves, surviving army value, completed research and control of marked objectives. Temporary summons do not score. Losing your headquarters ends the match.'
     document.querySelector<HTMLButtonElement>('#close-settings')!.onclick = () => this.close()
     this.reset.onclick = () => this.fill(defaultMatchSettings(this.map))
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
@@ -172,6 +171,9 @@ export function drawMatchStats(target: HTMLElement, report?: MatchReport, races:
     ['Surviving army', 'army']
   ] as const) row(name, factions.map(faction => report.sides[faction][metric]))
   row('Resources in reserve', factions.map(faction => resourceKinds.reduce((total, resource) => total + report.sides[faction].bank[resource], 0)))
+  for (const [name, metric] of [['Military value', 'military'], ['Completed research', 'research'], ['Objective control', 'territory']] as const) {
+    row(name, factions.map(faction => report.sides[faction][metric]))
+  }
   row('Final score', factions.map(faction => report.sides[faction].score))
   target.append(table)
 }

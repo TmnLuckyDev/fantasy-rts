@@ -108,6 +108,7 @@ export type Entity = Point & {
   embarkedOn?: number
   passengers?: number[]
   passengerPop?: number
+  landing?: { total: number, waiting: boolean }
   weaponLevel?: number
   armorLevel?: number
   precisionLevel?: number
@@ -141,6 +142,9 @@ export type RoomState = {
   players: Player[]
   result: Result | null
   paused?: boolean
+  reconnectSeconds?: number
+  rematchReady?: Faction[]
+  difficulty?: Difficulty
 }
 
 export const formations = ['line', 'compact', 'spread'] as const
@@ -182,7 +186,7 @@ export type ClientMessage =
   | { type: 'create' | 'solo', faction?: Faction, race?: Race, opponentRace?: Race, settings?: MatchSettings }
   | { type: 'join', code: string, faction?: Faction, race?: Race }
   | { type: 'resume', code: string, token: string }
-  | { type: 'leave' }
+  | { type: 'leave' | 'rematch' }
   | { type: 'faction', faction: Faction }
   | { type: 'race', race: Race }
   | { type: 'settings', settings: MatchSettings }
@@ -193,10 +197,11 @@ export type ClientMessage =
 
 export type AttackAlert = { id: number, kind: 'base' | 'building' | 'workers' | 'army', at: Point, until: number }
 
+export type ControlSite = Point & { owner?: Faction }
 export type DepositInfo = { index: number, remaining: number | null }
 export type Corpse = Point & { id: number, expiresAt: number }
 
-export type Snapshot = { corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
+export type Snapshot = { controlSites?: ControlSite[], corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
 export type ServerMessage =
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }

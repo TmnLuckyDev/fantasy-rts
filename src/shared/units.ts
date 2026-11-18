@@ -42,8 +42,8 @@ const original: Record<'human' | 'orc', Record<EntityKind, UnitStats>> = {
     tower: { ...economyStats.tower, range: 205 }
   },
   orc: {
-    blade: { health: 94, damage: 15, armor: 3, range: 23, speed: 74, cooldown: 12, radius: 9 },
-    ranged: { health: 66, damage: 13, armor: 1, range: 118, speed: 76, cooldown: 17, radius: 9 },
+    blade: { health: 94, damage: 15, armor: 3, range: 23, speed: 80, cooldown: 12, radius: 9 },
+    ranged: { health: 66, damage: 13, armor: 1, range: 123, speed: 76, cooldown: 17, radius: 9 },
     polearm: { health: 118, damage: 19, armor: 3, range: 34, speed: 74, cooldown: 15, radius: 10 },
     marksman: { health: 82, damage: 24, armor: 1, range: 136, speed: 67, cooldown: 23, radius: 10 },
     heavy: { health: 240, damage: 34, armor: 7, range: 28, speed: 81, cooldown: 20, radius: 13 },
@@ -61,8 +61,8 @@ function roster(changes: Partial<Record<EntityKind, Partial<UnitStats>>>) {
 const elf = roster({
   blade: { armor: 1, damage: 20 }, polearm: { armor: 2, damage: 19 },
   heavy: { armor: 4, damage: 29 }, marksman: { damage: 24, cooldown: 21 },
-  ranged: { damage: 20, cooldown: 15 }, siege: { health: 125, damage: 25, armor: 1, range: 205, speed: 57, cooldown: 35 }, tower: { range: 205 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
-  pathfinder: { range: 165, health: 240, speed: 94 }, warship: { health: 585, speed: 90.2 }
+  ranged: { damage: 19, cooldown: 16 }, siege: { health: 125, damage: 25, armor: 1, range: 205, speed: 57, cooldown: 35 }, tower: { range: 205 }, support: { health: 78, speed: 86 }, vanguard: { health: 295, speed: 104, armor: 4 },
+  pathfinder: { range: 165, health: 240, speed: 94 }, warship: { health: 645, speed: 90.2 }
 })
 for (const kind of ['blade', 'polearm', 'heavy', 'ranged', 'marksman', 'scout', 'support'] as const) {
   elf[kind].speed *= 1.1
@@ -81,7 +81,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     heavy: { health: 248, armor: 8, speed: 76.5, cooldown: 21 },
     siege: { health: 205, damage: 38, armor: 5, range: 180, speed: 36, cooldown: 39 },
     headquarters: { health: 1725, armor: 6 }, tower: { health: 552, armor: 4, range: 205 },
-    wall: { health: 432, armor: 5 }, scout: { speed: 128 }, warship: { health: 715, speed: 73.8 },
+    wall: { health: 432, armor: 5 }, scout: { speed: 128 }, warship: { health: 665, speed: 73.8 },
     vanguard: { health: 385, speed: 69, damage: 32 }, pathfinder: { speed: 72, damage: 26, range: 149 }
   }),
   undead: roster({
@@ -90,7 +90,7 @@ export const unitStats: Record<Race, Record<EntityKind, UnitStats>> = {
     marksman: { health: 68, armor: 1, range: 143 },
     heavy: { health: 295, speed: 57, armor: 6, damage: 36, cooldown: 23 },
     siege: { health: 135, damage: 31, armor: 1, range: 190, speed: 52, cooldown: 34 },
-    tower: { health: 390, range: 205 }, wall: { health: 305 }, warship: { health: 585 }, support: { health: 94, speed: 73 },
+    tower: { health: 390, range: 205 }, wall: { health: 305 }, warship: { health: 615, damage: 31 }, support: { health: 94, speed: 73 },
     vanguard: { armor: 5, damage: 35 }, pathfinder: { health: 230, range: 146, damage: 26 }
   })
 }

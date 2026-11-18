@@ -10,7 +10,7 @@ export type SnapshotDelta = {
   pose?: Pose[]
   upsert?: Entity[]
   removed?: number[]
-} & Partial<Pick<Snapshot, 'fog' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
+} & Partial<Pick<Snapshot, 'fog' | 'controlSites' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
 
 function sameTraining(a: Entity['training'], b: Entity['training']) {
   return a === b || Boolean(a && b && a.kind === b.kind && a.progress === b.progress &&
@@ -24,6 +24,7 @@ function sameDetails(a: Entity, b: Entity) {
     a.abilityReadyAt === b.abilityReadyAt && a.abilityActiveUntil === b.abilityActiveUntil &&
     a.level === b.level && a.upgradeProgress === b.upgradeProgress && a.passengerPop === b.passengerPop &&
     a.passengers?.length === b.passengers?.length && (a.passengers ?? []).every((id, i) => id === b.passengers![i]) &&
+    a.landing?.total === b.landing?.total && a.landing?.waiting === b.landing?.waiting &&
     a.weaponLevel === b.weaponLevel && a.armorLevel === b.armorLevel && a.precisionLevel === b.precisionLevel &&
     a.vitalityLevel === b.vitalityLevel && a.rangeLevel === b.rangeLevel && a.speedLevel === b.speedLevel && a.maxHp === b.maxHp &&
     a.construction === b.construction && a.constructionStatus === b.constructionStatus &&
@@ -46,6 +47,10 @@ export function makeDelta(previous: Snapshot, next: Snapshot): SnapshotDelta {
   }
   if (old.size) delta.removed = [...old.keys()]
   if (next.fog !== previous.fog) delta.fog = next.fog
+  if (next.controlSites?.length !== previous.controlSites?.length || next.controlSites?.some((site, i) => {
+    const oldSite = previous.controlSites?.[i]
+    return !oldSite || oldSite.owner !== site.owner || oldSite.x !== site.x || oldSite.y !== site.y
+  })) delta.controlSites = next.controlSites ?? []
   if (next.effects.length) delta.effects = next.effects
   const a = previous.resources, b = next.resources
   if (a.gold !== b.gold || a.wood !== b.wood || a.stone !== b.stone) delta.resources = b
@@ -83,6 +88,7 @@ export function applyDelta(previous: Snapshot | undefined, delta: SnapshotDelta)
     type: 'snapshot', tick: delta.tick, entities, effects: delta.effects ?? [],
     fog: delta.fog ?? previous.fog, resources: delta.resources ?? previous.resources,
     population: delta.population ?? previous.population, upgrades: delta.upgrades ?? previous.upgrades,
+    ...(delta.controlSites || previous.controlSites ? { controlSites: delta.controlSites ?? previous.controlSites } : {}),
     ...(delta.corpses || previous.corpses ? { corpses: delta.corpses ?? previous.corpses } : {}),
     ...(delta.alerts || previous.alerts ? { alerts: delta.alerts ?? previous.alerts } : {}),
     ...(delta.depleted || previous.depleted ? { depleted: delta.depleted ?? previous.depleted } : {}),

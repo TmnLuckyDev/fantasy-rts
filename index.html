@@ -41,6 +41,7 @@
               <select id="solo-race"><option value="">Default opponent</option></select>
             </label>
             <button id="solo" type="button" class="primary">Play vs Computer</button>
+            <button id="practice" type="button">Practice</button>
             <button id="create" type="button" disabled>Create room</button>
             <form id="join-form">
               <input class="room-input" id="join-code" aria-label="Room code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" required pattern="[A-Za-z2-9]{5}" value="">
@@ -114,6 +115,10 @@
         </div>
       </header>
       <div class="battle-area">
+        <aside id="practice-guide" hidden>
+          <span id="practice-hint" role="status"></span>
+          <button id="finish-practice" type="button" hidden>Finish practice</button>
+        </aside>
         <section id="battlefield" aria-label="Battlefield"></section>
         <div id="attack-alerts" role="region" aria-label="Attack alerts" aria-live="polite" hidden></div>
         <div id="formation-options" role="group" aria-label="Formation options" hidden>
@@ -176,6 +181,7 @@
         <p id="result-detail"></p>
         <section id="match-stats" aria-label="Match statistics" hidden></section>
         <button id="review-map" type="button">Back to map</button>
+        <button id="play-again" type="button" class="primary" hidden>Play again</button>
         <button id="return" type="button" class="primary">Back to lobby</button>
       </dialog>
     </main>

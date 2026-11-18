@@ -6,6 +6,7 @@ A browser RTS for solo skirmishes or 1v1 multiplayer with the blue Human Kingdom
 
 Open the game in your browser and choose a faction.
 
+- **Practice** teaches selection, inspecting a gold mine, recruiting and attack-move. It uses a separate training map session and preserves any solo save.
 - **Play vs Computer** starts a solo skirmish immediately. The computer gathers, builds, trains and attacks with the opposing faction.
 - **Create room** starts a multiplayer lobby. Share the invite or five-character code, then both select **Ready**.
 
@@ -62,7 +63,7 @@ Use **Match settings** before creating an online room or starting a new solo mat
 - **Random starting positions** is on by default. Each new match selects a clear start on the Human side and mirrors it for the Orcs at the other end of the map. Each resource type enabled in the rules has a reachable source within 4.5 tiles of both headquarters. Turn random starts off for fixed positions. Checkpoints retain the original terrain and starting positions.
 - Set stock and active workers per source separately for gold, stone and wood. Leave either field blank for unlimited. Excess workers wait for a slot, and spent sources remain on the terrain but can no longer be harvested.
 - Set starting gold, wood and stone for both sides. Leave the time field blank for an unlimited match. For timed matches, the clock advances with the simulation and pauses with the match.
-- At the time limit, the score is one point per banked gold, wood or stone and 100 points per surviving soldier or hero. Ties draw. The loss of a headquarters still decides the game if it occurs by the last tick.
+- At the time limit, the score includes resources in reserve, the recruitment value of the surviving army, completed research and one point per second for each uncontested marked objective. Temporary summons do not earn score. Ties draw. The loss of a headquarters still decides the game if it occurs by the last tick.
 - The results show resources delivered, troops trained, buildings completed and razed, enemy units killed, losses, surviving army and score for both sides. The totals exclude starting units and resources. Old saves begin counting activity from the update.
 
 ## Heroes
@@ -81,7 +82,7 @@ The headquarters supports 10 population. A completed Farm or Boar Farm adds ten.
 | Pan and zoom | Arrow keys, minimap and mouse wheel. | Two-finger pan, pinch and tap or drag on the minimap. Play in portrait. |
 | Other orders | **Q** selects all troops, **S** stops them, **H** centers on your base. | **All troops**, **Stop** and **Base** on the command bar. |
 
-Solo matches run in the browser and save progress on that device. Reload the same tab to resume or use **Resume solo match** in the lobby. Switching away from the tab pauses the match. Multiplayer matches pause until disconnected players return. Multiplayer rooms live in server memory and are cleared when the process restarts. **Leave** ends a solo match and forfeits a multiplayer match.
+Solo matches run in the browser and save progress on that device. Reload the same tab to resume or use **Resume solo match** in the lobby. Switching away from the tab pauses the match. Multiplayer matches pause for up to 45 seconds after a disconnect. If a player stays connected they win by forfeit when the grace period ends. If both players leave, the expired room is removed. Multiplayer rooms live in server memory and are cleared when the process restarts. **Leave** ends a solo match and forfeits a multiplayer match. **Play again** starts a fresh solo match with the same settings or starts an online rematch when both players agree.
 
 ## Preview and development
 

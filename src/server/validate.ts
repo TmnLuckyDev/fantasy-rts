@@ -44,6 +44,7 @@ export function parseMessage(raw: string): ClientMessage | null {
     case 'ready':
       return typeof ready === 'boolean' ? { type, ready } : null
     case 'leave':
+    case 'rematch':
       return { type }
     case 'global-train':
       return isUnitKind(value.unit) && validId(value.count) ? { type, unit: value.unit, count: value.count } : null

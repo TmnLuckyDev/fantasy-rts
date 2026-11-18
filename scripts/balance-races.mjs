@@ -9,8 +9,8 @@ import { factions, isUnitKind, races, resourceKinds } from '../src/shared/protoc
 
 const mode = process.argv[2] ?? 'skirmish'
 const games = Number(process.argv[3] ?? (mode === 'bots' ? 2 : 100))
-if (!['bots', 'skirmish', 'economy'].includes(mode) || !Number.isSafeInteger(games) || games < 1) {
-  throw new Error('Usage: node scripts/balance-races.mjs [skirmish|bots|economy] [games per matchup and map]')
+if (!['bots', 'skirmish', 'fleet', 'economy'].includes(mode) || !Number.isSafeInteger(games) || games < 1) {
+  throw new Error('Usage: node scripts/balance-races.mjs [skirmish|fleet|bots|economy] [games per matchup and map]')
 }
 
 function random(seed) {
@@ -20,13 +20,20 @@ function random(seed) {
   }
 }
 
-const maps = ['pinewatch-vale', 'ironbreak-pass', 'shattered-isles']
+const maps = mode === 'fleet' ? ['shattered-isles'] : ['pinewatch-vale', 'ironbreak-pass', 'shattered-isles']
 const selectedMap = process.env.BALANCE_MAP
 if (selectedMap && !maps.includes(selectedMap)) throw Error('Unknown BALANCE_MAP: ' + selectedMap)
 const botMinutes = Number(process.env.BALANCE_MINUTES ?? 5)
 if (![5, 10, 20].includes(botMinutes)) throw new Error('BALANCE_MINUTES must be 5, 10 or 20')
 const landArmy = ['blade', 'blade', 'ranged', 'ranged', 'polearm', 'heavy']
 const seaArmy = ['warship', 'warship', 'warship']
+function fleetFor(race) {
+  const budget = trainingCost('warship', 'human')
+  const cost = trainingCost('warship', race)
+  const count = Math.min(...resourceKinds.filter(resource => cost[resource] > 0)
+    .map(resource => Math.floor(budget[resource] * 10 / cost[resource])))
+  return Array(count).fill('warship')
+}
 const strategies = ['balanced', 'rush', 'defensive', 'counter']
 
 function battlefront(map) {
@@ -56,13 +63,14 @@ function runSkirmish(map, front, lineup, rand) {
   }
   for (const [seat, side] of factions.entries()) {
     const direction = seat ? -1 : 1
-    const units = map.id === 'shattered-isles' ? seaArmy : [...landArmy]
+    const units = mode === 'fleet' ? fleetFor(lineup[side]) : map.id === 'shattered-isles' ? seaArmy : [...landArmy]
     if (map.id !== 'shattered-isles' && lineup[side] === 'undead') {
       const gold = race => units.reduce((total, unit) => total + trainingRule(unit, race).gold, 0)
       if (gold('human') - gold('undead') >= trainingRule('blade', 'undead').gold) units.push('blade')
     }
     const army = units.map((kind, i) => {
-      const { x, y } = cellCenter(front.x - (map.id === 'shattered-isles' ? 2 : 4) * direction, front.y + i % 5 - 2)
+      const frontDepth = mode === 'fleet' ? 2 + Math.floor(i / 5) : map.id === 'shattered-isles' ? 2 : 4
+      const { x, y } = cellCenter(front.x - frontDepth * direction, front.y + i % 5 - 2)
       return match.spawn(side, kind, { x: x + (rand() - .5) * 10, y: y + (rand() - .5) * 12 }).id
     })
     match.command(side, army, { kind: 'advance', to: cellCenter(front.x + 4 * direction, front.y) })
@@ -128,7 +136,7 @@ if (mode === 'economy') {
 
 for (const id of selectedMap ? [selectedMap] : maps) {
   const map = ashfordMap(id)
-  const front = mode === 'skirmish' ? battlefront(map) : undefined
+  const front = mode !== 'bots' ? battlefront(map) : undefined
   for (let i = 0; i < races.length; i++) for (let j = i; j < races.length; j++) {
     const start = performance.now()
     const pair = [races[i], races[j]]
