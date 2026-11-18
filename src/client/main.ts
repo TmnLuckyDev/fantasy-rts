@@ -335,6 +335,11 @@ function showBattle() {
   const map = room?.settings ? mapForSettings(room.settings, room.mapSeed) : ashfordMap(room?.map)
   element('result-map').textContent = map.name
   scene = new BattleScene(faction, playerRaces, map, battlefield, minimap, {
+    dismissBuildMenu: () => {
+      if (menu.hidden || economyContext !== 'build') return false
+      closeEconomyMenu()
+      return true
+    },
     order: issueOrder,
     groupOrder: issueGroupOrder,
     groups: drawTroopGroups,

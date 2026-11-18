@@ -22,6 +22,7 @@ const effectBudget: Record<Effect['kind'], number> = { shot: 16, hit: 8, fallen:
 type Visual = { entity: Entity, sprite: Phaser.GameObjects.Image, lastHp: number, offsetX: number, offsetY: number, ring?: Phaser.GameObjects.Image }
 type AnimatedEffect = { effect: Effect, born: number, sprite?: Phaser.GameObjects.Image }
 type BattleActions = {
+  dismissBuildMenu: () => boolean
   groupOrder: (group: TroopGroup, order: ArmyOrder) => void
   groups: (army: ArmyIndex, selected: TroopGroup | null) => void
   order: (ids: number[], order: Order) => void
@@ -138,9 +139,13 @@ export class BattleScene extends Phaser.Scene {
     this.initialized = true
     this.home()
     this.controls = new BattlefieldInput(this.host, {
-      select: (point, append, touch) => this.click(point, append, touch),
+      select: (point, append, touch) => {
+        if (!this.actions.dismissBuildMenu()) this.click(point, append, touch)
+      },
       selectBox: (rect, append) => this.selectBox(rect, append),
-      order: point => this.orderAt(point),
+      order: point => {
+        if (!this.actions.dismissBuildMenu()) this.orderAt(point)
+      },
       camera: (from, to, ratio) => this.transformCamera(from, to, ratio)
     })
     const track = (event: PointerEvent) => {

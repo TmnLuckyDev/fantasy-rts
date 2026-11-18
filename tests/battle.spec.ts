@@ -371,8 +371,12 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(farm).toBeHidden()
     await build.tap()
     await expect(farm).toBeVisible()
-    await build.tap()
+    const fieldBox = (await page.locator('#battlefield').boundingBox())!
+    const openGround = { x: fieldBox.x + fieldBox.width * .65, y: fieldBox.y + 22 }
+    await page.touchscreen.tap(openGround.x, openGround.y)
     await expect(farm).toBeHidden()
+    await expect(page.locator('#selection-name')).toHaveText('Peon')
+    await expect(idle()).toHaveText(/3/)
     await expect(gather).toBeVisible()
     // After loading the game assets the browser can play solo without any connection.
     await context.setOffline(true)
