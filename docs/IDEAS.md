@@ -134,6 +134,7 @@ Helte skal være sjældnere og væsentligt sværere at få, men til gengæld spi
 3. **Større betydning:** Helte skal have en mere afgørende rolle i kamp gennem tydelige styrker, unikke evner, støtte til nærliggende enheder og/eller stærkere kampegenskaber. Hver helt skal have en tydelig taktisk identitet.
 4. **Større visuelt:** Heltes figurer skal være tydeligt større end almindelige enheder, og større end de er nu. De skal være nemme at genkende i en hær, især på mobil.
 5. **Betydningsfulde tab:** At miste en helt skal have strategisk betydning, men må ikke gøre en kamp automatisk tabt. Genanskaffelse og eventuel genoplivning skal balanceres.
+6. **Passiv heling over tid:** Helte skal automatisk genvinde HP gradvist efter at have taget skade. Helingen skal være langsom nok til, at skade og tilbagetrækning stadig har betydning, men hurtig nok til, at en overlevende helt kan bruges igen efter en kamp uden at skulle rekrutteres på ny.
 
 ### Design- og balancehensyn
 
@@ -141,6 +142,7 @@ Helte skal være sjældnere og væsentligt sværere at få, men til gengæld spi
 - Pris, styrke, evner og tilgængelighed skal sammenlignes på tværs af racer.
 - Større visuelle modeller må ikke skabe upræcise trykflader, uhensigtsmæssig kollision eller problemer med troppeformationer.
 - Helte skal være nemme at vælge og følge på mobil uden at dække uforholdsmæssigt meget af slagmarken.
+- Passiv healing skal balanceres, så helte ikke bliver næsten umulige at slå ihjel under kamp. Det kan overvejes, om healing først starter efter en periode uden at tage skade.
 
 ### Afklares ved planlægning
 
@@ -149,5 +151,6 @@ Helte skal være sjældnere og væsentligt sværere at få, men til gengæld spi
 - Hvilke konkrete evner eller buffs gør hver helt mere betydningsfuld?
 - Hvor meget skal heltenes sprites og eventuelle markeringer forstørres?
 - Hvilke konsekvenser skal det have at miste en helt?
+- Hvor hurtigt skal passiv HP-regenerering ske, og skal den pauses under kamp?
 
 **Implementeringsbeslutning:** Ingen ændringer i spillet nu. Idéen er kun registreret til senere prioritering.
