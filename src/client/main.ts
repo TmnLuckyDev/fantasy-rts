@@ -317,7 +317,8 @@ function preferredBattleRenderer() {
   const info = gl.getExtension('WEBGL_debug_renderer_info')
   const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : ''
   gl.getExtension('WEBGL_lose_context')?.loseContext()
-  return /swiftshader|llvmpipe|software/i.test(renderer) || (touch && !renderer) ? Phaser.CANVAS : Phaser.AUTO
+  const knownMobileGpu = /apple|adreno|mali-|powervr|tegra/i.test(renderer)
+  return /swiftshader|llvmpipe|software/i.test(renderer) || (touch && !knownMobileGpu) ? Phaser.CANVAS : Phaser.AUTO
 }
 
 function showBattle() {
@@ -475,9 +476,11 @@ function issueOrder(ids: number[], order: Order) {
 function setPracticeStep(step: number) {
   practiceStep = step
   practiceMoving = false
+  if (step === 1) scene?.focusPracticeMine()
+  if (step === 2) scene?.clearPracticeMine()
   setText('practice-hint', [
     '1/4 · Tap Workers to select your workers.',
-    '2/4 · Tap a gold mine near your base to inspect it.',
+    '2/4 · Tap the highlighted gold mine to inspect it.',
     '3/4 · Open Production, then Recruit, and train one basic melee unit.',
     '4/4 · Select All troops, tap Attack move and choose a spot on the battlefield.',
     'Practice complete. Keep experimenting or return to the lobby.'

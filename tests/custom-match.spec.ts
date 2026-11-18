@@ -1,5 +1,5 @@
 import { devices, expect, test, webkit } from '@playwright/test'
-import { ashfordClassic, cellCenter, TILE } from '../src/shared/map.ts'
+import { cellCenter } from '../src/shared/map.ts'
 
 test('mobile can customize a solo game and see the timed match statistics', async ({ browser, baseURL }) => {
   test.setTimeout(100_000)
@@ -68,16 +68,9 @@ test('practice teaches selection, mine inspection, training and attack-move whil
     await expect(field.locator('canvas')).toBeVisible()
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     const box = (await field.boundingBox())!
+    // The practice camera centers on the mine unless it reaches the left map edge.
     const mine = cellCenter(5, 18)
-    const zoom = .88
-    const center = (focus: number, screen: number, world: number) => {
-      const half = screen / zoom / 2
-      return Math.max(half, Math.min(focus, world - half))
-    }
-    const home = ashfordClassic.bases.human
-    const x = box.x + box.width / 2 + (mine.x - center(home.x, box.width, ashfordClassic.width * TILE)) * zoom
-    const y = box.y + box.height / 2 + (mine.y - center(home.y, box.height, ashfordClassic.height * TILE)) * zoom
-    await page.touchscreen.tap(x, y)
+    await page.touchscreen.tap(box.x + Math.min(box.width / 2, mine.x * .88), box.y + box.height / 2)
     await expect(hint).toContainText('3/4')
     await page.getByRole('button', { name: 'Production', exact: true }).tap()
     await page.getByRole('button', { name: 'Train 1 Footman', exact: true }).tap()

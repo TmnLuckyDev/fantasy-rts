@@ -72,6 +72,7 @@ export class BattleScene extends Phaser.Scene {
   private rallyTarget: number | null = null
   private placing: BuildingKind | null = null
   private pointer: Point | null = null
+  private practiceMine?: Point
 
   constructor(
     readonly faction: Faction,
@@ -474,6 +475,21 @@ export class BattleScene extends Phaser.Scene {
   }
   home() { if (this.initialized) this.focus(this.map.bases[this.faction]) }
   focusAlert(point: Point) { if (this.initialized) this.focus(point) }
+
+  focusPracticeMine() {
+    const home = this.map.bases[this.faction]
+    let nearest: Point | undefined
+    for (const { index } of this.newest?.deposits ?? []) {
+      if (this.map.tiles[index] !== 'mine') continue
+      const point = cellCenter(index % this.map.width, Math.floor(index / this.map.width))
+      if (!nearest || distance(home, point) < distance(home, nearest)) nearest = point
+    }
+    this.practiceMine = nearest
+    if (nearest) this.focusAlert(nearest)
+  }
+
+
+  clearPracticeMine() { this.practiceMine = undefined }
 
   minimapPosition(point: Point) { return { x: point.x / this.mapWidth, y: point.y / this.mapHeight } }
   minimapFocus(x: number, y: number) { if (this.initialized) this.focus({ x: x * this.mapWidth, y: y * this.mapHeight }) }
@@ -923,6 +939,10 @@ export class BattleScene extends Phaser.Scene {
     }
     this.paintEffects(time, center, halfWidth, halfHeight, crowded)
     this.ui.clear()
+    if (this.practiceMine) {
+      const { x, y } = this.practiceMine
+      this.ui.lineStyle(2, 0xffd575, 1).strokeRect(x - 16, y - 16, 32, 32)
+    }
     for (const site of this.newest?.controlSites ?? []) {
       const color = site.owner ? factionColor[site.owner] : 0xffdf98
       this.ui.lineStyle(2, color, 0.55).strokeCircle(site.x, site.y, CONTROL_RADIUS)

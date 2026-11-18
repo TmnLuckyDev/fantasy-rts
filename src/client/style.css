@@ -409,6 +409,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
     gap: .3rem;
   }
   .battle-shortcuts button, .orders button, .production-tabs button, .global-train-row button { min-height: 44px; }
+  .battle-shortcuts button { padding-inline: .5rem; }
   .orders:not(:has(button:not([hidden]))) { display: none; }
   .match-finished .orders { display: none; }
   #troop-groups { max-height: 44px; }
