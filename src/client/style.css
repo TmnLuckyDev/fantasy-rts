@@ -515,3 +515,28 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   .qol-options select, .economy-menu button, .placement-tip button, #formation-options button, #map-button { min-height: 44px; }
   .head-actions { flex-wrap: wrap; }
 }
+
+.guide-links { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; margin: .7rem 0; }
+#game-guide {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  color: var(--pale);
+  background: #22221b;
+  border: 1px solid var(--gold);
+  padding: clamp(.85rem, 3vw, 1.5rem);
+  line-height: 1.45;
+}
+#game-guide::backdrop { background: #0c0e09c2; }
+#game-guide .guide-links { justify-content: flex-start; }
+#game-guide [aria-pressed="true"] { border-color: var(--gold); color: var(--gold); }
+#game-guide :is(button, select, summary), .guide-links button { min-height: 44px; }
+#game-guide select { max-width: 100%; }
+#game-guide li + li, #game-guide dt:not(:first-child) { margin-top: .4rem; }
+#game-guide dt { font-weight: 700; }
+#game-guide dd { margin-left: 0; }
+.guide-note { color: var(--muted); font-size: .85rem; }
+.wiki-units { display: grid; gap: .45rem; }
+.wiki-units details { border: 1px solid var(--edge); padding: 0 .7rem; }
+.wiki-units summary { align-content: center; cursor: pointer; }
+.wiki-units p { margin: 0 0 .55rem; }
