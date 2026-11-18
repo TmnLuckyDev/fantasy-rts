@@ -10,6 +10,7 @@ Forslagene er ikke implementeret, medmindre status udtrykkeligt er ændret. Nye 
 | --- | --- | --- |
 | 001 | Army Group Templates | Idé, ikke implementeret |
 | 002 | Town Hall progression og dyrere enhedsopgraderinger | Idé, ikke implementeret |
+| 003 | Dyrere, vigtigere og større helte | Idé, ikke implementeret |
 
 ---
 
@@ -108,5 +109,41 @@ Designretning:
 - Hvilke vandmekanikker og enheder skal ports understøtte?
 - Hvad er de nuværende opgraderingsniveauer, effekter og omkostninger, og hvor meget skal priserne hæves?
 - Skal eksisterende bygninger beholde deres funktion, hvis Town Hall senere ødelægges?
+
+**Implementeringsbeslutning:** Ingen ændringer i spillet nu. Idéen er kun registreret til senere prioritering.
+
+---
+
+## 003: Dyrere, vigtigere og større helte
+
+**Status:** Idé, ikke implementeret  
+**Område:** Helte, visuel fremtoning og spilbalance
+
+### Formål
+
+Helte skal være sjældnere og væsentligt sværere at få, men til gengæld spille en meget vigtigere rolle på slagmarken. De skal fremstå som markante, særligt værdifulde enheder, både visuelt og strategisk.
+
+### Ønsket funktionalitet
+
+1. **Højere pris:** Helte skal koste betydeligt flere ressourcer end nu og eventuelt tage længere tid at rekruttere. Det skal være en mærkbar investering.
+2. **Sværere adgang:** Det kan overvejes at kræve et højere Town Hall-niveau eller bestemte bygninger før rekruttering, i sammenhæng med idé #002.
+3. **Større betydning:** Helte skal have en mere afgørende rolle i kamp gennem tydelige styrker, unikke evner, støtte til nærliggende enheder og/eller stærkere kampegenskaber. Hver helt skal have en tydelig taktisk identitet.
+4. **Større visuelt:** Heltes figurer skal være tydeligt større end almindelige enheder, og større end de er nu. De skal være nemme at genkende i en hær, især på mobil.
+5. **Betydningsfulde tab:** At miste en helt skal have strategisk betydning, men må ikke gøre en kamp automatisk tabt. Genanskaffelse og eventuel genoplivning skal balanceres.
+
+### Design- og balancehensyn
+
+- Helte skal kunne ændre udfaldet af et slag ved korrekt brug, men bør ikke alene udslette store hære.
+- Pris, styrke, evner og tilgængelighed skal sammenlignes på tværs af racer.
+- Større visuelle modeller må ikke skabe upræcise trykflader, uhensigtsmæssig kollision eller problemer med troppeformationer.
+- Helte skal være nemme at vælge og følge på mobil uden at dække uforholdsmæssigt meget af slagmarken.
+
+### Afklares ved planlægning
+
+- Hvad skal helte koste sammenlignet med deres nuværende pris?
+- Kræver de et bestemt Town Hall-niveau eller specielle bygninger?
+- Hvilke konkrete evner eller buffs gør hver helt mere betydningsfuld?
+- Hvor meget skal heltenes sprites og eventuelle markeringer forstørres?
+- Hvilke konsekvenser skal det have at miste en helt?
 
 **Implementeringsbeslutning:** Ingen ændringer i spillet nu. Idéen er kun registreret til senere prioritering.
