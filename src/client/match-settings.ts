@@ -54,7 +54,7 @@ export class MatchSettingsMenu {
     this.input('minutes').max = String(TIME_LIMIT_MAX_MINUTES)
     this.input('population-cap').max = String(MAX_POPULATION_CAP)
     document.querySelector('#score-rule')!.textContent =
-      'At the time limit, score includes reserves, surviving army value, completed research and control of marked objectives. Temporary summons do not score. Losing your headquarters ends the match.'
+      'At the time limit, reserves above 2,000 count half towards score. Score also includes surviving army value, completed research and control of marked objectives. Temporary summons do not score. Losing your headquarters ends the match.'
     document.querySelector<HTMLButtonElement>('#close-settings')!.onclick = () => this.close()
     this.reset.onclick = () => this.fill(defaultMatchSettings(this.map))
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
