@@ -13,7 +13,7 @@ The operating system can suspend a WebView during a match. Solo must retain its 
 | Platform | Tools |
 | --- | --- |
 | Browser | Node.js 22.12 or newer and npm. Playwright is optional for local browser testing. |
-| Android | JDK 21, Android Studio Otter 2025.2.1 or later, Android SDK Platform 36, Build Tools 36.x and Platform Tools. Set `ANDROID_HOME` to the SDK path. The app supports Android API 24 and later. |
+| Android | JDK 21, Android Studio Otter 2025.2.1 or later, Android SDK Platform 36, Build Tools 35.0.0 and Platform Tools. Set `ANDROID_HOME` to the SDK path. The app supports Android API 24 and later. |
 | iOS | A Mac with Xcode 26 or later, the iOS simulator runtime and Xcode command-line tools. Capacitor 8 targets iOS 15 and later. Xcode resolves the Capacitor Swift package on its first build. |
 
 Run `npm ci` from the repository root. The native projects use Capacitor 8.6.2 and the app ID `com.ashandiron.game`. They package the files built into `dist/mobile`, including the solo worker and shared game assets. The native projects contain no remote start URL.

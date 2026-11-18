@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const [platform] = process.argv.slice(2)
@@ -19,12 +19,15 @@ try {
   if (platform === 'android') {
     const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT
     const installed = sdk && existsSync(join(sdk, 'platforms', 'android-36')) &&
-      existsSync(join(sdk, 'build-tools')) && readdirSync(join(sdk, 'build-tools')).some(name => name.startsWith('36.'))
+      existsSync(join(sdk, 'build-tools', '35.0.0', 'source.properties'))
     if (!installed && !existsSync('android/local.properties')) {
-      throw new Error('Install Android SDK Platform 36 and Build Tools 36.x, then set ANDROID_HOME or open the Android project in Android Studio.')
+      throw new Error('Install Android SDK Platform 36 and Build Tools 35.0.0, then set ANDROID_HOME or open the Android project in Android Studio.')
     }
-    const java = process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin', 'java') : 'java'
-    requireTool(java, ['-version'], 'Install JDK 21 and set JAVA_HOME before building the Android app.')
+    const javac = process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin', 'javac') : 'javac'
+    const compiler = spawnSync(javac, ['-version'], { encoding: 'utf8' })
+    if (compiler.status !== 0 || !/^javac 21[.\s]/.test(compiler.stdout)) {
+      throw new Error('Install the full JDK 21 and set JAVA_HOME before building the Android app.')
+    }
     run('npm', ['run', 'android:sync'], { shell: windows })
     run(windows ? 'gradlew.bat' : './gradlew', [':app:assembleDebug'], { cwd: 'android', shell: windows })
   } else if (platform === 'ios') {
