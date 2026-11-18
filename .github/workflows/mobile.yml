@@ -47,6 +47,8 @@ jobs:
 
   ios:
     runs-on: macos-26
+    env:
+      VITE_MOBILE_SERVER_URL: https://backend.invalid
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
@@ -57,12 +59,13 @@ jobs:
       - run: xcodebuild -version
       - run: npm ci
       - run: npm run build:ios
-      - name: Install and launch on an iPhone simulator
+      - name: Test offline solo with native iPhone taps
         run: |
           set -euo pipefail
           device=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
           test -n "$device" && test "$device" != null
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
-          xcrun simctl install "$device" ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
-          xcrun simctl launch "$device" com.ashandiron.game
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -destination "platform=iOS Simulator,id=$device" -derivedDataPath ios/DerivedData \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
