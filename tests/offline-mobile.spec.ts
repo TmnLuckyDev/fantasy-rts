@@ -5,6 +5,10 @@ test('the packaged-compatible solo flow plays, pauses and restores without a bac
   const engine = useWebKit ? await webkit.launch() : browser
   const context = await engine.newContext(devices[useWebKit ? 'iPhone 14' : 'Pixel 7'])
   try {
+    // The local server stands in for the native asset handler. Only packaged resources are reachable.
+    const assetOrigin = new URL(baseURL!).origin
+    await context.route('**/*', route => new URL(route.request().url()).origin === assetOrigin ?
+      route.continue() : route.abort())
     await context.routeWebSocket('**/socket', socket => socket.close())
     const page = await context.newPage()
     const checkpointTick = () => page.evaluate(() => {
@@ -12,7 +16,6 @@ test('the packaged-compatible solo flow plays, pauses and restores without a bac
       return Number(slot?.save?.match?.tick ?? 0)
     })
     await page.goto(baseURL!)
-    await context.setOffline(true)
     await page.getByRole('button', { name: 'Play vs Computer' }).tap()
     await expect(page.locator('#battlefield canvas')).toBeVisible()
     await expect.poll(checkpointTick).toBeGreaterThan(0)
@@ -29,10 +32,8 @@ test('the packaged-compatible solo flow plays, pauses and restores without a bac
     await page.getByRole('button', { name: 'Resume', exact: true }).tap()
     await expect.poll(checkpointTick).toBeGreaterThan(stopped)
     await page.close()
-    await context.setOffline(false)
     const resumed = await context.newPage()
     await resumed.goto(baseURL!)
-    await context.setOffline(true)
     await resumed.getByRole('button', { name: 'Resume solo match' }).tap()
     await expect(resumed.locator('#battlefield canvas')).toBeVisible()
   } finally {
