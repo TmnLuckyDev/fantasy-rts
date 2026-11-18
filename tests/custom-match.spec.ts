@@ -51,11 +51,13 @@ test('mobile can customize a solo game and see the timed match statistics', asyn
   }
 })
 
-test('practice teaches selection, mine inspection, training and attack-move without writing a save', async ({ browser, baseURL }) => {
+test('practice teaches selection, mine inspection, training and attack-move while preserving the solo save', async ({ browser, baseURL }) => {
   const mobile = process.env.MOBILE_BROWSER === 'webkit' ? await webkit.launch() : browser
   const context = await mobile.newContext(devices[mobile === browser ? 'Pixel 7' : 'iPhone 14'])
   try {
     const page = await context.newPage()
+    const saved = JSON.stringify({ version: 1, owner: 'previous', save: { faction: 'human' } })
+    await page.addInitScript(value => localStorage.setItem('ash-and-iron-solo', value), saved)
     await page.goto(baseURL!)
     await page.getByRole('button', { name: 'Practice', exact: true }).tap()
     const hint = page.locator('#practice-hint')
@@ -87,8 +89,8 @@ test('practice teaches selection, mine inspection, training and attack-move with
     await page.touchscreen.tap(target.x + target.width * .7, target.y + target.height * .47)
     await expect(hint).toContainText('Practice complete')
     await page.getByRole('button', { name: 'Finish practice', exact: true }).tap()
-    await expect(page.getByRole('button', { name: 'Play vs Computer' })).toBeVisible()
-    expect(await page.evaluate(() => localStorage.getItem('ash-and-iron-solo'))).toBeNull()
+    await expect(page.getByRole('button', { name: 'Resume solo match' })).toBeVisible()
+    expect(await page.evaluate(() => localStorage.getItem('ash-and-iron-solo'))).toBe(saved)
   } finally {
     await context.close()
     if (mobile !== browser) await mobile.close()

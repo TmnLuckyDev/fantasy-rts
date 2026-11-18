@@ -42,7 +42,7 @@ const original: Record<'human' | 'orc', Record<EntityKind, UnitStats>> = {
     tower: { ...economyStats.tower, range: 205 }
   },
   orc: {
-    blade: { health: 94, damage: 16, armor: 3, range: 23, speed: 77, cooldown: 12, radius: 9 },
+    blade: { health: 94, damage: 15, armor: 3, range: 23, speed: 80, cooldown: 12, radius: 9 },
     ranged: { health: 66, damage: 13, armor: 1, range: 123, speed: 76, cooldown: 17, radius: 9 },
     polearm: { health: 118, damage: 19, armor: 3, range: 34, speed: 74, cooldown: 15, radius: 10 },
     marksman: { health: 82, damage: 24, armor: 1, range: 136, speed: 67, cooldown: 23, radius: 10 },

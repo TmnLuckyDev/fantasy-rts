@@ -1270,7 +1270,7 @@ export class Match {
           }
         }
       }
-      if (destination && stats.speed && isShipKind(unit.kind)) this.sail(unit, destination, !target)
+      if (destination && stats.speed && isShipKind(unit.kind)) this.sail(unit, destination, !target, target ? 2 : TILE / 2)
       else if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target) && !movingOrder)
       else this.routes.delete(unit)
     }
@@ -1321,7 +1321,7 @@ export class Match {
     }
   }
 
-  private sail(unit: Unit, destination: Point, clearOnArrival = false) {
+  private sail(unit: Unit, destination: Point, clearOnArrival = false, arrivalRadius = TILE / 2) {
     const x = Math.floor(destination.x / TILE), y = Math.floor(destination.y / TILE)
     if (!isWater(tileAt(this.map, x, y))) {
       // Warships may attack targets ashore, but must remain at sea.
@@ -1333,7 +1333,7 @@ export class Match {
       if (!candidates.length) return
       destination = candidates[0]
     }
-    if (distance(unit, destination) < TILE * .5) {
+    if (distance(unit, destination) < arrivalRadius) {
       unit.path = []
       if (clearOnArrival) unit.assigned = null
       return

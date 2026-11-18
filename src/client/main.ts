@@ -146,6 +146,7 @@ let economyContext = ''
 let globalUpgradeOpen = false
 let gatherOpen = false
 let practiceStep = 0
+let practiceMoving = false
 
 const invite = new URLSearchParams(location.search).get('room')
 if (invite && /^[A-Z2-9]{5}$/i.test(invite)) joinCode.value = invite.toUpperCase()
@@ -260,6 +261,8 @@ function receive(message: ServerMessage) {
       ownEntities = message.entities.filter(entity => entity.faction === faction)
       researched = message.upgrades ?? []
       if (solo.practice && practiceStep === 2 && ownEntities.some(entity => entity.training?.kind === 'blade')) setPracticeStep(3)
+      if (solo.practice && practiceStep === 3 && practiceMoving &&
+          ownEntities.some(entity => entity.kind !== 'worker' && isUnitKind(entity.kind) && entity.moving)) setPracticeStep(4)
       drawProduction()
       if (!globalTrainPanel.hidden) globalProduction.update(chosenRace, ownEntities, resources, population)
       drawEconomy()
@@ -471,6 +474,7 @@ function issueOrder(ids: number[], order: Order) {
 
 function setPracticeStep(step: number) {
   practiceStep = step
+  practiceMoving = false
   setText('practice-hint', [
     '1/4 · Tap Workers to select your workers.',
     '2/4 · Tap a gold mine near your base to inspect it.',
@@ -482,7 +486,7 @@ function setPracticeStep(step: number) {
 }
 
 function practiceAttack(order: Order) {
-  if (solo.practice && practiceStep === 3 && (order.kind === 'advance' || order.kind === 'attack')) setPracticeStep(4)
+  if (solo.practice && practiceStep === 3 && (order.kind === 'advance' || order.kind === 'attack')) practiceMoving = true
 }
 
 function showResourceInfo(kind: ResourceKind, remaining: number | null) {
