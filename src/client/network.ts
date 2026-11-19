@@ -2,18 +2,22 @@ import { applyDelta, deltaProtocol } from '../shared/snapshot-delta.ts'
 import type { SnapshotDelta } from '../shared/snapshot-delta.ts'
 import type { ClientMessage, Faction, ServerMessage, Snapshot } from '../shared/protocol.ts'
 
+import { socketUrl } from './multiplayer-endpoint.ts'
+
 type Connection = 'waiting' | 'open' | 'closed'
 type SavedSeat = { code: string, token: string, faction: Faction }
 
 export class ConnectionClient {
   private socket: WebSocket | null = null
+  private active = true
   private delay = 500
   private retry: number | undefined
   private seat: SavedSeat | null = null
 
   constructor(
     private receive: (message: ServerMessage) => void,
-    private status: (connection: Connection) => void
+    private status: (connection: Connection) => void,
+    private backend?: string
   ) {
     try {
       const saved = JSON.parse(sessionStorage.getItem('ash-and-iron-seat') ?? 'null') as SavedSeat | null
@@ -41,16 +45,31 @@ export class ConnectionClient {
     try { sessionStorage.removeItem('ash-and-iron-seat') } catch { /* Storage is optional. */ }
   }
 
+  setAppActive(active: boolean) {
+    if (active === this.active) return
+    this.active = active
+    if (active) {
+      this.connect()
+    } else {
+      window.clearTimeout(this.retry)
+      const socket = this.socket
+      this.socket = null
+      socket?.close()
+      this.status('closed')
+    }
+  }
+
   private connect() {
+    if (!this.active) return
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
     window.clearTimeout(this.retry)
     this.status('waiting')
-    const url = new URL('/socket', location.href)
-    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const url = socketUrl(location.href, this.backend)
     let base: Snapshot | undefined
     const socket = new WebSocket(url, deltaProtocol)
     this.socket = socket
     socket.addEventListener('open', () => {
+      if (this.socket !== socket) return
       this.delay = 500
       if (this.seat) this.send({ type: 'resume', code: this.seat.code, token: this.seat.token })
       this.status('open')

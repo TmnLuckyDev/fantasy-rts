@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ash &amp; Iron</string>
+    <string name="title_activity_main">Ash &amp; Iron</string>
+    <string name="package_name">com.ashandiron.game</string>
+    <string name="custom_url_scheme">com.ashandiron.game</string>
+</resources>

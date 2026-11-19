@@ -7,10 +7,11 @@ import { TICK_HZ } from './match.ts'
 import type { SavedRoom } from './rooms.ts'
 import { Rooms } from './rooms.ts'
 import { parseMessage } from './validate.ts'
+import { mobileOrigins } from '../shared/mobile-origins.ts'
 
 const port = Number(process.env.PORT ?? 3000)
 const root = resolve(process.env.CLIENT_DIR ?? 'dist/client')
-const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS ?? '').split(',').map(origin => origin.trim()).filter(Boolean))
+const allowedOrigins = new Set([...mobileOrigins, ...(process.env.ALLOWED_ORIGINS ?? '').split(',').map(origin => origin.trim()).filter(Boolean)])
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',

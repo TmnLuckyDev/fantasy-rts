@@ -1,0 +1,72 @@
+name: Validate mobile apps
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - run: npm run build:android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ash-and-Iron-Android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: adb shell cmd connectivity airplane-mode enable && cd android && ./gradlew :app:connectedDebugAndroidTest
+
+  ios:
+    runs-on: macos-26
+    env:
+      VITE_MOBILE_SERVER_URL: https://backend.invalid
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: xcodebuild -version
+      - run: npm ci
+      - run: npm run build:ios
+      - name: Test offline solo with native iPhone taps
+        run: |
+          set -euo pipefail
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          runtime=com.apple.CoreSimulator.SimRuntime.iOS-${sdk//./-}
+          device=$(xcrun simctl list devices available -j | jq -er --arg runtime "$runtime" '
+            [.devices[$runtime][]? | select(.name | startswith("iPhone"))][0].udid')
+          echo "Selected $device on $runtime"
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -destination "platform=iOS Simulator,id=$device" -derivedDataPath ios/DerivedData \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
