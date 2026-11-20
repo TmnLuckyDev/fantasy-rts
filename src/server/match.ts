@@ -1,6 +1,6 @@
-import { replenishPlan } from '../shared/army-templates.ts'
+import { groupComposition, replenishPlan } from '../shared/army-templates.ts'
 import { attackRange, benefitsFromRange, buildingTier, hallUpgrades, isRanged, researchTicks, researchTier, unitTier } from '../shared/economy.ts'
-import { templateKinds } from '../shared/protocol.ts'
+import { isTemplateKind, MAX_ARMY_GROUP_SIZE, MAX_ARMY_GROUPS, templateKinds } from '../shared/protocol.ts'
 import type { ArmyTemplate, TemplateKind } from '../shared/protocol.ts'
 import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine, isWalkable, isWater, tileAt } from '../shared/map.ts'
 import type { BattleMap, MapId } from '../shared/map.ts'
@@ -852,24 +852,43 @@ export class Match {
     return true
   }
 
+  private eligibleTemplateMembers(faction: Faction, ids: readonly number[]): ArmyTemplate['members'] {
+    return [...new Set(ids)].flatMap(id => {
+      const unit = this.units.get(id)
+      return unit?.faction === faction && !unit.summonedUntil && isTemplateKind(unit.kind) ?
+        [{ id, kind: unit.kind }] : []
+    })
+  }
+
+  private removeTemplateMembers(groups: readonly ArmyTemplate[], members: ReadonlySet<number>) {
+    for (const group of groups) group.members = group.members.filter(member => !members.has(member.id))
+  }
+
   private editTemplate(faction: Faction, order: Extract<Order, { template: number }>) {
     const groups = this.templates[faction]
     const group = groups.find(item => item.id === order.template)
+    if (order.kind === 'template-create') {
+      if (groups.length >= MAX_ARMY_GROUPS) return this.reject('You can have up to eight Army Groups.')
+      const members = this.eligibleTemplateMembers(faction, order.members)
+      if (!members.length || members.length > MAX_ARMY_GROUP_SIZE) return this.reject('Select 1 to 500 eligible troops.')
+      const targets = groupComposition(members)
+      this.removeTemplateMembers(groups, new Set(members.map(member => member.id)))
+      groups.push({ id: ++this.sequence, name: order.name, targets, members })
+      return true
+    }
     if (order.kind === 'template-save') {
-      if (!order.targets.length || (!group && (order.template || groups.length >= 8))) return false
+      if (!order.targets.length || (!group && (order.template || groups.length >= MAX_ARMY_GROUPS))) return false
       if (group) {
         group.name = order.name
         group.targets = order.targets
-        const previous = group.members
-        group.members = []
-        for (const { id } of previous) {
-          const unit = this.units.get(id)
-          if (unit) this.addToTemplate(group, unit)
-        }
       } else groups.push({ id: ++this.sequence, name: order.name, targets: order.targets, members: [] })
       return true
     }
     if (!group) return false
+    if (order.kind === 'template-rename') {
+      group.name = order.name
+      return true
+    }
     if (order.kind === 'template-priority') {
       const index = groups.indexOf(group)
       const next = index + order.direction
@@ -882,17 +901,36 @@ export class Match {
       groups.splice(groups.indexOf(group), 1)
       return true
     }
-    if ('members' in order) {
-      for (const id of new Set(order.members)) {
-        const unit = this.units.get(id)
-        if (!unit || unit.faction !== faction || unit.summonedUntil) continue
-        const previous = groups.find(item => item.members.some(row => row.id === id))
-        if (order.kind === 'template-release') {
-          if (previous === group) group.members = group.members.filter(row => row.id !== id)
-        } else if (previous !== group && this.addToTemplate(group, unit) && previous) {
-          previous.members = previous.members.filter(row => row.id !== id)
-        }
+    if (order.kind === 'template-release') {
+      this.removeTemplateMembers([group], new Set(order.members))
+      return true
+    }
+    if (order.kind === 'template-assign') {
+      const current = new Set(group.members.map(member => member.id))
+      const eligible = this.eligibleTemplateMembers(faction, order.members).filter(member => !current.has(member.id))
+      if (order.expand === undefined) {
+        // Legacy clients assign only into planned vacancies.
+        const added = eligible.filter(({ id }) => this.addToTemplate(group, this.units.get(id)!))
+        this.removeTemplateMembers(groups.filter(other => other !== group), new Set(added.map(member => member.id)))
+        return true
       }
+      if (!eligible.length) return this.reject('No additional troops can join this group.')
+      const members = [...group.members, ...eligible]
+      if (members.length > MAX_ARMY_GROUP_SIZE) return this.reject('An Army Group can have up to 500 troops.')
+      if (order.expand) {
+        const addedKinds = new Set(eligible.map(member => member.kind))
+        const targets = new Map(group.targets.map(target => [target.kind, target.count]))
+        for (const { kind, count } of groupComposition(members)) {
+          if (addedKinds.has(kind)) targets.set(kind, Math.max(count, targets.get(kind) ?? 0))
+        }
+        const expanded = Array.from(targets, ([kind, count]) => ({ kind, count }))
+        if (expanded.reduce((total, row) => total + row.count, 0) > MAX_ARMY_GROUP_SIZE) {
+          return this.reject('The planned composition cannot exceed 500 troops.')
+        }
+        group.targets = expanded
+      }
+      this.removeTemplateMembers(groups.filter(other => other !== group), new Set(eligible.map(member => member.id)))
+      group.members = members
       return true
     }
     const queued = new Map<TemplateKind, number>()

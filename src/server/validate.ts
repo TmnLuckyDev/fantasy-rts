@@ -1,4 +1,4 @@
-import { templateKinds } from '../shared/protocol.ts'
+import { MAX_ARMY_GROUP_SIZE, templateKinds } from '../shared/protocol.ts'
 import { parseMatchSettings } from '../shared/match-settings.ts'
 import { MAX_SELECTION, formations, isArmyOrder, isBuildingKind, isFaction, isRace, isUnitKind, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
@@ -64,7 +64,7 @@ export function parseMessage(raw: string): ClientMessage | null {
   }
 }
 
-function templateTargets(value: unknown, cap = 500) {
+function templateTargets(value: unknown, cap = MAX_ARMY_GROUP_SIZE) {
   if (!Array.isArray(value) || value.length > templateKinds.length) return null
     const targets: import('../shared/protocol.ts').TemplateTarget[] = []
     for (const target of value) {
@@ -77,14 +77,25 @@ function templateTargets(value: unknown, cap = 500) {
   return targets
 }
 
+const validGroupName = (name: unknown): name is string =>
+  typeof name === 'string' && name.trim().length > 0 && name.length <= 32
+const validGroupMembers = (members: unknown): members is number[] =>
+  Array.isArray(members) && members.length > 0 && members.length <= MAX_ARMY_GROUP_SIZE && members.every(validId)
+
 function parseOrder(order: Record<string, unknown>): Order | null {
   if (order.kind === 'halt' || order.kind === 'build-queue' || order.kind === 'explore' || order.kind === 'unit-ability' || order.kind === 'hero-ability' || order.kind === 'structure-upgrade' || order.kind === 'dismiss') return { kind: order.kind }
   if (order.kind === 'template-save' && (order.template === 0 || validId(order.template)) &&
-      typeof order.name === 'string' && order.name.trim().length > 0 && order.name.length <= 32 &&
+      validGroupName(order.name) &&
       Array.isArray(order.targets) && order.targets.length <= templateKinds.length) {
     const targets = templateTargets(order.targets)
     if (!targets) return null
     return { kind: order.kind, template: order.template, name: order.name.trim(), targets }
+  }
+  if (order.kind === 'template-create' && order.template === 0 && validGroupName(order.name) && validGroupMembers(order.members)) {
+    return { kind: order.kind, template: 0, name: order.name.trim(), members: order.members }
+  }
+  if (order.kind === 'template-rename' && validId(order.template) && validGroupName(order.name)) {
+    return { kind: order.kind, template: order.template, name: order.name.trim() }
   }
   if (order.kind === 'template-priority' && validId(order.template) && (order.direction === -1 || order.direction === 1)) {
     return { kind: order.kind, template: order.template, direction: order.direction }
@@ -97,9 +108,13 @@ function parseOrder(order: Record<string, unknown>): Order | null {
     const expected = templateTargets(order.expected, 2000)
     return expected ? { kind: order.kind, template: order.template, expected } : null
   }
-  if ((order.kind === 'template-assign' || order.kind === 'template-release') && validId(order.template) &&
-      Array.isArray(order.members) && order.members.length <= 500 && order.members.every(validId)) {
+  if (order.kind === 'template-release' && validId(order.template) && validGroupMembers(order.members)) {
     return { kind: order.kind, template: order.template, members: order.members }
+  }
+  if (order.kind === 'template-assign' && validId(order.template) && validGroupMembers(order.members) &&
+      (order.expand === undefined || typeof order.expand === 'boolean')) {
+    return { kind: order.kind, template: order.template, members: order.members,
+      ...(order.expand === undefined ? {} : { expand: order.expand }) }
   }
   const formation = formations.find(kind => kind === order.formation)
   if (order.formation !== undefined && !formation) return null
