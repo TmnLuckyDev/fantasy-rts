@@ -8,6 +8,8 @@ import { ashford } from '../src/shared/map.ts'
 const useWebKit = process.env.MOBILE_BROWSER === 'webkit'
 const phone = devices[useWebKit ? 'iPhone 14' : 'Pixel 7']
 
+test.use({ actionTimeout: 10_000 })
+
 test('mobile Army Groups support selection, transfers, priority, scrolling and management during multiplayer', async ({ browser }) => {
   const engine = useWebKit ? await webkit.launch() : browser
   const mobile = await engine.newContext(phone)
@@ -65,7 +67,8 @@ test('mobile Army Groups support selection, transfers, priority, scrolling and m
     await bar.getByRole('button', { name: 'Archer', exact: true }).tap()
     await groupAction.tap()
     await sheet.getByRole('button', { name: 'Add to Group', exact: true }).tap()
-    await sheet.getByLabel('Army Group', { exact: true }).selectOption({ label: 'Defense' })
+    await sheet.getByRole('combobox', { name: 'Army Group', exact: true }).selectOption({ label: 'Defense' })
+    await expect(sheet).toContainText('2 selected troops to add.')
     await expect(sheet).toContainText('Group members will move from Main Army.')
     await sheet.getByLabel('Expand planned composition to fit the selection').check()
     await sheet.getByRole('button', { name: 'Add Selected Troops' }).tap()
@@ -131,9 +134,8 @@ test('mobile Army Groups support selection, transfers, priority, scrolling and m
     await expect(bar.getByRole('button', { name: 'Archer', exact: true })).toHaveAttribute('aria-description', /^2 living/)
   } finally {
     opponent.terminate()
-    await mobile.close()
-    if (engine !== browser) await engine.close()
-    await fixture.close()
+    await Promise.allSettled([mobile.close(), fixture.close()])
+    if (engine !== browser) await engine.close().catch(() => {})
   }
 })
 

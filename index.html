@@ -258,7 +258,8 @@
           <button id="cancel-template" type="button">Cancel</button>
         </form>
         <form id="template-membership" hidden>
-          <label>Army Group <select name="group" required></select></label>
+          <label for="template-destination">Army Group</label>
+          <select id="template-destination" name="group" required></select>
           <p id="template-move-summary"></p>
           <label id="template-expand-label"><input type="checkbox" name="expand"> Expand planned composition to fit the selection</label>
           <button id="confirm-template-membership" type="submit">Confirm</button>
