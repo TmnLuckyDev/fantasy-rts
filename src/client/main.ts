@@ -50,6 +50,7 @@ for (const group of troopGroups) {
   item.append(icon, label, count)
   groupBar.append(item)
   if (group === 'all') label.textContent = 'All troops'
+  if (group === 'heroes') label.textContent = 'Hero'
   groupButtons.set(group, { button: item, icon, label, count })
 }
 const portrait = element<HTMLCanvasElement>('selection-portrait')
@@ -511,13 +512,16 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
   drawCustomGroupButtons()
   for (const [group, ui] of groupButtons) {
     const members = army.get(group)
-    ui.button.hidden = !members?.length && !(group === 'all' && templates.length)
+    const fixedShortcut = group === 'all' || group === 'heroes'
+    ui.button.hidden = !members?.length && !fixedShortcut
     ui.button.disabled = !members?.length
     if (!members?.length) {
-      if (group === 'all' && templates.length) {
-        ui.count.textContent = '0'
-        ui.button.removeAttribute('aria-pressed')
-        paintPortrait(ui.icon, chosenRace, 'blade')
+      if (fixedShortcut) {
+        if (ui.count.textContent !== '0') ui.count.textContent = '0'
+        const description = group === 'heroes' ? 'No living hero' : 'No living troops'
+        if (ui.button.getAttribute('aria-description') !== description) ui.button.setAttribute('aria-description', description)
+        if (ui.button.hasAttribute('aria-pressed')) ui.button.removeAttribute('aria-pressed')
+        paintPortrait(ui.icon, chosenRace, group === 'heroes' ? 'vanguard' : 'blade')
       }
       continue
     }
