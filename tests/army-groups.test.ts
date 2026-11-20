@@ -74,3 +74,15 @@ test('group orders validate member IDs, names, sizes and the expansion flag', ()
   assert.equal(message({ kind: 'template-assign', template: 4, members: [2], expand: 'true' }), null)
   assert.ok(message({ kind: 'template-assign', template: 4, members: [2], expand: false }))
 })
+
+test('a full plan rejects extra members atomically and their old group keeps them', () => {
+  const match = new Match()
+  const order = (order: Order) => match.command('human', [1], order)
+  assert.ok(order({ kind: 'template-create', template: 0, name: 'Archers', members: [5] }))
+  assert.ok(order({ kind: 'template-save', template: 0, name: 'Footmen', targets: [{ kind: 'blade', count: 500 }] }))
+  const [archers, footmen] = match.view('human').templates!
+  for (const expand of [true, false]) {
+    assert.equal(order({ kind: 'template-assign', template: footmen.id, members: [5], expand }), false)
+    assert.deepEqual(match.view('human').templates, [archers, footmen])
+  }
+})

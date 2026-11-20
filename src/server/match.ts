@@ -847,7 +847,8 @@ export class Match {
   private addToTemplate(template: ArmyTemplate, unit: Unit) {
     const kind = templateKinds.find(kind => kind === unit.kind)
     const target = template.targets.find(row => row.kind === kind)
-    if (!kind || !target || template.members.filter(row => row.kind === kind).length >= target.count) return false
+    if (!kind || !target || template.members.length >= MAX_ARMY_GROUP_SIZE ||
+        template.members.filter(row => row.kind === kind).length >= target.count) return false
     template.members.push({ id: unit.id, kind })
     return true
   }
@@ -862,6 +863,12 @@ export class Match {
 
   private removeTemplateMembers(groups: readonly ArmyTemplate[], members: ReadonlySet<number>) {
     for (const group of groups) group.members = group.members.filter(member => !members.has(member.id))
+  }
+
+  private templateFits(members: ArmyTemplate['members'], targets: ArmyTemplate['targets']) {
+    const planned = new Map(targets.map(target => [target.kind, target.count]))
+    for (const { kind, count } of groupComposition(members)) planned.set(kind, Math.max(count, planned.get(kind) ?? 0))
+    return [...planned.values()].reduce((sum, count) => sum + count, 0) <= MAX_ARMY_GROUP_SIZE
   }
 
   private editTemplate(faction: Faction, order: Extract<Order, { template: number }>) {
@@ -879,6 +886,9 @@ export class Match {
     if (order.kind === 'template-save') {
       if (!order.targets.length || (!group && (order.template || groups.length >= MAX_ARMY_GROUPS))) return false
       if (group) {
+        if (!this.templateFits(group.members, order.targets)) {
+          return this.reject('Live troops and planned vacancies cannot exceed 500 combined.')
+        }
         group.name = order.name
         group.targets = order.targets
       } else groups.push({ id: ++this.sequence, name: order.name, targets: order.targets, members: [] })
@@ -916,19 +926,19 @@ export class Match {
       }
       if (!eligible.length) return this.reject('No additional troops can join this group.')
       const members = [...group.members, ...eligible]
-      if (members.length > MAX_ARMY_GROUP_SIZE) return this.reject('An Army Group can have up to 500 troops.')
+      let targets = group.targets
       if (order.expand) {
         const addedKinds = new Set(eligible.map(member => member.kind))
-        const targets = new Map(group.targets.map(target => [target.kind, target.count]))
+        const expanded = new Map(targets.map(target => [target.kind, target.count]))
         for (const { kind, count } of groupComposition(members)) {
-          if (addedKinds.has(kind)) targets.set(kind, Math.max(count, targets.get(kind) ?? 0))
+          if (addedKinds.has(kind)) expanded.set(kind, Math.max(count, expanded.get(kind) ?? 0))
         }
-        const expanded = Array.from(targets, ([kind, count]) => ({ kind, count }))
-        if (expanded.reduce((total, row) => total + row.count, 0) > MAX_ARMY_GROUP_SIZE) {
-          return this.reject('The planned composition cannot exceed 500 troops.')
-        }
-        group.targets = expanded
+        targets = Array.from(expanded, ([kind, count]) => ({ kind, count }))
       }
+      if (!this.templateFits(members, targets)) {
+        return this.reject('Live troops and planned vacancies cannot exceed 500 combined.')
+      }
+      group.targets = targets
       this.removeTemplateMembers(groups.filter(other => other !== group), new Set(eligible.map(member => member.id)))
       group.members = members
       return true

@@ -1570,7 +1570,8 @@ function openMembership(mode: typeof membershipMode) {
   membershipMode = mode
   editingMembers = groupSelection().map(unit => unit.id)
   const picked = new Set(editingMembers)
-  destinationGroup.replaceChildren(...templates.filter(group => mode === 'add' || group.members.some(member => picked.has(member.id)))
+  destinationGroup.replaceChildren(...templates.filter(group => mode === 'add' ? group.members.filter(member => picked.has(member.id)).length < picked.size :
+    group.members.some(member => picked.has(member.id)))
     .map(group => new Option(group.name, String(group.id))))
   if (managedTemplate !== null && [...destinationGroup.options].some(option => option.value === String(managedTemplate))) {
     destinationGroup.value = String(managedTemplate)
