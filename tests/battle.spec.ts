@@ -1,5 +1,11 @@
+import { once } from 'node:events'
+import { WebSocket } from 'ws'
+import { startSavedRoom } from '../scripts/army-room.ts'
+import { Match } from '../src/server/match.ts'
+import { attackRange, buildings, hallUpgrades } from '../src/shared/economy.ts'
+import { entityNames, races } from '../src/shared/protocol.ts'
 import { chromium, devices, expect, test, webkit } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { BrowserContext, Page } from '@playwright/test'
 import { defaultMatchSettings } from '../src/shared/match-settings.ts'
 import { TILE, ashford, cellCenter, distance } from '../src/shared/map.ts'
 import { applyDelta } from '../src/shared/snapshot-delta.ts'
@@ -541,5 +547,200 @@ test('small portrait match supports double tap, filters, persistent graphics and
   } finally {
     await context.close()
     if (mobileEngine !== browser) await mobileEngine.close()
+  }
+})
+
+async function openMobileFixture(context: BrowserContext, match: Match) {
+  const fixture = await startSavedRoom(match.checkpoint(), match.map)
+  const opponent = new WebSocket(fixture.url.replace('http:', 'ws:') + '/socket')
+  const close = async () => { opponent.terminate(); await fixture.close() }
+  try {
+    await once(opponent, 'open')
+    opponent.send(JSON.stringify({ type: 'resume', code: fixture.code, token: fixture.seats[1].token }))
+    const page = await context.newPage()
+    const history = observe(page)
+    const orders: Array<{ kind: string }> = []
+    page.on('websocket', socket => socket.on('framesent', ({ payload }) => {
+      const message = JSON.parse(String(payload))
+      if (message.type === 'command' || message.type === 'group-command') orders.push(message.order)
+    }))
+    await page.addInitScript(seat => sessionStorage.setItem('ash-and-iron-seat', JSON.stringify(seat)),
+      { ...fixture.seats[0], code: fixture.code })
+    await page.goto(fixture.url)
+    await expect(page.locator('#battlefield canvas')).toBeVisible()
+    await expect.poll(() => newest(history)?.tick ?? 0).toBeGreaterThan(0)
+    return { page, orders, history, close }
+  } catch (error) {
+    await close()
+    throw error
+  }
+}
+
+test('a worker pans and pinches during construction and places ten sites without reselecting', async ({ browser }) => {
+  const engine = mobileBrowser === webkit ? await webkit.launch() : browser
+  const context = await engine.newContext(devices[mobileProfile])
+  const settings = { ...fixedAshford, starting: { gold: 3000, wood: 3000, stone: 3000 } }
+  const match = new Match(ashford, settings)
+  match['spawn']('human', 'pathfinder', { x: ashford.bases.human.x + 42, y: ashford.bases.human.y + 77 })
+  const run = await openMobileFixture(context, match)
+  const { page, orders, history } = run
+  try {
+    const field = page.locator('#battlefield')
+    const device = mobileBrowser === chromium ? await context.newCDPSession(page) : null
+    const bounds = (await field.boundingBox())!
+    const finger = { x: bounds.x + bounds.width * .43, y: bounds.y + bounds.height * .43 }
+    const second = { ...finger, x: finger.x + 100 }
+    const slide = (point: Point, dx: number) => ({ ...point, x: point.x + dx })
+    const touch = async (first: Point, other: Point, endFirst: Point, endOther: Point) => {
+      if (device) {
+        await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...first, id: 1 }] })
+        await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...first, id: 1 }, { ...other, id: 2 }] })
+        await device.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...endFirst, id: 1 }, { ...endOther, id: 2 }] })
+        await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        return
+      }
+      await field.evaluate((board, points) => {
+        const send = (type: string, point: Point, id: number) =>
+          board.dispatchEvent(new PointerEvent(type, {
+            pointerType: 'touch', pointerId: id, isPrimary: id === 1, button: 0, bubbles: true, clientX: point.x, clientY: point.y
+          }))
+        send('pointerdown', points.first, 1)
+        send('pointerdown', points.other, 2)
+        send('pointermove', points.endFirst, 1)
+        send('pointermove', points.endOther, 2)
+        send('pointerup', points.endOther, 2)
+        send('pointerup', points.endFirst, 1)
+      }, { first, other, endFirst, endOther })
+    }
+
+    await page.getByRole('button', { name: 'Idle worker' }).tap()
+    const selected = page.locator('#selection-name')
+    await expect(selected).toHaveText('Peasant')
+    await expect(page.locator('#worker-actions')).toBeVisible()
+    const before = await cameraBox(page)
+    await touch(finger, second, slide(finger, -85), slide(second, -85))
+    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeGreaterThan(before.x + 1)
+    await expect(page.locator('#worker-actions')).toBeVisible()
+    await expect(selected).toHaveText('Peasant')
+    expect(orders).toHaveLength(0)
+
+    await page.getByRole('button', { name: 'Build', exact: true }).tap()
+    await page.getByRole('button', { name: /^Barracks ·/ }).tap()
+    const tip = page.locator('#placement-tip')
+    await expect(tip).toBeVisible()
+    const placementView = await cameraBox(page)
+    await touch(finger, second, slide(finger, -85), slide(second, -85))
+    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeGreaterThan(placementView.x + 1)
+    await touch(finger, second, slide(finger, -40), slide(second, 40))
+    await expect.poll(() => cameraBox(page).then(box => box.width)).toBeLessThan(placementView.width - 1)
+    expect(orders).toHaveLength(0)
+    await expect(tip).toBeVisible()
+    await expect(selected).toHaveText('Peasant')
+
+    await touch(slide(finger, -40), slide(second, 40), finger, second)
+    await page.getByRole('button', { name: 'Base', exact: true }).tap()
+    const base = ashford.bases.human
+    const locations = [[2, 9], [4, 9], [6, 9], [8, 9], [10, 9], [3, 10], [11, 10], [2, 11], [4, 11], [3, 12]]
+    const points = await Promise.all(locations.map(([x, y]) => screenPoint(page, cellCenter(x, y), base)))
+    const blocked = await screenPoint(page, base, base)
+    await page.touchscreen.tap(blocked.x, blocked.y)
+    await expect(tip).toBeVisible()
+    expect(orders).toHaveLength(0)
+    // A finger moving 14 CSS pixels before release should still place each building.
+    await field.evaluate((board, points) => {
+      for (const point of points) {
+        for (const [type, offset] of [['pointerdown', -14], ['pointermove', 0], ['pointerup', 0]] as const) {
+          board.dispatchEvent(new PointerEvent(type, {
+            pointerType: 'touch', pointerId: 8, isPrimary: true, button: 0, bubbles: true,
+            clientX: point.x + offset, clientY: point.y
+          }))
+        }
+      }
+    }, points)
+    await expect.poll(() => newest(history)?.entities.filter(entity => entity.kind === 'barracks' && entity.faction === 'human').length).toBe(10)
+    expect(orders.filter(order => order.kind === 'build')).toHaveLength(10)
+    await expect(page.locator('#wood')).toHaveText(String(settings.starting.wood - 10 * buildings.barracks.cost.wood!))
+    await expect(page.locator('#stone')).toHaveText(String(settings.starting.stone - 10 * buildings.barracks.cost.stone!))
+    await expect(tip).toBeVisible()
+    await expect(selected).toHaveText('Peasant')
+
+    await page.locator('#cancel-placement').tap()
+    const kill = page.getByRole('button', { name: 'Kill', exact: true })
+    expect(await kill.evaluate(item => item.parentElement?.lastElementChild === item)).toBe(true)
+    await expect(kill).toHaveCSS('background-image', /rgb\(135, 53, 46\)/)
+    const cancel = page.waitForEvent('dialog')
+    const tryKill = kill.tap()
+    const dialog = await cancel
+    expect(dialog.message()).toMatch(/Kill 1 selected worker/)
+    await dialog.dismiss()
+    await tryKill
+    expect(orders.some(order => order.kind === 'dismiss')).toBe(false)
+    const accept = page.waitForEvent('dialog')
+    const confirm = kill.tap()
+    await (await accept).accept()
+    await confirm
+    await expect.poll(() => newest(history)?.entities.filter(entity => entity.kind === 'worker' && entity.faction === 'human').length).toBe(2)
+
+    const shortcuts = page.locator('#troop-groups > button:visible')
+    await expect(shortcuts.nth(0)).toContainText('All troops')
+    await expect(shortcuts.nth(1)).toContainText('Hero')
+    await shortcuts.nth(1).tap()
+    await expect(selected).toHaveText(entityNames.human.pathfinder)
+    await expect(page.locator('#selection-detail')).toContainText('Level 1')
+    await expect(page.locator('#selection-detail')).toContainText('Range ' + attackRange('human', 'pathfinder', 0))
+    await expect(page.locator('#hero-skill')).toBeVisible()
+    const heroView = await cameraBox(page)
+    await touch(finger, second, slide(finger, -85), slide(second, -85))
+    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeGreaterThan(heroView.x + 1)
+    await shortcuts.nth(1).tap()
+    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeLessThan(heroView.x + 2)
+  } finally {
+    await context.close()
+    await run.close()
+    if (engine !== browser) await engine.close()
+  }
+})
+
+for (const race of races) test(`${race} headquarters previews the requirements before spending on an upgrade`, async ({ browser }) => {
+  const engine = mobileBrowser === webkit ? await webkit.launch() : browser
+  const context = await engine.newContext(devices[mobileProfile])
+  const resources = { gold: 1000, wood: 1000, stone: 1000 }
+  const match = new Match(ashford, { ...fixedAshford, progression: true, starting: resources }, { human: race, orc: 'orc' })
+  match['spawn']('human', 'barracks', cellCenter(4, 14))
+  if (race !== 'elf') match['spawn']('human', 'smithy', cellCenter(7, 14))
+  const run = await openMobileFixture(context, match)
+  const { page, orders } = run
+  try {
+    const names = entityNames[race]
+    const base = ashford.bases.human
+    const at = await screenPoint(page, { ...base, y: base.y - 35 }, base)
+    await page.touchscreen.tap(at.x, at.y)
+    await expect(page.locator('#selection-name')).toHaveText(names.headquarters)
+    await page.locator('#hall-upgrade').tap()
+    const dialog = page.getByRole('dialog', { name: 'Upgrade ' + names.headquarters })
+    await expect(dialog).toContainText('Level 1 → 2 · 24s')
+    await expect(dialog).toContainText('240 gold · 150 wood · 70 stone')
+    await expect(dialog).toContainText(names.barracks + ' (ready)')
+    await expect(dialog).toContainText(names.smithy + (race === 'elf' ? ' (missing)' : ' (ready)'))
+    await expect(dialog).toContainText(names.tower)
+    expect(orders).toHaveLength(0)
+    await expect(page.locator('#gold')).toHaveText('1000')
+    const confirm = dialog.getByRole('button', { name: 'Confirm upgrade' })
+    if (race === 'elf') {
+      await expect(confirm).toBeDisabled()
+      await dialog.getByRole('button', { name: 'Close' }).tap()
+      expect(orders).toHaveLength(0)
+    } else {
+      await confirm.tap()
+      await expect(dialog).toBeHidden()
+      for (const kind of ['gold', 'wood', 'stone'] as const) {
+        await expect(page.locator('#' + kind)).toHaveText(String(resources[kind] - hallUpgrades[2].cost[kind]))
+      }
+      expect(orders.filter(order => order.kind === 'structure-upgrade')).toHaveLength(1)
+    }
+  } finally {
+    await context.close()
+    await run.close()
+    if (engine !== browser) await engine.close()
   }
 })
