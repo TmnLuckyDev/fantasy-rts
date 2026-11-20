@@ -586,6 +586,18 @@ test('a worker pans and pinches during construction and places ten sites without
   const { page, orders, history } = run
   try {
     const field = page.locator('#battlefield')
+    // Read the drawn viewport directly. At the map edge its antialiased left line
+    // can disappear, making pixel-color measurements pick up unrelated terrain.
+    await page.evaluate(() => {
+      const stroke = CanvasRenderingContext2D.prototype.strokeRect
+      CanvasRenderingContext2D.prototype.strokeRect = function (x, y, width, height) {
+        if (this.canvas.id === 'minimap') this.canvas.dataset.viewport = JSON.stringify({ x, width })
+        stroke.call(this, x, y, width, height)
+      }
+    })
+    const viewport = () => page.locator('#minimap').evaluate(canvas =>
+      JSON.parse(canvas.dataset.viewport ?? '{"x":0,"width":0}') as { x: number, width: number })
+    await expect.poll(() => viewport().then(box => box.width)).toBeGreaterThan(0)
     const device = mobileBrowser === chromium ? await context.newCDPSession(page) : null
     const bounds = (await field.boundingBox())!
     const finger = { x: bounds.x + bounds.width * .43, y: bounds.y + bounds.height * .43 }
@@ -617,9 +629,9 @@ test('a worker pans and pinches during construction and places ten sites without
     const selected = page.locator('#selection-name')
     await expect(selected).toHaveText('Peasant')
     await expect(page.locator('#worker-actions')).toBeVisible()
-    const before = await cameraBox(page)
+    const before = await viewport()
     await touch(finger, second, slide(finger, -85), slide(second, -85))
-    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeGreaterThan(before.x + 1)
+    await expect.poll(() => viewport().then(box => box.x)).toBeGreaterThan(before.x + 1)
     await expect(page.locator('#worker-actions')).toBeVisible()
     await expect(selected).toHaveText('Peasant')
     expect(orders).toHaveLength(0)
@@ -628,11 +640,11 @@ test('a worker pans and pinches during construction and places ten sites without
     await page.getByRole('button', { name: /^Barracks ·/ }).tap()
     const tip = page.locator('#placement-tip')
     await expect(tip).toBeVisible()
-    const placementView = await cameraBox(page)
+    const placementView = await viewport()
     await touch(finger, second, slide(finger, -85), slide(second, -85))
-    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeGreaterThan(placementView.x + 1)
+    await expect.poll(() => viewport().then(box => box.x)).toBeGreaterThan(placementView.x + 1)
     await touch(finger, second, slide(finger, -40), slide(second, 40))
-    await expect.poll(() => cameraBox(page).then(box => box.width)).toBeLessThan(placementView.width - 1)
+    await expect.poll(() => viewport().then(box => box.width)).toBeLessThan(placementView.width - 1)
     expect(orders).toHaveLength(0)
     await expect(tip).toBeVisible()
     await expect(selected).toHaveText('Peasant')
@@ -689,11 +701,11 @@ test('a worker pans and pinches during construction and places ten sites without
     await expect(page.locator('#selection-detail')).toContainText('Level 1')
     await expect(page.locator('#selection-detail')).toContainText('Range ' + attackRange('human', 'pathfinder', 0))
     await expect(page.locator('#hero-skill')).toBeVisible()
-    const heroView = await cameraBox(page)
+    const heroView = await viewport()
     await touch(finger, second, slide(finger, -85), slide(second, -85))
-    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeGreaterThan(heroView.x + 1)
+    await expect.poll(() => viewport().then(box => box.x)).toBeGreaterThan(heroView.x + 1)
     await shortcuts.nth(1).tap()
-    await expect.poll(() => cameraBox(page).then(box => box.x)).toBeLessThan(heroView.x + 2)
+    await expect.poll(() => viewport().then(box => box.x)).toBeLessThan(heroView.x + 2)
   } finally {
     await context.close()
     await run.close()
