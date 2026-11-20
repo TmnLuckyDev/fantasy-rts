@@ -183,7 +183,6 @@
         </div>
         <div class="battle-shortcuts" aria-label="Battle shortcuts">
           <button id="camera-back" type="button" hidden>Back to previous position</button>
-          <button id="hero-quick" type="button" hidden><canvas id="hero-quick-portrait" width="30" height="30" aria-hidden="true"></canvas><span id="hero-quick-label"></span></button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
           <button id="idle-worker" type="button" aria-label="Idle worker" title="Cycle through idle workers (I)" disabled>Idle: <span id="idle-count">0</span></button>
           <button id="workers" type="button">Workers</button>
@@ -195,14 +194,14 @@
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
           <button id="formation" type="button" aria-label="Army formation" aria-expanded="false" aria-controls="formation-options" hidden>Line</button>
           <button id="hero-skill" type="button" hidden>Hero skill</button>
-          <button id="dismiss-units" type="button" hidden title="Permanently dismiss selected peasants or scouts">Dismiss</button>
           <button id="board" type="button" title="Meet and board a friendly transport" hidden>Board</button>
           <button id="unload" type="button" aria-pressed="false" title="Choose a coast for the selected transports" hidden>Unload</button>
           <button id="explore" type="button" title="Automatically explore unexplored terrain" hidden>Explore</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
           <button id="halt" type="button" title="Stop and hold until the next order (S)">Stop</button>
-          <button id="hall-upgrade" type="button" hidden>Upgrade</button>
+          <button id="hall-upgrade" type="button" aria-haspopup="dialog" hidden>Upgrade</button>
           <button id="deselect" type="button" title="Deselect (Esc)" aria-label="Deselect selected units">Deselect</button>
+          <button id="kill-units" type="button" hidden title="Permanently kill selected workers or scouts">Kill</button>
         </div>
         <div id="worker-actions" class="economy-menu worker-actions" role="group" aria-label="Gather resources" hidden></div>
         <div id="economy-menu" class="economy-menu" aria-label="Economy commands" hidden></div>
@@ -217,6 +216,15 @@
           <label>Graphics <select id="graphics-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
           <section aria-label="Economy breakdown"><strong>Economy</strong><p id="income-summary"></p><p id="worker-breakdown"></p></section>
         </div>
+      </dialog>
+      <dialog id="hall-upgrade-sheet" aria-labelledby="hall-upgrade-title">
+        <div class="production-tabs"><strong id="hall-upgrade-title">Upgrade headquarters</strong><button id="close-hall-upgrade" type="button">Close</button></div>
+        <p id="hall-upgrade-summary"></p>
+        <p id="hall-upgrade-cost"></p>
+        <p id="hall-upgrade-buildings"></p>
+        <p id="hall-upgrade-shortage" role="status"></p>
+        <p id="hall-upgrade-unlocks"></p>
+        <button id="confirm-hall-upgrade" class="primary" type="button">Confirm upgrade</button>
       </dialog>
       <dialog id="production-sheet" aria-label="Production">
         <div class="production-tabs" role="group" aria-label="Production views">

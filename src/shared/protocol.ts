@@ -29,7 +29,7 @@ export type EntityKind = typeof entityKinds[number]
 export const isShipKind = (kind: unknown): kind is 'transport' | 'warship' => kind === 'transport' || kind === 'warship'
 export const isUnitKind = (kind: unknown): kind is UnitKind => unitKinds.some(value => value === kind)
 export const isBuildingKind = (kind: unknown): kind is BuildingKind => buildingKinds.some(value => value === kind)
-export const troopGroups = ['all', ...combatKinds, 'siege', 'support', 'scout', 'transport', 'warship', 'heroes'] as const
+export const troopGroups = ['all', 'heroes', ...combatKinds, 'siege', 'support', 'scout', 'transport', 'warship'] as const
 export type TroopGroup = typeof troopGroups[number]
 export function inTroopGroup(kind: EntityKind, group: TroopGroup) {
   if (group === 'all') return isUnitKind(kind) && kind !== 'worker'

@@ -4,7 +4,7 @@ import { TILE, cellCenter, distance, isWalkable, resourceAt, snapToCell, tileAt,
 import type { BattleMap } from '../shared/map.ts'
 import { raceOf, MAX_SELECTION, entityKinds, inTroopGroup, isArmyOrder, isHeroKind, isShipKind, isUnitKind } from '../shared/protocol.ts'
 import { decodeFog } from '../shared/fog.ts'
-import { placementError, buildingFootprint, upgrades } from '../shared/economy.ts'
+import { attackRange, placementError, buildingFootprint, selectedAttackRange } from '../shared/economy.ts'
 import type { ArmyOrder, Formation, TroopGroup, BuildingKind, Effect, Entity, Faction, PlayerRaces, Order, Point, ResourceKind, Snapshot } from '../shared/protocol.ts'
 import { CONTROL_RADIUS } from '../shared/match-settings.ts'
 import { heroLevel } from '../shared/heroes.ts'
@@ -156,6 +156,7 @@ export class BattleScene extends Phaser.Scene {
       order: point => {
         if (!this.actions.dismissBuildMenu()) this.orderAt(point)
       },
+      touchDragThreshold: () => this.placing && this.placing !== 'wall' ? 24 : 8,
       camera: (from, to, ratio) => this.transformCamera(from, to, ratio)
     })
     const track = (event: PointerEvent) => {
@@ -315,12 +316,6 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  selectHero() {
-    const hero = this.army.get('heroes')?.[0]
-    if (!hero) return
-    if (this.selected.size === 1 && this.selected.has(hero.id)) this.focus(hero)
-    else this.selectGroup('heroes', false)
-  }
   castHeroAbility() {
     const heroes = [...this.selected].filter(id => isHeroKind(this.visuals.get(id)?.entity.kind))
     if (heroes.length) this.actions.order(heroes, { kind: 'hero-ability' })
@@ -379,10 +374,11 @@ export class BattleScene extends Phaser.Scene {
   selectGroup(group: TroopGroup, center = this.selectedGroup === group) {
     const members = this.army.get(group)
     if (!members?.length) return
+    const heroAlreadySelected = this.selected.size === 1 && this.selected.has(members[0].id)
     this.place(null)
     this.selectedGroup = group
     this.selected = new Set(members.map(entity => entity.id))
-    if (center) this.frame(members)
+    if (center || (group === 'heroes' && heroAlreadySelected)) this.frame(members)
     this.selectionChanged(true)
   }
 
@@ -724,8 +720,8 @@ export class BattleScene extends Phaser.Scene {
       const entry = this.visuals.get(id)
       return entry ? [entry.entity] : []
     })
-    this.actions.groups(this.army, this.selectedGroup)
     this.actions.selection(entities, interactive)
+    this.actions.groups(this.army, this.selectedGroup)
   }
 
   private mobileUnits() {
@@ -931,6 +927,7 @@ export class BattleScene extends Phaser.Scene {
     const walkFrame = this.quality === 'low' ? 0 : Math.floor(time / (crowded || this.quality === 'medium' ? 200 : 125)) % 2
     let healthBars = 0
     const groupMarkers = new Set<number>()
+    const rangeMarkers: Visual[] = []
     for (const visual of this.visuals.values()) {
       const { entity, sprite, lastHp } = visual
       const visible = Math.abs(entity.x - center.x) < halfWidth && Math.abs(entity.y - center.y) < halfHeight
@@ -970,6 +967,9 @@ export class BattleScene extends Phaser.Scene {
         this.graphics.fillStyle(cargoColor[entity.carrying], 1).fillRect(sprite.x - 9, sprite.y - 12, 5, 5)
       }
       const selected = this.selected.has(entity.id)
+      // One visible representative per type, capped at three for a full army.
+      if (selected && rangeMarkers.length < 3 && !rangeMarkers.some(marker => marker.entity.kind === entity.kind) &&
+          selectedAttackRange(entity, this.newest?.tick ?? 0)) rangeMarkers.push(visual)
       const color = factionColor[entity.faction]
       if (selected && (!crowded || building || this.selected.size < 30)) {
         if (!visual.ring) {
@@ -1048,6 +1048,16 @@ export class BattleScene extends Phaser.Scene {
     }
     this.paintEffects(time, center, halfWidth, halfHeight, crowded || this.quality !== 'high')
     this.ui.clear()
+    for (const { entity, sprite } of rangeMarkers) {
+      const tick = this.newest?.tick ?? 0
+      const range = selectedAttackRange(entity, tick)
+      const structureRange = selectedAttackRange(entity, tick, true)
+      this.ui.fillStyle(0xc7dc9e, .035).fillCircle(sprite.x, sprite.y, range)
+      this.ui.lineStyle(1.5 / camera.zoom, 0xc7dc9e, .58).strokeCircle(sprite.x, sprite.y, range)
+      if (structureRange > range) {
+        this.ui.lineStyle(1.5 / camera.zoom, 0xe7b46b, .6).strokeCircle(sprite.x, sprite.y, structureRange)
+      }
+    }
     if (this.practiceMine) {
       const { x, y } = this.practiceMine
       this.ui.lineStyle(2, 0xffd575, 1).strokeRect(x - 16, y - 16, 32, 32)
@@ -1090,7 +1100,7 @@ export class BattleScene extends Phaser.Scene {
         }
         if (this.placing === 'tower') {
           const level = this.newest?.upgrades?.filter(kind => kind === 'range').length ?? 0
-          const range = unitStats[this.races[this.faction]].tower.range + level * upgrades.range.bonus
+          const range = attackRange(this.races[this.faction], 'tower', level)
           this.ui.fillStyle(ok ? 0x9fdf8d : 0xf27b65, .10).fillCircle(at.x, at.y, range)
           this.ui.lineStyle(1.5, ok ? 0x9fdf8d : 0xf27b65, .65).strokeCircle(at.x, at.y, range)
         }

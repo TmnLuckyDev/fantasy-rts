@@ -4,7 +4,7 @@ import type { BattleMap } from './map.ts'
 import { heroKinds, isUnitKind, raceOf, resourceKinds } from './protocol.ts'
 import type { BuildingKind, Race, Entity, EntityKind, Point, ResourceKind, Resources, UnitKind, UpgradeKind } from './protocol.ts'
 import { raceRules } from './race-rules.ts'
-import { unitStats } from './units.ts'
+import { siegeBalance, unitStats } from './units.ts'
 
 export const STARTING_RESOURCES: Readonly<Resources> = { gold: 300, wood: 180, stone: 120 }
 export const GATHERING: Record<ResourceKind, { amount: number, ticks: number }> = {
@@ -46,6 +46,21 @@ export const upgrades: Record<UpgradeKind, { name: string, cost: Cost, ticks: nu
   range: { name: 'Ranged reach +12 range', cost: { gold: 170, wood: 90 }, ticks: 270, bonus: 12 },
   speed: { name: 'Troop speed +5%', cost: { gold: 165, wood: 65 }, ticks: 250, bonus: 5 },
   fortress: { name: 'Fortress Engineering +12% defensive HP', cost: { gold: 150, stone: 115 }, ticks: 280, bonus: 12 }
+}
+
+export const isRanged = (kind: EntityKind) => kind === 'siege' || kind === 'ranged' || kind === 'marksman' || kind === 'pathfinder'
+export const benefitsFromRange = (kind: EntityKind) => isRanged(kind) || kind === 'warship' || kind === 'tower'
+
+export function attackRange(race: Race, kind: EntityKind, reachLevel: number, activeSkill = false, structureTarget = false) {
+  const range = unitStats[race][kind].range
+  const base = kind === 'siege' && structureTarget ? Math.max(siegeBalance.structureRange, range) : range
+  const moonshot = race === 'elf' && kind === 'pathfinder' && activeSkill ? 24 : 0
+  return base + moonshot + (benefitsFromRange(kind) ? reachLevel * upgrades.range.bonus : 0)
+}
+
+export function selectedAttackRange(entity: Entity, tick: number, structureTarget = false) {
+  if (!benefitsFromRange(entity.kind) || entity.construction !== undefined || entity.embarkedOn) return 0
+  return attackRange(raceOf(entity), entity.kind, entity.rangeLevel ?? 0, tick < (entity.abilityActiveUntil ?? 0), structureTarget)
 }
 
 export const MAX_UPGRADE_LEVEL = 5
