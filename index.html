@@ -194,6 +194,7 @@
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
           <button id="formation" type="button" aria-label="Army formation" aria-expanded="false" aria-controls="formation-options" hidden>Line</button>
           <button id="hero-skill" type="button" hidden>Hero skill</button>
+          <button id="group-menu-open" type="button" aria-haspopup="dialog" hidden>Groups</button>
           <button id="board" type="button" title="Meet and board a friendly transport" hidden>Board</button>
           <button id="unload" type="button" aria-pressed="false" title="Choose a coast for the selected transports" hidden>Unload</button>
           <button id="explore" type="button" title="Automatically explore unexplored terrain" hidden>Explore</button>
@@ -212,6 +213,7 @@
         <div class="production-tabs"><strong>Match options</strong><button id="close-match-options" type="button">Close</button></div>
         <div class="qol-options">
           <button id="options-build" type="button">Build</button>
+          <button id="options-groups" type="button" aria-haspopup="dialog">Army groups</button>
           <label>Box selection <select id="selection-filter"><option value="all">All units</option><option value="military">Military only</option><option value="workers">Workers only</option></select></label>
           <label>Graphics <select id="graphics-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
           <section aria-label="Economy breakdown"><strong>Economy</strong><p id="income-summary"></p><p id="worker-breakdown"></p></section>
@@ -240,13 +242,28 @@
         <p id="queue-feedback" class="training-feedback" role="status"></p>
       </dialog>
       <dialog id="template-sheet" aria-label="Army groups">
-        <div class="production-tabs"><button id="new-template" type="button">New group</button><button id="close-templates" type="button">Close</button></div>
+        <div class="production-tabs"><strong id="template-title">Army Groups</strong><button id="all-army-groups" type="button" hidden>All groups</button><button id="close-templates" type="button">Close</button></div>
+        <div id="template-actions" class="group-actions">
+          <button id="create-from-selection" type="button" hidden>Create Group</button>
+          <button id="add-to-group" type="button" hidden>Add to Group</button>
+          <button id="remove-from-group" type="button" hidden>Remove from Group</button>
+          <button id="new-template" type="button">Create Empty Army Template</button>
+        </div>
         <div id="template-list"></div>
         <form id="template-editor" hidden>
+          <p id="template-selection-summary" hidden></p>
           <label>Group name <input name="template-name" required maxlength="32"></label>
           <div id="template-targets"></div>
-          <button type="submit">Save group</button>
+          <button id="save-template" type="submit">Save group</button>
           <button id="cancel-template" type="button">Cancel</button>
+        </form>
+        <form id="template-membership" hidden>
+          <label for="template-destination">Army Group</label>
+          <select id="template-destination" name="group" required></select>
+          <p id="template-move-summary"></p>
+          <label id="template-expand-label"><input type="checkbox" name="expand"> Expand planned composition to fit the selection</label>
+          <button id="confirm-template-membership" type="submit">Confirm</button>
+          <button id="cancel-template-membership" type="button">Cancel</button>
         </form>
         <p id="template-feedback" role="status"></p>
       </dialog>

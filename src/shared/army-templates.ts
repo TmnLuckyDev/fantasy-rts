@@ -1,6 +1,15 @@
 import { trainingCost, trainingRule } from './economy.ts'
-import { isHeroKind, resourceKinds } from './protocol.ts'
-import type { ArmyTemplate, Population, Race, Resources, TemplateKind } from './protocol.ts'
+import { isHeroKind, resourceKinds, templateKinds } from './protocol.ts'
+import type { ArmyTemplate, Population, Race, Resources, TemplateKind, TemplateTarget } from './protocol.ts'
+
+export function groupComposition(members: ReadonlyArray<{ kind: TemplateKind }>): TemplateTarget[] {
+  const counts = new Map<TemplateKind, number>()
+  for (const { kind } of members) counts.set(kind, (counts.get(kind) ?? 0) + 1)
+  return templateKinds.flatMap(kind => {
+    const count = counts.get(kind)
+    return count ? [{ kind, count }] : []
+  })
+}
 
 export function replenishPlan(
   groups: readonly ArmyTemplate[], group: ArmyTemplate, queued: ReadonlyMap<TemplateKind, number>,

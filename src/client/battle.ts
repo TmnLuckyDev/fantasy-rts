@@ -39,6 +39,9 @@ export class BattleScene extends Phaser.Scene {
   private ringPool: Phaser.GameObjects.Image[] = []
   private selected = new Set<number>()
   private selectedGroup: TroopGroup | null = null
+  private selectedTemplate: number | null = null
+
+  get activeTemplate() { return this.selectedTemplate }
   private army: ArmyIndex = new Map()
   private lastIdleWorker = 0
   private lastBuildHint: string | null | undefined
@@ -279,6 +282,14 @@ export class BattleScene extends Phaser.Scene {
       this.selected = new Set(this.army.get(this.selectedGroup)?.map(entity => entity.id))
       if (!this.selected.size) this.selectedGroup = null
     }
+    if (this.selectedTemplate !== null) {
+      const group = snapshot.templates?.find(group => group.id === this.selectedTemplate)
+      if (group) this.selectTemplateMembers(group.members)
+      else {
+        this.selectedTemplate = null
+        this.selected.clear()
+      }
+    }
     this.selectionChanged()
     if (this.selectedResource !== null) {
       const site = snapshot.deposits?.find(item => item.index === this.selectedResource)
@@ -364,6 +375,7 @@ export class BattleScene extends Phaser.Scene {
   deselect() {
     this.cancelTargeting()
     this.selectedGroup = null
+    this.selectedTemplate = null
     this.selectedResource = null
     this.selected.clear()
     this.selectionChanged(true)
@@ -377,20 +389,31 @@ export class BattleScene extends Phaser.Scene {
     const heroAlreadySelected = this.selected.size === 1 && this.selected.has(members[0].id)
     this.place(null)
     this.selectedGroup = group
+    this.selectedTemplate = null
     this.selected = new Set(members.map(entity => entity.id))
     if (center || (group === 'heroes' && heroAlreadySelected)) this.frame(members)
     this.selectionChanged(true)
   }
 
-  selectTemplate(ids: readonly number[], center = false) {
-    this.deselect()
-    this.selected = new Set(ids.filter(id => this.visuals.get(id)?.entity.faction === this.faction))
+  selectTemplate(id: number, center = this.selectedTemplate === id) {
+    const group = this.newest?.templates?.find(group => group.id === id)
+    if (!group) return
+    this.cancelTargeting()
+    this.selectedGroup = null
+    this.selectedTemplate = id
+    this.selectedResource = null
+    this.selectTemplateMembers(group.members)
     if (center) this.frame([...this.selected].map(id => this.visuals.get(id)!.entity))
     this.selectionChanged(true)
   }
 
+  private selectTemplateMembers(members: readonly { id: number }[]) {
+    this.selected = new Set(members.flatMap(({ id }) => this.visuals.get(id)?.entity.faction === this.faction ? [id] : []))
+  }
+
   selectWorkers() {
     this.selectedGroup = null
+    this.selectedTemplate = null
     this.place(null)
     this.selected = new Set([...this.visuals.values()].filter(({ entity }) =>
       this.ownUnit(entity) && entity.kind === 'worker').slice(0, MAX_SELECTION).map(({ entity }) => entity.id))
@@ -406,6 +429,7 @@ export class BattleScene extends Phaser.Scene {
     this.lastIdleWorker = next.id
     this.place(null)
     this.selectedGroup = null
+    this.selectedTemplate = null
     this.selected = new Set([next.id])
     this.focus(next)
     this.selectionChanged(true)
@@ -592,6 +616,7 @@ export class BattleScene extends Phaser.Scene {
       const deposit = this.newest?.deposits?.find(entry => entry.index === index)
       if (kind && deposit) {
         this.selectedGroup = null
+        this.selectedTemplate = null
         this.selected.clear()
         this.selectionChanged(true)
         this.selectedResource = index
@@ -608,6 +633,7 @@ export class BattleScene extends Phaser.Scene {
     }
     if (picked?.faction === this.faction) {
       this.selectedGroup = null
+      this.selectedTemplate = null
       if (!append) this.selected.clear()
       if (append && this.selected.has(picked.id)) this.selected.delete(picked.id)
       else if (this.selected.size < MAX_SELECTION) this.selected.add(picked.id)
@@ -615,6 +641,7 @@ export class BattleScene extends Phaser.Scene {
     } else if (touch && (this.selectedGroup || this.mobileUnits().length)) this.orderAt(screen)
     else if (!append) {
       this.selectedGroup = null
+      this.selectedTemplate = null
       this.selected.clear()
       this.selectionChanged(true)
     }
@@ -630,6 +657,7 @@ export class BattleScene extends Phaser.Scene {
       if (!deposit || this.sightAt(at) !== 2) continue
       const workers = this.workerIds()
       this.selectedGroup = null
+      this.selectedTemplate = null
       this.selected = new Set(workers)
       this.selectedResource = index
       this.selectionChanged(true)
@@ -657,6 +685,7 @@ export class BattleScene extends Phaser.Scene {
     const center = this.cameraCenter()
     const camera = this.cameras.main
     this.selectedGroup = null
+    this.selectedTemplate = null
     this.selectedResource = null
     this.selected.clear()
     for (const { entity, sprite } of this.visuals.values()) {
@@ -706,6 +735,7 @@ export class BattleScene extends Phaser.Scene {
       return
     }
     this.selectedGroup = null
+    this.selectedTemplate = null
     if (!append) this.selected.clear()
     for (const { entity, sprite } of this.visuals.values()) {
       if (this.selected.size < MAX_SELECTION && this.ownUnit(entity) &&

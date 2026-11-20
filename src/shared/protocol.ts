@@ -154,14 +154,20 @@ export type Formation = typeof formations[number]
 
 export const templateKinds = [...combatKinds, 'siege', 'support', 'scout', 'transport', 'warship', ...heroKinds] as const
 export type TemplateKind = typeof templateKinds[number]
+export const isTemplateKind = (kind: unknown): kind is TemplateKind => templateKinds.some(value => value === kind)
+export const MAX_ARMY_GROUP_SIZE = 500
+export const MAX_ARMY_GROUPS = 8
 export type TemplateTarget = { kind: TemplateKind, count: number }
 export type ArmyTemplate = { id: number, name: string, targets: TemplateTarget[], members: Array<{ id: number, kind: TemplateKind }> }
 export type Order =
   | { kind: 'template-save', template: number, name: string, targets: TemplateTarget[] }
+  | { kind: 'template-create', template: 0, name: string, members: number[] }
+  | { kind: 'template-rename', template: number, name: string }
   | { kind: 'template-remove', template: number }
   | { kind: 'template-replenish', template: number, expected?: TemplateTarget[] }
   | { kind: 'template-priority', template: number, direction: -1 | 1 }
-  | { kind: 'template-assign' | 'template-release', template: number, members: number[] }
+  | { kind: 'template-assign', template: number, members: number[], expand?: boolean }
+  | { kind: 'template-release', template: number, members: number[] }
   | { kind: 'rally', to: Point }
   | { kind: 'move' | 'advance', to: Point, formation?: Formation }
   | { kind: 'attack', target: number, formation?: Formation }
