@@ -288,7 +288,7 @@ test('fog visibility remains identical when same-faction units overlap a tile', 
   assert.ok(baseline.length > 0)
 })
 
-test('assigned workers build queued and unfinished sites until stopped', () => {
+test('assigned workers split queued and paused sites without duplicating a job', () => {
   const map = ashford
   const game = new Match(map)
   const worker = game.units.get(15)!

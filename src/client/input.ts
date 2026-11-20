@@ -6,6 +6,7 @@ type Actions = {
   select: (point: Point, append: boolean, touch: boolean) => void
   selectBox: (rect: SelectionRect, append: boolean) => void
   order: (point: Point) => void
+  touchDragThreshold?: () => number
   camera: (from: Point, to: Point, zoomRatio: number) => void
 }
 
@@ -97,9 +98,13 @@ export class BattlefieldInput {
     this.pointers.set(event.pointerId, point)
     if (this.gesture) {
       if (!this.frame) this.frame = requestAnimationFrame(this.updateGesture)
-    } else if (this.down && (this.selection || distance(this.down, point) >= dragThreshold)) {
+    } else if (this.down && (this.selection || distance(this.down, point) >= this.dragThreshold(event))) {
       this.selection = { from: this.down, to: point }
     }
+  }
+
+  private dragThreshold(event: PointerEvent) {
+    return event.pointerType === 'touch' ? this.actions.touchDragThreshold?.() ?? dragThreshold : dragThreshold
   }
 
   private updateGesture = () => {
@@ -110,8 +115,9 @@ export class BattlefieldInput {
     const center = middle(a, b)
     const span = Math.max(8, distance(a, b))
     // Sample both pointers once per frame so translation does not look like a pinch.
+    const previousSpan = gesture.zooming ? gesture.span : gesture.initialSpan
     gesture.zooming ||= Math.abs(span - gesture.initialSpan) >= Math.max(9, gesture.initialSpan * 0.07)
-    this.actions.camera(gesture.center, center, gesture.zooming ? span / gesture.span : 1)
+    this.actions.camera(gesture.center, center, gesture.zooming ? span / previousSpan : 1)
     gesture.center = center
     gesture.span = span
   }
@@ -130,8 +136,8 @@ export class BattlefieldInput {
   private end = (event: PointerEvent) => {
     if (!this.pointers.has(event.pointerId)) return
     const point = this.point(event)
-    if (this.frame) {
-      cancelAnimationFrame(this.frame)
+    if (this.gesture) {
+      if (this.frame) cancelAnimationFrame(this.frame)
       this.pointers.set(event.pointerId, point)
       this.updateGesture()
     }
@@ -147,7 +153,8 @@ export class BattlefieldInput {
     this.resetGesture()
     if (!from || event.type !== 'pointerup' || !event.composedPath().includes(this.element)) return
     const to = this.point(event)
-    if (dragged || distance(from, to) >= dragThreshold) this.actions.selectBox({ from, to }, event.shiftKey)
+    const threshold = this.dragThreshold(event)
+    if ((dragged && threshold === dragThreshold) || distance(from, to) >= threshold) this.actions.selectBox({ from, to }, event.shiftKey)
     else this.actions.select(to, event.shiftKey, event.pointerType !== 'mouse')
   }
 }

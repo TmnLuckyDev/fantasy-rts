@@ -1,5 +1,5 @@
 import { replenishPlan } from '../shared/army-templates.ts'
-import { buildingTier, hallUpgrades, researchTier, unitTier } from '../shared/economy.ts'
+import { buildingTier, hallUpgrades, researchSite, researchTier, selectedAttackRange, unitTier } from '../shared/economy.ts'
 import { templateKinds } from '../shared/protocol.ts'
 import type { ArmyTemplate } from '../shared/protocol.ts'
 import Phaser from 'phaser'
@@ -65,6 +65,7 @@ const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
 const globalUpgradeToggle = button('global-upgrade-toggle')
 const productionSheet = element<HTMLDialogElement>('production-sheet')
+const hallUpgradeSheet = element<HTMLDialogElement>('hall-upgrade-sheet')
 const productionUpgrades = element('production-upgrades')
 const productionOpen = button('production-open')
 const productionPanel = element('production-panel')
@@ -226,6 +227,7 @@ function selectRace(race: Race) {
 
 function showLobby() {
   result.close()
+  hallUpgradeSheet.close()
   templateSheet.close()
   closeProduction()
   settingsMenu.close()
@@ -278,6 +280,7 @@ function receive(message: ServerMessage) {
           button('view-stats').hidden = false
           scene?.place(null)
           closeProduction()
+          hallUpgradeSheet.close()
           templateSheet.close()
           closeEconomyMenu()
           if (result.open) updatePlayAgain()
@@ -299,7 +302,6 @@ function receive(message: ServerMessage) {
       recentIncome = message.income ?? { gold: 0, wood: 0, stone: 0 }
       if (requestedCancel && ownEntities.find(unit => unit.id === requestedCancel?.id)?.training?.revision !== requestedCancel.revision) requestedCancel = undefined
       if (templateSheet.open) drawTemplates()
-      drawHeroQuick()
       if (matchOptions.open) drawEconomyBreakdown()
       if (solo.practice && practiceStep === 2 && ownEntities.some(entity => entity.training?.kind === 'blade')) setPracticeStep(3)
       if (solo.practice && practiceStep === 3 && practiceMoving &&
@@ -413,7 +415,6 @@ function showBattle() {
   scene.quality = quality
   filterChoice.value = 'all'
   button('camera-back').hidden = true
-  button('hero-quick').hidden = true
   button('solo-pause').hidden = !solo.active
   button('solo-pause').textContent = 'Pause'
   button('idle-worker').disabled = true
@@ -504,14 +505,14 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
     ui.button.hidden = !members?.length
     if (!members?.length) continue
     const kind = group === 'all' ? 'blade' : members[0].kind
-    const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Heroes' : entityNames[chosenRace][kind]
+    const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Hero' : entityNames[chosenRace][kind]
     if (ui.label.textContent !== label) ui.label.textContent = label
     const count = String(members.length)
     if (ui.count.textContent !== count) {
       ui.count.textContent = count
       ui.button.setAttribute('aria-description', count + ' living · Tap again to center camera')
     }
-    const pressed = String(group === selected)
+    const pressed = String(group === selected || (group === 'heroes' && selection.length === 1 && selection[0].id === members[0].id))
     if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
     paintPortrait(ui.icon, chosenRace, kind)
   }
@@ -596,25 +597,22 @@ function drawSelection(entities: Entity[], interactive = false) {
   const detail = element('selection-detail')
   const upgrade = button('hall-upgrade')
   upgrade.hidden = !hasProgression || building?.kind !== 'headquarters' || Boolean(room?.result)
+  if (hallUpgradeSheet.open) {
+    if (upgrade.hidden) hallUpgradeSheet.close()
+    else drawHallUpgrade()
+  }
   let hallHint = ''
   if (!upgrade.hidden && building) {
-    const next = hallLevel < 2 ? 2 : 3
-    const rule = hallUpgrades[next]
-    const missing = rule.required.filter(kind => !ownEntities.some(unit => unit.kind === kind && unit.construction === undefined))
-    const shortage = resourceKinds.filter(kind => resources[kind] < rule.cost[kind])
-    upgrade.disabled = hallLevel >= 3 || building.upgradeProgress !== undefined || Boolean(missing.length || shortage.length)
-    hallHint = hallLevel >= 3 ? 'Max level' : building.upgradeProgress !== undefined ?
-      'Upgrading · ' + percentage(building.upgradeProgress) :
-      'Level ' + next + ' · ' + costLabel(rule.cost) +
-      (missing.length ? ' · Requires ' + missing.map(kind => entityNames[chosenRace][kind]).join(', ') : '') +
-      (shortage.length ? ' · Not enough ' + shortage.join(', ') : '')
+    const level = building.level ?? hallLevel
+    hallHint = 'Level ' + level + (level >= 3 ? ' (max)' : building.upgradeProgress !== undefined ?
+      ' · Upgrading ' + percentage(building.upgradeProgress) : '')
     upgrade.title = hallHint
   }
   const meter = element<HTMLMeterElement>('selection-health')
   formationButton.hidden = !entities.some(entity => isUnitKind(entity.kind) && entity.kind !== 'worker')
   if (formationButton.hidden && !formationOptions.hidden) toggleFormation(false)
   button('explore').hidden = !entities.some(entity => entity.kind === 'scout')
-  button('dismiss-units').hidden = !entities.length || !entities.every(entity => entity.kind === 'worker' || entity.kind === 'scout')
+  button('kill-units').hidden = !entities.length || !entities.every(entity => entity.kind === 'worker' || entity.kind === 'scout')
   button('board').hidden = !entities.some(entity => isUnitKind(entity.kind) && !isShipKind(entity.kind)) ||
     !ownEntities.some(entity => entity.kind === 'transport')
   button('unload').hidden = !entities.some(entity => entity.kind === 'transport' && entity.passengers?.length)
@@ -670,6 +668,12 @@ function drawSelection(entities: Entity[], interactive = false) {
     detail.textContent = onlyWorkers
       ? gatherHint()
       : (touch ? 'Tap ground to move or an enemy to attack.' : 'Right-click ground to move or an enemy to attack.')
+  }
+  if (entities.length === 1) {
+    if (selectedHero) detail.textContent += ' · Level ' + heroLevel(selectedHero.experience ?? 0)
+    const range = selectedAttackRange(selected, currentTick)
+    const structureRange = selectedAttackRange(selected, currentTick, true)
+    if (range) detail.textContent += ' · Range ' + range + (structureRange > range ? ' / ' + structureRange + ' vs buildings' : '')
   }
   if (hallHint) detail.textContent += ' · ' + hallHint
   if (building && !foundation && building.hp < building.maxHp) {
@@ -727,16 +731,6 @@ function drawEconomyBreakdown() {
   setText('income-summary', resourceKinds.map(kind => kind[0].toUpperCase() + kind.slice(1) + ' +' + recentIncome[kind] + '/min').join(' · '))
   setText('worker-breakdown', `Workers ${total} · Gold ${workers.gold} · Wood ${workers.wood} · Stone ${workers.stone} · Building/repairing ${workers.building} · Idle ${workers.idle}` +
     (workers.other ? ' · Other orders ' + workers.other : ''))
-}
-
-function drawHeroQuick() {
-  const hero = ownEntities.find(entity => isHeroKind(entity.kind))
-  const quick = button('hero-quick')
-  quick.hidden = !hero || Boolean(room?.result)
-  if (!hero) return
-  paintPortrait(element<HTMLCanvasElement>('hero-quick-portrait'), raceOf(hero), hero.kind)
-  const label = entityNames[raceOf(hero)][hero.kind] + ' · Lv ' + heroLevel(hero.experience ?? 0) + ' · ' + Math.ceil(hero.hp) + '/' + hero.maxHp + ' HP'
-  setText('hero-quick-label', label)
 }
 
 function drawEconomy() {
@@ -951,7 +945,7 @@ function productionChoices(building: Entity) {
     return choice
   })
   if (building.kind === 'headquarters') {
-    const findHero = actionButton('Find hero', () => scene?.selectHero())
+    const findHero = actionButton('Find hero', () => scene?.selectGroup('heroes'))
     findHero.dataset.findHero = ''
     choices.push(findHero)
 
@@ -1055,9 +1049,9 @@ economyAction.onclick = () => {
 }
 
 button('explore').onclick = () => scene?.explore()
-button('dismiss-units').onclick = () => {
+button('kill-units').onclick = () => {
   const ids = selection.filter(entity => entity.kind === 'worker' || entity.kind === 'scout').map(entity => entity.id)
-  if (ids.length && ids.length === selection.length && window.confirm(`Permanently dismiss ${ids.length} selected peasant(s) or scout(s)?`)) {
+  if (ids.length && ids.length === selection.length && window.confirm(`Kill ${ids.length} selected worker(s) or scout(s)? This cannot be undone.`)) {
     issueOrder(ids, { kind: 'dismiss' })
   }
 }
@@ -1473,10 +1467,57 @@ function haltSelection() {
   scene.halt()
 }
 button('halt').onclick = haltSelection
-button('hall-upgrade').onclick = () => {
-  if (selection.length === 1 && selection[0].kind === 'headquarters') {
-    issueOrder([selection[0].id], { kind: 'structure-upgrade' })
+function drawHallUpgrade() {
+  const hall = selection[0]
+  const level = hall.level ?? hallLevel
+  const race = raceOf(hall)
+  const names = entityNames[race]
+  const cost = element('hall-upgrade-cost')
+  const required = element('hall-upgrade-buildings')
+  const missing = element('hall-upgrade-shortage')
+  const unlocks = element('hall-upgrade-unlocks')
+  const confirm = button('confirm-hall-upgrade')
+  setText('hall-upgrade-title', 'Upgrade ' + names.headquarters)
+  for (const item of [cost, required, missing, unlocks, confirm]) item.hidden = level >= 3
+  if (level >= 3) {
+    setText('hall-upgrade-summary', 'Level 3 · Maximum level')
+    return
   }
+  const next = level === 1 ? 2 : 3
+  const rule = hallUpgrades[next]
+  const ready = (kind: EntityKind) => ownEntities.some(entity => entity.kind === kind && entity.construction === undefined)
+  const shortage = resourceKinds.filter(kind => resources[kind] < rule.cost[kind])
+  const producers = ['headquarters', ...buildingKinds] as const
+  const newBuildings = buildingKinds.filter(kind => buildingTier(kind) === next)
+  const newUnits = new Set(producers.flatMap(kind =>
+    trainedAt(kind, race).filter(unit => Math.max(kind === 'headquarters' ? 1 : buildingTier(kind), unitTier(unit)) === next)))
+  const newResearch = upgradeKinds.flatMap(kind => {
+    if (kind === 'fortress' && race !== 'dwarf') return []
+    const levels = Array.from({ length: upgradeLevelLimit(kind) }, (_, i) => i + 1)
+      .filter(tier => Math.max(researchTier(tier), buildingTier(researchSite(kind))) === next)
+    return levels.length ? [upgrades[kind].name.split(' +')[0] + ' ' + levels.join('/')] : []
+  })
+  setText('hall-upgrade-summary', 'Level ' + level + ' → ' + next + ' · ' + rule.ticks / TICKS_PER_SECOND + 's' +
+    (hall.upgradeProgress === undefined ? '' : ' · Upgrading ' + percentage(hall.upgradeProgress)))
+  setText(cost.id, resourceKinds.map(kind => rule.cost[kind] + ' ' + kind).join(' · '))
+  setText(required.id, 'Requires ' + rule.required.map(kind => names[kind] + ' (' + (ready(kind) ? 'ready' : 'missing') + ')').join(' · '))
+  setText(missing.id, shortage.length ? 'Not enough ' + shortage.join(', ') : '')
+  setText(unlocks.id, 'Unlocks ' + [...newBuildings, ...newUnits].map(kind => names[kind]).concat(newResearch).join(' · '))
+  confirm.disabled = solo.paused || hall.upgradeProgress !== undefined || Boolean(shortage.length) || !rule.required.every(ready)
+}
+
+button('hall-upgrade').onclick = () => {
+  if (selection.length !== 1 || selection[0].kind !== 'headquarters' || !hasProgression || room?.result) return
+  closeEconomyMenu()
+  drawHallUpgrade()
+  hallUpgradeSheet.showModal()
+}
+button('close-hall-upgrade').onclick = () => hallUpgradeSheet.close()
+button('confirm-hall-upgrade').onclick = () => {
+  if (!hallUpgradeSheet.open || button('confirm-hall-upgrade').disabled ||
+      selection.length !== 1 || selection[0].kind !== 'headquarters') return
+  hallUpgradeSheet.close()
+  issueOrder([selection[0].id], { kind: 'structure-upgrade' })
 }
 button('deselect').onclick = () => scene?.deselect()
 button('home').onclick = () => scene?.home()
@@ -1484,7 +1525,6 @@ button('camera-back').onclick = () => {
   scene?.restoreCamera()
   button('camera-back').hidden = true
 }
-button('hero-quick').onclick = () => scene?.selectHero()
 button('match-options').onclick = () => {
   closeEconomyMenu()
   setGatherOpen(false)
@@ -1537,7 +1577,8 @@ document.addEventListener('keydown', unlockSound, { capture: true })
 let dismissPointer = false
 match.addEventListener('pointerdown', event => {
   dismissPointer = false
-  if (!(event.target instanceof Element) || productionSheet.open || templateSheet.open || matchOptions.open || result.open) return
+  // Battlefield taps dismiss on release so both touch contacts reach the gesture recognizer.
+  if (!(event.target instanceof Element) || battlefield.contains(event.target) || hallUpgradeSheet.open || productionSheet.open || templateSheet.open || matchOptions.open || result.open) return
   const outside = (panel: HTMLElement, trigger: HTMLElement) =>
     !panel.hidden && !panel.contains(event.target as Element) && !trigger.contains(event.target as Element)
   if (outside(menu, economyAction)) closeEconomyMenu()
@@ -1617,7 +1658,7 @@ initializeNativeApp(active => {
 
 result.oncancel = event => event.preventDefault()
 window.addEventListener('keydown', event => {
-  if (!scene || result.open || matchOptions.open || productionSheet.open || templateSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
+  if (!scene || result.open || hallUpgradeSheet.open || matchOptions.open || productionSheet.open || templateSheet.open || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
   switch (event.key.toLowerCase()) {
     case 'escape': scene.deselect(); break
     case 'i': scene.selectIdleWorker(); break

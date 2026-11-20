@@ -1,5 +1,5 @@
 import { replenishPlan } from '../shared/army-templates.ts'
-import { buildingTier, hallUpgrades, researchTicks, researchTier, unitTier } from '../shared/economy.ts'
+import { attackRange, benefitsFromRange, buildingTier, hallUpgrades, isRanged, researchTicks, researchTier, unitTier } from '../shared/economy.ts'
 import { templateKinds } from '../shared/protocol.ts'
 import type { ArmyTemplate, TemplateKind } from '../shared/protocol.ts'
 import { TILE, ashford, ashfordMap, cellCenter, distance, mapForSettings, resourceAt, snapToCell, wallLine, isWalkable, isWater, tileAt } from '../shared/map.ts'
@@ -38,8 +38,6 @@ const summonLimit = 10
 const squaredDistance = (a: Point, b: Point) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
 const steering = [0, 0.54, -0.54, 1.05, -1.05, 1.4, -1.4]
   .map(angle => ({ sin: Math.sin(angle), cos: Math.cos(angle), direct: angle === 0 }))
-const isRanged = (kind: EntityKind) => kind === 'siege' || kind === 'ranged' || kind === 'marksman' || kind === 'pathfinder'
-const benefitsFromRange = (kind: EntityKind) => isRanged(kind) || kind === 'warship' || kind === 'tower'
 
 type WorkerJob = { kind: 'gather', at: Point, resource: ResourceKind, workTicks: number } | { kind: 'construct', site: number }
   | { kind: 'repair', site: number, workTicks: number }
@@ -406,6 +404,7 @@ export class Match {
         if (worker.job?.kind !== 'construct') this.resetOrders(worker)
         worker.order = order
       }
+      if (workers.length) this.takeQueuedConstruction()
       return workers.length > 0
     }
     if ('template' in order) return units.length === 1 && units[0].kind === 'headquarters' && this.editTemplate(faction, order)
@@ -693,7 +692,10 @@ export class Match {
     }
   }
 
+  private constructionScanNeeded = false
+
   private takeQueuedConstruction() {
+    this.constructionScanNeeded = false
     const idle = { human: [] as Unit[], orc: [] as Unit[] }
     const active = new Set<number>()
     const owners = new Map<number, Unit>()
@@ -703,6 +705,7 @@ export class Match {
       for (const id of worker.buildQueue ?? []) owners.set(id, worker)
       if (!worker.job && worker.order?.kind === 'build-queue') idle[worker.faction].push(worker)
     }
+    if (!idle.human.length && !idle.orc.length) return
     for (const site of this.units.values()) {
       if (!site.buildDuration || active.has(site.id)) continue
       const workers = idle[site.faction]
@@ -721,6 +724,7 @@ export class Match {
       this.queueConstruction(worker, site.id)
       worker.order = { kind: 'build-queue' }
     }
+    for (const worker of [...idle.human, ...idle.orc]) this.resetOrders(worker)
   }
 
   private constructionError(faction: Faction, kind: BuildingKind, at: Point) {
@@ -946,7 +950,7 @@ export class Match {
     if (site !== undefined) {
       worker.job = { kind: 'construct', site }
       worker.buildQueue = remaining
-    }
+    } else if (task) this.constructionScanNeeded = true
   }
 
   private startBulkStructureUpgrade(faction: Faction, kind: 'wall' | 'tower') {
@@ -1552,6 +1556,7 @@ export class Match {
       else if (destination && stats.speed) this.approach(unit, destination, obstacles, Boolean(target) && !movingOrder)
       else this.routes.delete(unit)
     }
+    if (this.constructionScanNeeded) this.takeQueuedConstruction()
     if (readyToUnload.length) {
       this.unload(readyToUnload)
       for (const ship of readyToUnload) {
@@ -1847,10 +1852,8 @@ export class Match {
   }
 
   private attackRange(unit: Unit, target?: Unit): number {
-    const range = unitStats[this.races[unit.faction]][unit.kind].range
-    const base = unit.kind === 'siege' && target && !isUnitKind(target.kind) ? Math.max(siegeBalance.structureRange, range) : range
-    const moonshot = this.races[unit.faction] === 'elf' && unit.kind === 'pathfinder' && this.activeSkill(unit) ? 24 : 0
-    return base + moonshot + (benefitsFromRange(unit.kind) ? this.upgrades[unit.faction].filter(kind => kind === 'range').length * upgrades.range.bonus : 0)
+    const reachLevel = benefitsFromRange(unit.kind) ? this.upgrades[unit.faction].filter(kind => kind === 'range').length : 0
+    return attackRange(this.races[unit.faction], unit.kind, reachLevel, this.activeSkill(unit), Boolean(target && !isUnitKind(target.kind)))
   }
 
   private fight(unit: Unit, target: Unit): boolean {
