@@ -1,7 +1,7 @@
-import { replenishPlan } from '../shared/army-templates.ts'
+import { groupComposition, replenishPlan } from '../shared/army-templates.ts'
 import { buildingTier, hallUpgrades, researchSite, researchTier, selectedAttackRange, unitTier } from '../shared/economy.ts'
-import { templateKinds } from '../shared/protocol.ts'
-import type { ArmyTemplate } from '../shared/protocol.ts'
+import { isTemplateKind, MAX_ARMY_GROUPS, MAX_ARMY_GROUP_SIZE, templateKinds } from '../shared/protocol.ts'
+import type { ArmyTemplate, TemplateKind } from '../shared/protocol.ts'
 import Phaser from 'phaser'
 import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
@@ -33,6 +33,7 @@ const lobby = element('lobby')
 const match = element('match')
 const battlefield = element('battlefield')
 const groupBar = element('troop-groups')
+const customGroupButtons = new Map<number, { button: HTMLButtonElement, icon: HTMLCanvasElement, label: HTMLElement, count: HTMLElement }>()
 const groupButtons = new Map<TroopGroup, { button: HTMLButtonElement, icon: HTMLCanvasElement, label: HTMLElement, count: HTMLElement }>()
 for (const group of troopGroups) {
   const item = document.createElement('button')
@@ -48,6 +49,7 @@ for (const group of troopGroups) {
   count.setAttribute('aria-hidden', 'true')
   item.append(icon, label, count)
   groupBar.append(item)
+  if (group === 'all') label.textContent = 'All troops'
   groupButtons.set(group, { button: item, icon, label, count })
 }
 const portrait = element<HTMLCanvasElement>('selection-portrait')
@@ -165,6 +167,11 @@ let feedbackLastAt = 0
 
 const templateSheet = element<HTMLDialogElement>('template-sheet')
 const templateEditor = element<HTMLFormElement>('template-editor')
+const templateMembership = element<HTMLFormElement>('template-membership')
+let managedTemplate: number | null = null
+let templateEditorMode: 'empty' | 'composition' | 'rename' | 'selection' = 'empty'
+let editingMembers: number[] = []
+let membershipMode: 'add' | 'remove' = 'add'
 let templateId = 0
 let templates: ArmyTemplate[] = []
 let templatesSignature = ''
@@ -301,7 +308,6 @@ function receive(message: ServerMessage) {
       researched = message.upgrades ?? []
       recentIncome = message.income ?? { gold: 0, wood: 0, stone: 0 }
       if (requestedCancel && ownEntities.find(unit => unit.id === requestedCancel?.id)?.training?.revision !== requestedCancel.revision) requestedCancel = undefined
-      if (templateSheet.open) drawTemplates()
       if (matchOptions.open) drawEconomyBreakdown()
       if (solo.practice && practiceStep === 2 && ownEntities.some(entity => entity.training?.kind === 'blade')) setPracticeStep(3)
       if (solo.practice && practiceStep === 3 && practiceMoving &&
@@ -314,6 +320,7 @@ function receive(message: ServerMessage) {
       setText('idle-count', String(idle))
       drawAttackAlerts(room?.result ? [] : message.alerts ?? [])
       scene?.snapshot(message)
+      if (templateSheet.open) drawTemplates()
       break
     }
     case 'error':
@@ -424,6 +431,7 @@ function showBattle() {
   toggleFormation(false)
   resources = { gold: 0, wood: 0, stone: 0 }
   ownEntities = []
+  templates = []
   researched = []
   closeProduction()
   drawProduction()
@@ -499,11 +507,20 @@ function drawAttackAlerts(alerts: readonly AttackAlert[]) {
 }
 
 function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
-  groupBar.hidden = !army.size
+  groupBar.hidden = !army.size && !templates.length
+  drawCustomGroupButtons()
   for (const [group, ui] of groupButtons) {
     const members = army.get(group)
-    ui.button.hidden = !members?.length
-    if (!members?.length) continue
+    ui.button.hidden = !members?.length && !(group === 'all' && templates.length)
+    ui.button.disabled = !members?.length
+    if (!members?.length) {
+      if (group === 'all' && templates.length) {
+        ui.count.textContent = '0'
+        ui.button.removeAttribute('aria-pressed')
+        paintPortrait(ui.icon, chosenRace, 'blade')
+      }
+      continue
+    }
     const kind = group === 'all' ? 'blade' : members[0].kind
     const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Hero' : entityNames[chosenRace][kind]
     if (ui.label.textContent !== label) ui.label.textContent = label
@@ -515,6 +532,45 @@ function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
     const pressed = String(group === selected || (group === 'heroes' && selection.length === 1 && selection[0].id === members[0].id))
     if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
     paintPortrait(ui.icon, chosenRace, kind)
+  }
+}
+
+function drawCustomGroupButtons() {
+  const present = new Set(templates.map(group => group.id))
+  for (const [id, ui] of customGroupButtons) {
+    if (!present.has(id)) {
+      ui.button.remove()
+      customGroupButtons.delete(id)
+    }
+  }
+  const firstUnitType = groupButtons.get('blade')!.button
+  let previous = groupButtons.get('heroes')!.button
+  for (const group of templates) {
+    let ui = customGroupButtons.get(group.id)
+    if (!ui) {
+      const item = document.createElement('button')
+      item.type = 'button'
+      item.dataset.armyGroup = String(group.id)
+      item.title = 'Tap again to center. Hold or right-click to manage.'
+      item.onclick = () => scene?.selectTemplate(group.id)
+      const icon = document.createElement('canvas')
+      icon.width = icon.height = 28
+      icon.setAttribute('aria-hidden', 'true')
+      const label = document.createElement('span')
+      const count = document.createElement('span')
+      count.className = 'troop-count'
+      ui = { button: item, icon, label, count }
+      item.append(icon, label, count)
+      customGroupButtons.set(group.id, ui)
+    }
+    if (previous.nextElementSibling !== ui.button) groupBar.insertBefore(ui.button, previous.nextElementSibling ?? firstUnitType)
+    previous = ui.button
+    const count = group.members.length + '/' + targetTotal(group)
+    if (ui.count.textContent !== count) ui.count.textContent = count
+    if (ui.label.textContent !== group.name) ui.label.textContent = group.name
+    const pressed = String(scene?.activeTemplate === group.id)
+    if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
+    paintPortrait(ui.icon, chosenRace, group.targets[0]?.kind ?? 'blade')
   }
 }
 
@@ -570,6 +626,11 @@ function drawSelection(entities: Entity[], interactive = false) {
   selection = entities
   button('gather-deposit').hidden = true
   const selected = entities[0]
+  const group = templates.find(group => group.id === scene?.activeTemplate)
+  element('selection-detail').classList.toggle('group-selection-detail', Boolean(group))
+  const groupAction = button('group-menu-open')
+  groupAction.hidden = Boolean(room?.result) || (!group && !entities.some(eligibleGroupUnit))
+  groupAction.textContent = group ? 'Group details' : 'Groups'
   if (solo.practice && practiceStep === 0 && entities.some(entity => entity.kind === 'worker')) setPracticeStep(1)
   const workers = entities.some(entity => entity.kind === 'worker')
   const trainer = entities.length === 1 && selected && selected.construction === undefined &&
@@ -635,13 +696,14 @@ function drawSelection(entities: Entity[], interactive = false) {
   const movable = entities.some(entity => isUnitKind(entity.kind))
   button('advance').hidden = !movable || workers && entities.every(entity => entity.kind === 'worker')
   button('halt').hidden = !movable
-  button('deselect').hidden = !selected && !placing
+  button('deselect').hidden = !selected && !group && !placing
   updateCommandTarget()
   meter.hidden = !selected
   portrait.hidden = !selected
   if (!selected) {
     label.textContent = 'No units selected'
     detail.textContent = touch ? 'Drag to select · Two fingers to pan.' : 'Click or drag to select.'
+    if (group) drawSelectedTemplate(group)
     return
   }
   paintPortrait(portrait, raceOf(selected), selected.kind)
@@ -691,6 +753,7 @@ function drawSelection(entities: Entity[], interactive = false) {
     waiting ||= entity.landing.waiting
   }
   if (total) detail.textContent += ` · ${total - remaining}/${total} ashore` + (waiting ? ' · Waiting for space' : remaining ? ' · Landing' : '')
+  if (group) drawSelectedTemplate(group)
 }
 
 function costLabel(cost: Cost) {
@@ -1257,6 +1320,54 @@ for (const item of factionButtons) {
     else selectRace(choice)
   }
 }
+function targetTotal(group: ArmyTemplate) {
+  return group.targets.reduce((total, row) => total + row.count, 0)
+}
+
+const eligibleGroupUnit = (unit: Entity): unit is Entity & { kind: TemplateKind } => isTemplateKind(unit.kind) && !unit.summonedUntil
+
+function groupSelection() {
+  return selection.filter(eligibleGroupUnit)
+}
+
+function groupBreakdown(group: ArmyTemplate) {
+  const current = groupComposition(group.members)
+  const kinds = new Set([...group.targets.map(row => row.kind), ...current.map(row => row.kind)])
+  return [...kinds].map(kind => ({
+    kind, live: current.find(row => row.kind === kind)?.count ?? 0,
+    target: group.targets.find(row => row.kind === kind)?.count ?? 0
+  }))
+}
+
+function groupProduction() {
+  const queued = new Map<typeof templateKinds[number], number>()
+  const production = ownEntities.filter(entity => !isUnitKind(entity.kind) && entity.construction === undefined)
+  for (const entity of production) for (const run of entity.training?.queue ?? []) {
+    if (isTemplateKind(run.kind)) queued.set(run.kind, (queued.get(run.kind) ?? 0) + run.count)
+  }
+  const ready = new Set(production.flatMap(entity => trainedAt(entity.kind, chosenRace)))
+  return { queued, ready }
+}
+
+function groupPlan(group: ArmyTemplate, { queued, ready } = groupProduction()) {
+  return replenishPlan(templates, group, queued, chosenRace, resources, population,
+    kind => ready.has(kind) && unitTier(kind) <= hallLevel && (!isHeroKind(kind) || !hasHero(ownEntities)))
+}
+
+function groupStatus(group: ArmyTemplate, plan: ReturnType<typeof groupPlan>) {
+  return 'Priority ' + (templates.indexOf(group) + 1) + ' · ' +
+    plan.rows.reduce((sum, row) => sum + row.missing, 0) + ' missing · ' +
+    plan.rows.reduce((sum, row) => sum + row.queued, 0) + ' queued'
+}
+
+function drawSelectedTemplate(group: ArmyTemplate) {
+  const detail = element('selection-detail')
+  const heroDetail = selection.length === 1 && isHeroKind(selection[0].kind) ? ' · ' + detail.textContent : ''
+  setText('selection-name', group.name + ' · ' + group.members.length + '/' + targetTotal(group))
+  const breakdown = groupBreakdown(group).map(({ kind, live, target }) => entityNames[chosenRace][kind] + ' ' + live + '/' + target)
+  setText(detail.id, groupStatus(group, groupPlan(group)) + ' · ' + breakdown.join(' · ') + heroDetail)
+}
+
 function templateOrder(order: Order) {
   const hall = ownEntities.find(entity => entity.kind === 'headquarters')
   if (hall) {
@@ -1266,53 +1377,80 @@ function templateOrder(order: Order) {
 }
 
 function drawTemplates() {
-  const queued = new Map<typeof templateKinds[number], number>()
-  const production = ownEntities.filter(entity => !isUnitKind(entity.kind) && entity.construction === undefined)
-  for (const entity of production) for (const run of entity.training?.queue ?? []) {
-    const kind = templateKinds.find(kind => kind === run.kind)
-    if (kind) queued.set(kind, (queued.get(kind) ?? 0) + run.count)
-  }
-  const ready = new Set(production.flatMap(entity => trainedAt(entity.kind, chosenRace)))
-  const signature = JSON.stringify([templates, chosenRace, [...queued], [...ready], replenishGroup, replenishGroup === null ? null : [resources, population, hallLevel]])
+  const picked = groupSelection()
+  const pickedIds = new Set(picked.map(unit => unit.id))
+  const canCreate = templates.length < MAX_ARMY_GROUPS
+  button('new-template').disabled = !canCreate
+  button('create-from-selection').hidden = !picked.length
+  button('create-from-selection').disabled = !canCreate
+  button('add-to-group').hidden = !picked.length || !templates.some(group =>
+    group.members.filter(member => pickedIds.has(member.id)).length < picked.length)
+  button('remove-from-group').hidden = !templates.some(group => group.members.some(member => pickedIds.has(member.id)))
+
+  if (managedTemplate !== null && !templates.some(group => group.id === managedTemplate)) managedTemplate = null
+  button('all-army-groups').hidden = managedTemplate === null
+  setText('template-title', templates.find(group => group.id === managedTemplate)?.name ?? 'Army Groups')
+  const production = groupProduction()
+  const signature = JSON.stringify([templates, chosenRace, [...production.queued], [...production.ready], managedTemplate,
+    picked.map(unit => unit.id), replenishGroup, replenishGroup === null ? null : [resources, population, hallLevel]])
   if (signature === templatesSignature) return
   templatesSignature = signature
   const list = element('template-list')
   list.replaceChildren()
   if (!templates.length) list.textContent = 'Create a group to automatically assign matching recruits.'
   for (const [index, group] of templates.entries()) {
+    if (managedTemplate !== null && group.id !== managedTemplate) continue
     const section = document.createElement('section')
     const title = document.createElement('strong')
-    title.textContent = group.name + ' · ' + group.members.length + '/' + group.targets.reduce((total, row) => total + row.count, 0)
-    const plan = replenishPlan(templates, group, queued, chosenRace, resources, population,
-      kind => ready.has(kind) && unitTier(kind) <= hallLevel && (!isHeroKind(kind) || !hasHero(ownEntities)))
-    const missing = plan.rows.reduce((sum, row) => sum + row.missing, 0)
-    const reserved = plan.rows.reduce((sum, row) => sum + row.queued, 0)
+    title.textContent = group.name + ' · ' + group.members.length + '/' + targetTotal(group)
+    const plan = groupPlan(group, production)
     const priority = document.createElement('small')
-    priority.textContent = 'Priority ' + (index + 1) + ' · ' + (missing ? missing + ' missing · ' + reserved + ' queued' : 'Complete')
-    const breakdown = document.createElement('p')
-    breakdown.textContent = group.targets.map(row =>
-      entityNames[chosenRace][row.kind] + ' ' + group.members.filter(unit => unit.kind === row.kind).length + '/' + row.count).join(' · ')
+    priority.textContent = groupStatus(group, plan)
+    const breakdown = document.createElement('ul')
+    breakdown.className = 'group-composition'
+    for (const { kind, live, target } of groupBreakdown(group)) {
+      const row = document.createElement('li')
+      const recruiting = plan.rows.find(row => row.kind === kind)
+      row.textContent = entityNames[chosenRace][kind] + ' ' + live + '/' + target +
+        (recruiting?.missing ? ' · ' + recruiting.missing + ' missing · ' + recruiting.queued + ' queued' : '')
+      breakdown.append(row)
+    }
     const select = actionButton('Select group', () => {
       templateSheet.close()
-      scene?.selectTemplate(group.members.map(unit => unit.id))
+      scene?.selectTemplate(group.id, false)
     })
-    select.disabled = !group.members.length
-    const members = () => selection.filter(unit => unit.kind !== 'worker').slice(0, 500).map(unit => unit.id)
     const frame = actionButton('Frame group', () => {
       templateSheet.close()
-      scene?.selectTemplate(group.members.map(unit => unit.id), true)
+      scene?.selectTemplate(group.id, true)
     })
-    frame.disabled = select.disabled
-    const up = actionButton('↑ Priority', () => templateOrder({ kind: 'template-priority', template: group.id, direction: -1 }))
-    const down = actionButton('↓ Priority', () => templateOrder({ kind: 'template-priority', template: group.id, direction: 1 }))
-    up.disabled = index === 0
-    down.disabled = index === templates.length - 1
-    section.append(title, priority, breakdown, select, frame, up, down,
-      actionButton('Edit', () => editTemplate(group)),
-      actionButton('Assign selection', () => templateOrder({ kind: 'template-assign', template: group.id, members: members() })),
-      actionButton('Remove selection', () => templateOrder({ kind: 'template-release', template: group.id, members: members() })),
-      actionButton('Replenish', () => { replenishGroup = replenishGroup === group.id ? null : group.id; drawTemplates() }),
-      actionButton('Delete group', () => templateOrder({ kind: 'template-remove', template: group.id })))
+    frame.disabled = !group.members.length
+    const controls = document.createElement('div')
+    controls.className = 'group-actions'
+    controls.append(select, frame)
+    if (managedTemplate === null) controls.append(actionButton('Manage ' + group.name, () => {
+      managedTemplate = group.id
+      drawTemplates()
+    }))
+    else {
+      const up = actionButton('↑ Priority', () => templateOrder({ kind: 'template-priority', template: group.id, direction: -1 }))
+      const down = actionButton('↓ Priority', () => templateOrder({ kind: 'template-priority', template: group.id, direction: 1 }))
+      up.disabled = index === 0
+      down.disabled = index === templates.length - 1
+      const remove = actionButton('Remove Selected Units', () => {
+        const members = group.members.filter(member => pickedIds.has(member.id)).map(member => member.id)
+        if (members.length) templateOrder({ kind: 'template-release', template: group.id, members })
+      })
+      remove.hidden = !group.members.some(member => pickedIds.has(member.id))
+      controls.append(actionButton('Rename Group', () => editTemplate('rename', group)),
+        actionButton('Edit Composition', () => editTemplate('composition', group)), up, down, remove,
+        actionButton('Delete Group', () => {
+          if (window.confirm('Delete ' + group.name + '? Its units stay on the battlefield.')) {
+            templateOrder({ kind: 'template-remove', template: group.id })
+          }
+        }))
+    }
+    controls.append(actionButton(managedTemplate === null ? 'Replenish' : 'Replenish Group', () => { replenishGroup = replenishGroup === group.id ? null : group.id; drawTemplates() }))
+    section.append(title, priority, breakdown, controls)
     if (replenishGroup === group.id) {
       const detail = document.createElement('p')
       detail.textContent = plan.rows.flatMap(row => row.missing ? [entityNames[chosenRace][row.kind] + ' · ' + row.missing +
@@ -1337,16 +1475,40 @@ function drawTemplates() {
   }
 }
 
-function editTemplate(group?: ArmyTemplate) {
+function templateView(form?: HTMLFormElement) {
+  element('template-actions').hidden = Boolean(form)
+  element('template-list').hidden = Boolean(form)
+  templateEditor.hidden = form !== templateEditor
+  templateMembership.hidden = form !== templateMembership
+  setText('template-feedback', '')
+}
+
+function editTemplate(mode: typeof templateEditorMode, group?: ArmyTemplate) {
   templateId = group?.id ?? 0
-  templateEditor.hidden = false
+  templateEditorMode = mode
+  const units = mode === 'selection' ? groupSelection() : []
+  editingMembers = units.map(unit => unit.id)
+  templateView(templateEditor)
   const name = templateEditor.elements.namedItem('template-name') as HTMLInputElement
   name.value = group?.name ?? ''
+  name.closest('label')!.hidden = mode === 'composition'
+  const summary = element('template-selection-summary')
+  summary.hidden = mode !== 'selection'
+  if (!summary.hidden) {
+    const counts = groupComposition(units)
+    const ids = new Set(editingMembers)
+    setText(summary.id, counts.map(({ kind, count }) => entityNames[chosenRace][kind] + ' × ' + count).join(' · ') +
+      ' · Total ' + units.length + (templates.some(group => group.members.some(member => ids.has(member.id))) ?
+        ' · Selected members move from their previous groups.' : ''))
+  }
+  button('save-template').textContent = mode === 'selection' ? 'Create Group' : 'Save group'
   const targets = element('template-targets')
+  targets.hidden = mode === 'selection' || mode === 'rename'
   targets.replaceChildren()
-  for (const kind of templateKinds) {
+  if (!targets.hidden) for (const kind of templateKinds) {
     if (!buildingKinds.some(building => trainedAt(building, chosenRace).includes(kind)) &&
-        !trainedAt('headquarters', chosenRace).includes(kind)) continue
+        !trainedAt('headquarters', chosenRace).includes(kind) &&
+        !group?.targets.some(target => target.kind === kind)) continue
     const label = document.createElement('label')
     label.textContent = entityNames[chosenRace][kind]
     const input = document.createElement('input')
@@ -1354,49 +1516,165 @@ function editTemplate(group?: ArmyTemplate) {
     input.type = 'number'
     input.inputMode = 'numeric'
     input.min = '0'
-    input.max = '500'
+    input.max = String(MAX_ARMY_GROUP_SIZE)
     input.value = String(group?.targets.find(row => row.kind === kind)?.count ?? 0)
     label.append(input)
     targets.append(label)
   }
-  name.focus()
+  if (mode === 'composition') targets.querySelector('input')?.focus()
+  else name.focus()
 }
 
 templateEditor.onsubmit = event => {
   event.preventDefault()
   const fields = new FormData(templateEditor)
   const name = String(fields.get('template-name') ?? '').trim()
-  const targets = templateKinds.flatMap(kind => {
-    const count = Number(fields.get(kind))
-    return count > 0 ? [{ kind, count }] : []
-  })
-  if (!name || !targets.length || targets.reduce((total, row) => total + row.count, 0) > 500) {
-    setText('template-feedback', 'Choose a name and 1 to 500 units total.')
+  if (!name) return setText('template-feedback', 'Enter a group name.')
+  if (templateEditorMode === 'selection') {
+    if (!editingMembers.length || editingMembers.length > MAX_ARMY_GROUP_SIZE) {
+      return setText('template-feedback', 'Select 1 to 500 eligible troops.')
+    }
+    templateOrder({ kind: 'template-create', template: 0, name, members: editingMembers })
+    templateSheet.close()
     return
   }
-  templateOrder({ kind: 'template-save', template: templateId, name, targets })
-  templateEditor.hidden = true
+  if (templateEditorMode === 'rename') {
+    templateOrder({ kind: 'template-rename', template: templateId, name })
+  } else {
+    const targets = templateKinds.flatMap(kind => {
+      const count = Number(fields.get(kind))
+      return count > 0 ? [{ kind, count }] : []
+    })
+    if (!targets.length || targets.reduce((total, row) => total + row.count, 0) > MAX_ARMY_GROUP_SIZE) {
+      return setText('template-feedback', 'Plan 1 to 500 troops in total.')
+    }
+    templateOrder({ kind: 'template-save', template: templateId, name, targets })
+  }
+  templateView()
 }
 
-button('army-templates').onclick = () => {
+const destinationGroup = templateMembership.elements.namedItem('group') as HTMLSelectElement
+
+function changeMembershipSummary() {
+  const destination = templates.find(group => group.id === Number(destinationGroup.value))
+  const members = new Set(editingMembers)
+  const alreadyThere = destination?.members.filter(member => members.has(member.id)).length ?? 0
+  const moves = templates.filter(group => group !== destination && group.members.some(member => members.has(member.id))).map(group => group.name)
+  const count = membershipMode === 'remove' ? alreadyThere : members.size - alreadyThere
+  button('confirm-template-membership').disabled = !destination || count === 0
+  setText('template-move-summary', count + (membershipMode === 'remove' ? ' selected troops to remove.' : ' selected troops to add.') +
+    (membershipMode === 'add' && moves.length ? ' Group members will move from ' + moves.join(', ') + '.' : ''))
+}
+
+function openMembership(mode: typeof membershipMode) {
+  membershipMode = mode
+  editingMembers = groupSelection().map(unit => unit.id)
+  const picked = new Set(editingMembers)
+  destinationGroup.replaceChildren(...templates.filter(group => mode === 'add' || group.members.some(member => picked.has(member.id)))
+    .map(group => new Option(group.name, String(group.id))))
+  if (managedTemplate !== null && [...destinationGroup.options].some(option => option.value === String(managedTemplate))) {
+    destinationGroup.value = String(managedTemplate)
+  }
+  const expand = templateMembership.elements.namedItem('expand') as HTMLInputElement
+  expand.checked = false
+  element('template-expand-label').hidden = mode === 'remove'
+  button('confirm-template-membership').textContent = mode === 'add' ? 'Add Selected Troops' : 'Remove Selected Troops'
+  templateView(templateMembership)
+  changeMembershipSummary()
+  destinationGroup.focus()
+}
+
+destinationGroup.onchange = changeMembershipSummary
+templateMembership.onsubmit = event => {
+  event.preventDefault()
+  if (button('confirm-template-membership').disabled) return
+  const template = Number(destinationGroup.value)
+  if (membershipMode === 'add') {
+    const expand = (templateMembership.elements.namedItem('expand') as HTMLInputElement).checked
+    templateOrder({ kind: 'template-assign', template, members: editingMembers, expand })
+  } else templateOrder({ kind: 'template-release', template, members: editingMembers })
+  templateSheet.close()
+}
+
+function openArmyGroups(group: number | null = null) {
   if (room?.result) return
   closeProduction()
+  matchOptions.close()
   scene?.cancelTargeting()
   closeEconomyMenu()
-  templateEditor.hidden = true
+  setGatherOpen(false)
+  toggleFormation(false)
+  managedTemplate = group
   replenishGroup = null
-  setText('template-feedback', '')
+  templateView()
   drawTemplates()
-  templateSheet.showModal()
+  if (!templateSheet.open) templateSheet.showModal()
 }
+
+function customButton(target: EventTarget | null) {
+  return target instanceof Element ? target.closest<HTMLButtonElement>('button[data-army-group]') : null
+}
+
+let groupPress: { id: number, x: number, y: number, timeout: number, suppressTap: boolean } | undefined
+
+function cancelGroupPress(suppressTap: boolean) {
+  if (!groupPress) return
+  window.clearTimeout(groupPress.timeout)
+  groupPress.suppressTap ||= suppressTap
+}
+
+groupBar.addEventListener('pointerdown', event => {
+  cancelGroupPress(false)
+  groupPress = undefined
+  const target = customButton(event.target)
+  if (!target || event.pointerType !== 'touch' || !event.isPrimary) return
+  const group = Number(target.dataset.armyGroup)
+  const timeout = window.setTimeout(() => {
+    cancelGroupPress(true)
+    openArmyGroups(group)
+  }, 500)
+  groupPress = { id: event.pointerId, x: event.clientX, y: event.clientY, timeout, suppressTap: false }
+})
+window.addEventListener('pointermove', event => {
+  if (groupPress?.id === event.pointerId &&
+      Math.hypot(event.clientX - groupPress.x, event.clientY - groupPress.y) > 9) cancelGroupPress(true)
+}, { passive: true })
+window.addEventListener('pointerup', event => {
+  if (groupPress?.id === event.pointerId) cancelGroupPress(false)
+})
+window.addEventListener('pointercancel', event => {
+  if (groupPress?.id === event.pointerId) cancelGroupPress(true)
+})
+window.addEventListener('blur', () => cancelGroupPress(true))
+groupBar.addEventListener('scroll', () => cancelGroupPress(true), { passive: true })
+groupBar.addEventListener('click', event => {
+  if (!customButton(event.target) || !groupPress?.suppressTap || event.detail === 0) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, { capture: true })
+groupBar.addEventListener('contextmenu', event => {
+  const target = customButton(event.target)
+  if (!target) return
+  event.preventDefault()
+  if (event.button === 2 && !groupPress) openArmyGroups(Number(target.dataset.armyGroup))
+})
+
+button('army-templates').onclick = () => openArmyGroups()
+button('options-groups').onclick = () => openArmyGroups()
+button('group-menu-open').onclick = () => openArmyGroups(scene?.activeTemplate)
+button('all-army-groups').onclick = () => { managedTemplate = null; replenishGroup = null; templateView(); drawTemplates() }
+button('create-from-selection').onclick = () => editTemplate('selection')
+button('add-to-group').onclick = () => openMembership('add')
+button('remove-from-group').onclick = () => openMembership('remove')
+button('cancel-template-membership').onclick = () => templateView()
 templateSheet.addEventListener('click', event => {
   if (event.target !== templateSheet) return
   const { left, right, top, bottom } = templateSheet.getBoundingClientRect()
   if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) templateSheet.close()
 })
 button('close-templates').onclick = () => templateSheet.close()
-button('new-template').onclick = () => editTemplate()
-button('cancel-template').onclick = () => { templateEditor.hidden = true }
+button('new-template').onclick = () => editTemplate('empty')
+button('cancel-template').onclick = () => templateView()
 
 button('practice').onclick = () => {
   if (!client.hasSeat) solo.start('human', false, 'easy', undefined, 'human', 'orc', true)
@@ -1584,7 +1862,7 @@ match.addEventListener('pointerdown', event => {
   if (outside(menu, economyAction)) closeEconomyMenu()
   else if (outside(workerActions, button('gather-open'))) {
     setGatherOpen(false)
-    if (economyAction.contains(event.target) || productionOpen.contains(event.target)) return
+    if (economyAction.contains(event.target) || productionOpen.contains(event.target) || button('group-menu-open').contains(event.target)) return
   }
   else if (outside(formationOptions, formationButton)) toggleFormation(false)
   else return
