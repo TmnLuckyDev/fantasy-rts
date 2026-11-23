@@ -57,6 +57,11 @@ export class SoloClient {
   get active() { return Boolean(this.transport) }
   get practice() { return this.practicing }
   get saved() { return Boolean(readSlot()?.save) }
+  get savedMatch() {
+    const save = readSlot()?.save
+    if (!save?.match) return
+    return { map: save.match.settings?.map, tick: save.match.tick, race: save.match.races?.[save.faction] ?? save.faction }
+  }
   get restoreOnReload() {
     try { return this.saved && sessionStorage.getItem(activeKey) === '1' } catch { return false }
   }

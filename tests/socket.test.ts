@@ -237,3 +237,21 @@ test('WebSocket upgrade continues rejecting unrelated and opaque origins', { tim
     await assert.rejects(connect(origin), /403/)
   }
 })
+
+test('the public queue pairs two live players and respects cancellation', { timeout: 12_000 }, async t => {
+  const connect = await startServer(t)
+  const first = await connect()
+  first.send({ type: 'queue', race: 'dwarf' })
+  await first.wait('queue-status', state => state.waiting)
+  first.send({ type: 'cancel-queue' })
+  await first.wait('queue-status', state => !state.waiting)
+  const second = await connect()
+  second.send({ type: 'queue', race: 'elf' })
+  await second.wait('queue-status', state => state.waiting)
+  first.send({ type: 'queue', race: 'dwarf' })
+  const [a, b] = await Promise.all([first.wait('room', ({ room }) => room.phase === 'playing'),
+    second.wait('room', ({ room }) => room.phase === 'playing')])
+  assert.equal(a.room.code, b.room.code)
+  assert.equal(a.room.settings?.populationCap, 120)
+  assert.deepEqual(a.room.players.map(player => player.race), ['elf', 'dwarf'])
+})

@@ -47,7 +47,9 @@ export class BattleScene extends Phaser.Scene {
   private lastBuildHint: string | null | undefined
   private lastTap?: { id: number, at: Point, time: number }
   selectionFilter: 'all' | 'military' | 'workers' = 'all'
-  quality: 'low' | 'medium' | 'high' = 'high'
+  quality: 'low' | 'medium' | 'high' | 'auto' = 'high'
+  singleFingerPan = false
+  private frameTime = 16.7
   private previousCamera?: { center: Point, zoom: number }
   private formationPreview?: { slots: Point[], point: Point, heading: Point, born: number }
   private effects: AnimatedEffect[] = []
@@ -83,6 +85,8 @@ export class BattleScene extends Phaser.Scene {
   advanceMode = false
   formation: Formation = 'line'
   private unloadTargets: number[] = []
+  private transferTargets: number[] = []
+  private groupRallyTarget: number | null = null
   private rallyTarget: number | null = null
   private placing: BuildingKind | null = null
   private pointer: Point | null = null
@@ -159,6 +163,7 @@ export class BattleScene extends Phaser.Scene {
       order: point => {
         if (!this.actions.dismissBuildMenu()) this.orderAt(point)
       },
+      singleFingerPan: () => this.singleFingerPan && !this.placing && !this.advanceMode,
       touchDragThreshold: () => this.placing && this.placing !== 'wall' ? 24 : 8,
       camera: (from, to, ratio) => this.transformCamera(from, to, ratio)
     })
@@ -485,12 +490,20 @@ export class BattleScene extends Phaser.Scene {
     const units = this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind))
     if (units.length) this.actions.order(units, { kind: 'board', transport })
   }
+  get targetingTransfer() { return this.transferTargets.length > 0 }
+  transfer() {
+    this.cancelTargeting()
+    this.transferTargets = this.mobileUnits().filter(id => !isShipKind(this.visuals.get(id)?.entity.kind))
+    this.selectionChanged(true)
+  }
   get targetingUnload() { return this.unloadTargets.length > 0 }
 
   cancelTargeting() {
     this.advanceMode = false
+    this.transferTargets = []
     this.unloadTargets = []
     this.rallyTarget = null
+    this.groupRallyTarget = null
     this.place(null)
     if (this.initialized) this.selectionChanged()
   }
@@ -506,6 +519,15 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private targetUnload(screen: Point) {
+    if (this.targetingTransfer) {
+      const at = this.world(screen)
+      const ids = this.transferTargets
+      this.transferTargets = []
+      this.actions.order(ids, { kind: 'transfer', at })
+      this.mark(at, 'move')
+      this.selectionChanged(true)
+      return true
+    }
     if (!this.targetingUnload) return false
     const at = this.world(screen)
     const ships = this.unloadTargets.filter(id => this.visuals.get(id)?.entity.passengers?.length)
@@ -520,6 +542,14 @@ export class BattleScene extends Phaser.Scene {
   explore() {
     const ids = [...this.selected].filter(id => this.visuals.get(id)?.entity.kind === 'scout')
     if (ids.length) this.actions.order(ids, { kind: 'explore' })
+  }
+  retreat() {
+    const ids = this.mobileUnits()
+    const to = this.newest?.templates?.find(group => group.id === this.selectedTemplate)?.rally ?? this.map.bases[this.faction]
+    if (ids.length) {
+      this.actions.order(ids, { kind: 'move', to, formation: this.formation })
+      this.mark(to, 'move')
+    }
   }
   home() { if (this.initialized) this.focus(this.map.bases[this.faction]) }
   focusAlert(point: Point) {
@@ -570,7 +600,12 @@ export class BattleScene extends Phaser.Scene {
 
   private ownUnit(entity: Entity) { return entity.faction === this.faction && isUnitKind(entity.kind) }
 
-  get targetingRally() { return this.rallyTarget !== null }
+  get targetingRally() { return this.rallyTarget !== null || this.groupRallyTarget !== null }
+
+  setGroupRallyTarget(id: number) {
+    this.cancelTargeting()
+    this.groupRallyTarget = id
+  }
 
   setRallyTarget(id: number) {
     this.cancelTargeting()
@@ -578,6 +613,16 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private placeRally(screen: Point) {
+    if (this.groupRallyTarget !== null) {
+      const group = this.groupRallyTarget
+      this.groupRallyTarget = null
+      const hall = this.newest?.entities.find(entity => entity.kind === 'headquarters' && entity.faction === this.faction)
+      const at = this.world(screen)
+      if (hall) this.actions.order([hall.id], { kind: 'template-rally', template: group, at })
+      this.mark(at, 'rally')
+      this.selectionChanged()
+      return true
+    }
     if (this.rallyTarget === null) return false
     const at = this.world(screen)
     this.actions.order([this.rallyTarget], { kind: 'rally', to: at })
@@ -723,7 +768,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private selectBox(rect: SelectionRect, append: boolean) {
-    if (this.targetingUnload || this.advanceMode) return
+    if (this.targetingUnload || this.targetingTransfer || this.advanceMode) return
     this.lastTap = undefined
     this.selectedResource = null
     const a = this.world(rect.from)
@@ -931,9 +976,11 @@ export class BattleScene extends Phaser.Scene {
     const horizontal = Number(this.keys?.RIGHT.isDown ?? false) - Number(this.keys?.LEFT.isDown ?? false)
     const vertical = Number(this.keys?.DOWN.isDown ?? false) - Number(this.keys?.UP.isDown ?? false)
     if (horizontal || vertical) this.pan(-horizontal * delta * 0.37, -vertical * delta * 0.37)
+    this.frameTime += (Math.min(delta, 80) - this.frameTime) * 0.035
+    const quality = this.quality === 'auto' ? this.frameTime > 33 ? 'low' : this.frameTime > 22 ? 'medium' : 'high' : this.quality
     const crowded = this.visuals.size >= largeBattleCount
     this.water.clear()
-    const glints = crowded || this.quality === 'low' ? 0 : Math.min(this.quality === 'medium' ? 18 : 48, this.waterTiles.length)
+    const glints = crowded || quality === 'low' ? 0 : Math.min(quality === 'medium' ? 18 : 48, this.waterTiles.length)
     for (let i = 0; i < glints; i++) {
       const tile = this.waterTiles[Math.floor(i * this.waterTiles.length / glints)]
       const x = tile % this.map.width * TILE + 3 + (i * 13) % 12
@@ -954,7 +1001,7 @@ export class BattleScene extends Phaser.Scene {
       if (!crowded) this.graphics.fillStyle(0xa087af, 0.5).fillEllipse(corpse.x, corpse.y + 2, 13, 4)
     }
     this.updateTerrain(center, halfWidth, halfHeight)
-    const walkFrame = this.quality === 'low' ? 0 : Math.floor(time / (crowded || this.quality === 'medium' ? 200 : 125)) % 2
+    const walkFrame = quality === 'low' ? 0 : Math.floor(time / (crowded || quality === 'medium' ? 200 : 125)) % 2
     let healthBars = 0
     const groupMarkers = new Set<number>()
     const rangeMarkers: Visual[] = []
@@ -1073,10 +1120,10 @@ export class BattleScene extends Phaser.Scene {
         this.graphics.fillStyle(0x382611, 1).fillRect(sprite.x - 8, y, 16, 5)
         this.graphics.fillStyle(0xffd575, 1).fillRect(sprite.x - 7, y + 1, level * 2.8, 3)
       }
-      if (this.quality !== 'low' && building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
+      if (quality !== 'low' && building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
       if (!crowded && entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
-    this.paintEffects(time, center, halfWidth, halfHeight, crowded || this.quality !== 'high')
+    this.paintEffects(time, center, halfWidth, halfHeight, crowded || quality !== 'high')
     this.ui.clear()
     for (const { entity, sprite } of rangeMarkers) {
       const tick = this.newest?.tick ?? 0
@@ -1149,7 +1196,7 @@ export class BattleScene extends Phaser.Scene {
       this.ui.fillStyle(0xe2ce87, 0.15).fillRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y))
       this.ui.lineStyle(1, 0xe2ce87, 0.9).strokeRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y))
     }
-    if (this.hasSnapshot && this.minimapDirty && time - this.lastMiniDraw > (crowded ? 170 : 60)) {
+    if (this.hasSnapshot && this.minimapDirty && time - this.lastMiniDraw > (quality === 'low' ? 240 : crowded ? 170 : 60)) {
       this.drawMinimap()
       this.minimapDirty = false
       this.lastMiniDraw = time

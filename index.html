@@ -34,15 +34,26 @@
           </div>
 
           <div id="entry-actions">
+            <details id="solo-options" class="solo-options"><summary>Customize solo</summary>
             <label class="solo-difficulty">Computer difficulty
               <select id="solo-difficulty"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
             </label>
             <label class="solo-difficulty">Computer race
               <select id="solo-race"><option value="">Default opponent</option></select>
             </label>
-            <button id="solo" type="button" class="primary">Play vs Computer</button>
+            </details>
+            <button id="play-new" type="button" hidden>New solo match</button>
+            <small id="solo-summary" hidden></small>
+            <button id="solo" type="button" class="primary" aria-label="Play vs Computer">Play now</button>
+            <button id="find-match" type="button">Find opponent</button>
             <button id="practice" type="button">Practice</button>
-            <button id="create" type="button" disabled>Create room</button>
+            <label class="practice-lessons">Practice lesson <select id="practice-lesson">
+              <option value="intro">First orders</option>
+              <option value="build">Build a farm</option>
+              <option value="attack">Attack move</option>
+              <option value="group">Army groups</option>
+            </select></label>
+            <button id="create" type="button" disabled aria-label="Create room">Play with a friend</button>
             <form id="join-form">
               <input class="room-input" id="join-code" aria-label="Room code" placeholder="ROOM CODE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" required pattern="[A-Za-z2-9]{5}" value="">
               <button id="join" type="submit" disabled>Join</button>
@@ -52,6 +63,7 @@
           <div id="room-actions" hidden>
             <div class="room-heading">
               <div><span class="eyebrow">Room code</span><strong id="room-code"></strong><span id="room-map"></span></div>
+              <button id="share-invite" type="button" hidden>Share invite</button>
               <button id="copy" type="button">Copy invite</button>
             </div>
             <div id="seats" aria-live="polite"></div>
@@ -67,7 +79,7 @@
           </div>
           <p id="lobby-message" role="status">Choose a faction to start.</p>
         </section>
-        <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Five battlefields</span><span>Custom match rules</span></footer>
+        <footer class="lobby-foot"><span>Solo or 1 vs 1</span><span>Six battlefields</span><span>Custom match rules</span></footer>
       </div>
     </main>
 
@@ -114,6 +126,7 @@
         </header>
         <fieldset id="settings-fields">
           <div class="settings-top">
+            <label>Game type <select name="objective"><option value="classic">Classic</option><option value="control">Control Points</option></select></label>
             <label>Battlefield
               <select name="map"></select>
             </label>
@@ -124,6 +137,7 @@
               <input name="minutes" type="number" inputmode="numeric" min="1" placeholder="Unlimited">
             </label>
           </div>
+          <p id="map-playstyle" class="settings-note"></p>
           <label class="start-option"><input name="random-starts" type="checkbox" checked> Random starting positions</label>
           <p class="settings-note">Both sides start with the same resources. Blank stock, worker limit or time fields mean unlimited.</p>
           <div id="resource-settings"></div>
@@ -140,6 +154,8 @@
       <header class="match-head">
         <div class="wordmark">Ash <span>&amp;</span> Iron</div>
         <div id="banner" role="status"></div>
+        <button id="reconnect-now" type="button" hidden>Reconnect</button>
+        <output id="control-score" aria-label="Control points score" hidden></output>
         <output id="match-clock" aria-label="Time left" hidden></output>
         <div class="head-actions">
           <div class="resource-bar" aria-label="Economy">
@@ -183,6 +199,7 @@
         </div>
         <div class="battle-shortcuts" aria-label="Battle shortcuts">
           <button id="camera-back" type="button" hidden>Back to previous position</button>
+          <button id="map-expand" type="button">Tactical map</button>
           <button id="home" type="button" title="Focus headquarters (H)">Base</button>
           <button id="idle-worker" type="button" aria-label="Idle worker" title="Cycle through idle workers (I)" disabled>Idle: <span id="idle-count">0</span></button>
           <button id="workers" type="button">Workers</button>
@@ -194,8 +211,11 @@
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
           <button id="formation" type="button" aria-label="Army formation" aria-expanded="false" aria-controls="formation-options" hidden>Line</button>
           <button id="hero-skill" type="button" hidden>Hero skill</button>
+          <button id="group-replenish-shortcut" type="button" hidden>Replenish</button>
+          <button id="group-retreat" type="button" hidden>Retreat</button>
           <button id="group-menu-open" type="button" aria-haspopup="dialog" hidden>Groups</button>
           <button id="board" type="button" title="Meet and board a friendly transport" hidden>Board</button>
+          <button id="transfer" type="button" hidden>Transfer</button>
           <button id="unload" type="button" aria-pressed="false" title="Choose a coast for the selected transports" hidden>Unload</button>
           <button id="explore" type="button" title="Automatically explore unexplored terrain" hidden>Explore</button>
           <button id="advance" type="button" aria-pressed="false" title="Attack-move (A)">Attack move</button>
@@ -209,13 +229,21 @@
         <div id="placement-tip" class="placement-tip" role="status" hidden><span id="placement-message">Choose a clear tile to build on.</span> <button id="cancel-placement" type="button">Cancel</button></div>
       </footer>
       <div id="portrait-prompt" role="status">Rotate your phone to portrait to play.</div>
+      <dialog id="tactical-map" aria-label="Tactical map">
+        <form method="dialog"><button type="submit">Close map</button></form>
+        <canvas id="tactical-map-canvas" width="352" height="160" aria-label="Battlefield overview"></canvas>
+        <button id="tactical-base" type="button">Base</button>
+        <button id="tactical-alert" type="button" hidden>Last attack</button>
+        <button id="tactical-army" type="button">Army</button>
+      </dialog>
       <dialog id="match-options-sheet" class="production-sheet" aria-label="Match options">
         <div class="production-tabs"><strong>Match options</strong><button id="close-match-options" type="button">Close</button></div>
         <div class="qol-options">
           <button id="options-build" type="button">Build</button>
           <button id="options-groups" type="button" aria-haspopup="dialog">Army groups</button>
+          <label><input type="checkbox" id="single-finger-pan"> One-finger camera drag</label>
           <label>Box selection <select id="selection-filter"><option value="all">All units</option><option value="military">Military only</option><option value="workers">Workers only</option></select></label>
-          <label>Graphics <select id="graphics-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+          <label>Graphics <select id="graphics-quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
           <section aria-label="Economy breakdown"><strong>Economy</strong><p id="income-summary"></p><p id="worker-breakdown"></p></section>
         </div>
       </dialog>
@@ -247,6 +275,7 @@
           <button id="create-from-selection" type="button" hidden>Create Group</button>
           <button id="add-to-group" type="button" hidden>Add to Group</button>
           <button id="remove-from-group" type="button" hidden>Remove from Group</button>
+          <button id="load-blueprint" type="button" hidden>Load saved template</button>
           <button id="new-template" type="button">Create Empty Army Template</button>
         </div>
         <div id="template-list"></div>
@@ -273,6 +302,8 @@
         <p id="result-detail"></p>
         <section id="match-stats" aria-label="Match statistics" hidden></section>
         <button id="review-map" type="button">Back to map</button>
+        <label id="rematch-map-label" hidden>Rematch map <select id="rematch-map"></select></label>
+        <label id="rematch-swap-label" hidden><input type="checkbox" id="rematch-swap"> Swap starting sides</label>
         <button id="play-again" type="button" class="primary" hidden>Play again</button>
         <button id="return" type="button" class="primary">Back to lobby</button>
       </dialog>

@@ -59,6 +59,14 @@ export class ConnectionClient {
     }
   }
 
+  reconnect() {
+    if (this.connected) return
+    const socket = this.socket
+    this.socket = null
+    socket?.close()
+    this.connect()
+  }
+
   private connect() {
     if (!this.active) return
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return

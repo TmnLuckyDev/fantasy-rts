@@ -6,6 +6,8 @@ import { mobileBackend } from './multiplayer-endpoint.ts'
 export const nativeApp = Capacitor.isNativePlatform()
 export const nativeIOS = Capacitor.getPlatform() === 'ios'
 export const nativeBackend = nativeApp ? mobileBackend(import.meta.env.VITE_MOBILE_SERVER_URL) : undefined
+const webBackend = import.meta.env.VITE_WEB_SERVER_URL
+export const gameBackend = nativeApp ? nativeBackend : webBackend ? mobileBackend(webBackend) : undefined
 
 export function initializeNativeApp(active: (value: boolean) => void, back: () => boolean) {
   if (!nativeApp) return

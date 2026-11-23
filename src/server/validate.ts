@@ -1,4 +1,5 @@
 import { MAX_ARMY_GROUP_SIZE, templateKinds } from '../shared/protocol.ts'
+import { mapIds } from '../shared/map.ts'
 import { parseMatchSettings } from '../shared/match-settings.ts'
 import { MAX_SELECTION, formations, isArmyOrder, isBuildingKind, isFaction, isRace, isUnitKind, troopGroups, upgradeKinds } from '../shared/protocol.ts'
 import type { ClientMessage, Order } from '../shared/protocol.ts'
@@ -44,9 +45,16 @@ export function parseMessage(raw: string): ClientMessage | null {
       return validCode(code) && typeof token === 'string' && /^[a-f0-9]{64}$/.test(token) ? { type, code, token } : null
     case 'ready':
       return typeof ready === 'boolean' ? { type, ready } : null
+    case 'queue':
+      return isRace(value.race) ? { type, race: value.race } : null
+    case 'cancel-queue':
     case 'leave':
-    case 'rematch':
       return { type }
+    case 'rematch': {
+      const map = mapIds.find(id => id === value.map)
+      if ((!map && value.map !== undefined) || (value.swap !== undefined && typeof value.swap !== 'boolean')) return null
+      return { type, ...(map ? { map } : {}), ...(value.swap ? { swap: true } : {}) }
+    }
     case 'global-train':
       return isUnitKind(value.unit) && validId(value.count) ? { type, unit: value.unit, count: value.count } : null
     case 'group-command': {
@@ -91,6 +99,9 @@ function parseOrder(order: Record<string, unknown>): Order | null {
     if (!targets) return null
     return { kind: order.kind, template: order.template, name: order.name.trim(), targets }
   }
+  if (order.kind === 'template-rally' && validId(order.template) && object(order.at) && coordinate(order.at.x) && coordinate(order.at.y)) {
+    return { kind: 'template-rally', template: order.template, at: { x: order.at.x, y: order.at.y } }
+  }
   if (order.kind === 'template-create' && order.template === 0 && validGroupName(order.name) && validGroupMembers(order.members)) {
     return { kind: order.kind, template: 0, name: order.name.trim(), members: order.members }
   }
@@ -123,6 +134,9 @@ function parseOrder(order: Record<string, unknown>): Order | null {
     return { kind: 'rally', to: { x: order.to.x, y: order.to.y } }
   }
   if (order.kind === 'bulk-structure-upgrade' && (order.building === 'wall' || order.building === 'tower')) return { kind: 'bulk-structure-upgrade', building: order.building }
+  if (order.kind === 'transfer' && object(order.at) && coordinate(order.at.x) && coordinate(order.at.y)) {
+    return { kind: 'transfer', at: { x: order.at.x, y: order.at.y } }
+  }
   if (order.kind === 'unload') {
     if (order.at === undefined) return { kind: 'unload' }
     if (object(order.at) && coordinate(order.at.x) && coordinate(order.at.y)) return { kind: 'unload', at: { x: order.at.x, y: order.at.y } }

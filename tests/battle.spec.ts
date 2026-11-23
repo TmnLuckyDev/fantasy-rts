@@ -113,8 +113,7 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     const code = await human.locator('#room-code').innerText()
 
     await orc.goto(baseURL + '/?room=' + code)
-    await expect(orc.getByLabel('Room code')).toHaveValue(code)
-    await orc.getByRole('button', { name: 'Join', exact: true }).tap()
+    await expect(orc.locator('#room-code')).toHaveText(code)
     await expect(orc.locator('#seats')).toContainText('Bloodfang Horde · You')
     await human.getByRole('button', { name: 'Ready', exact: true }).click()
     await orc.getByRole('button', { name: 'Ready', exact: true }).tap()

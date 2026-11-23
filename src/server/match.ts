@@ -14,7 +14,7 @@ import { BASE_POPULATION, FARM_POPULATION, GATHERING,
   buildings as buildingRules, buildingFootprint, bulkStructureCost, canAfford, REPAIR, repairCost, repairPulse, researchCost, spend, trainedAt, training, trainingCost, trainingRule, MAX_UPGRADE_LEVEL, researchSite, structureUpgrade, upgradeLevelLimit, upgrades, placementError, validPlacement } from '../shared/economy.ts'
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
-import { CONTROL_RADIUS, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
+import { CONTROL_RADIUS, CONTROL_VICTORY_SCORE, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
 import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
 import { formationSlots } from './formations.ts'
 import { AttackAlerts } from './attack-alerts.ts'
@@ -66,6 +66,7 @@ type Unit = Entity & {
   passengers?: number[]
   buildQueue?: number[]
   pickup?: Landing & { until: number }
+  transferDestination?: Point
   unloadTotal?: number
   unloadRetryAt?: number
   upgradeJob?: { kind: UpgradeKind, left: number, total?: number }
@@ -142,7 +143,7 @@ export class Match {
     this.races = { ...races }
     this.usesCorpses = Object.values(races).includes('undead')
     this.settings = settings
-    this.controlSites = settings.minutes ? this.scoreSites() : []
+    this.controlSites = settings.minutes || settings.objective === 'control' ? this.scoreSites() : []
     this.deposits = map.tiles.flatMap((tile, index) => {
       const resource = tile === 'forest' ? 'wood' : tile === 'mine' ? 'gold' : tile === 'quarry' ? 'stone' : null
       return resource ? [{ index, resource, at: cellCenter(index % map.width, Math.floor(index / map.width)) }] : []
@@ -408,6 +409,11 @@ export class Match {
       return workers.length > 0
     }
     if ('template' in order) return units.length === 1 && units[0].kind === 'headquarters' && this.editTemplate(faction, order)
+    if (order.kind === 'transfer') {
+      const { x, y } = order.at
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= this.map.width * TILE || y >= this.map.height * TILE) return false
+      return this.board(faction, units, undefined, order.at)
+    }
     if (order.kind === 'board') return this.board(faction, units, order.transport)
     if (order.kind === 'unload') {
       if (!order.at) return this.unload(units)
@@ -558,6 +564,7 @@ export class Match {
     this.routes.delete(unit)
     unit.order = null
     unit.pickup = undefined
+    unit.transferDestination = undefined
     unit.unloadTotal = undefined
     unit.unloadRetryAt = undefined
     unit.job = null
@@ -572,13 +579,15 @@ export class Match {
     unit.flank = undefined
   }
 
-  private board(faction: Faction, units: Unit[], transport?: number) {
+  private board(faction: Faction, units: Unit[], transport?: number, destination?: Point) {
     const ships = [...this.units.values()].filter(unit => unit.kind === 'transport' && unit.faction === faction && unit.order?.kind !== 'unload' &&
-      (transport === undefined || unit.id === transport))
+      (transport === undefined || unit.id === transport) &&
+      (destination ? !unit.pickup && !unit.transferDestination && !unit.passengers?.length : !unit.transferDestination))
     if (!ships.length || units.some(unit => !isUnitKind(unit.kind) || isShipKind(unit.kind) || unit.embarkedOn)) return false
     const coast = this.coast ??= new Coast(this.map)
     const selected = new Set(units)
-    const remaining = new Map(ships.map(ship => [ship, transportCapacity - (ship.passengers ?? []).reduce(
+    const eligible = destination ? ships.filter(ship => coast.landingNear(destination, ship, [])) : ships
+    const remaining = new Map(eligible.map(ship => [ship, transportCapacity - (ship.passengers ?? []).reduce(
       (total, id) => total + this.passengerPopulation(this.units.get(id)), 0)]))
     for (const unit of this.units.values()) {
       if (unit.order?.kind !== 'board' || selected.has(unit)) continue
@@ -589,7 +598,7 @@ export class Match {
     for (const unit of units) {
       const size = this.passengerPopulation(unit)
       let best: { ship: Unit, site: Landing, score: number } | undefined
-      for (const ship of ships) {
+      for (const ship of eligible) {
         if (remaining.get(ship)! < size) continue
         const pickup = ship.pickup
         if (pickup && coast.region(unit) !== coast.region(pickup.land)) continue
@@ -611,6 +620,7 @@ export class Match {
         }
         unit.order = { kind: 'board', transport: ship.id }
       }
+      if (destination) ship.transferDestination = destination
       accepted = true
     }
     return accepted
@@ -688,7 +698,12 @@ export class Match {
       else pending.add(ship)
     }
     for (const ship of this.units.values()) {
-      if (ship.pickup && !pending.has(ship)) this.resetOrders(ship)
+      if (pending.has(ship)) continue
+      if (ship.transferDestination && ship.passengers?.length) {
+        const destination = ship.transferDestination
+        this.resetOrders(ship)
+        this.command(ship.faction, [ship.id], { kind: 'unload', at: destination })
+      } else if (ship.pickup || ship.transferDestination) this.resetOrders(ship)
     }
   }
 
@@ -895,6 +910,12 @@ export class Match {
       return true
     }
     if (!group) return false
+    if (order.kind === 'template-rally') {
+      if (!isWalkable(tileAt(this.map, Math.floor(order.at.x / TILE), Math.floor(order.at.y / TILE)))) return this.reject('Choose a clear rally point on land.')
+      if (this.visibility.at(faction, order.at) === 0) return this.reject('Explore the rally point first.')
+      group.rally = { ...order.at }
+      return true
+    }
     if (order.kind === 'template-rename') {
       group.name = order.name
       return true
@@ -1243,10 +1264,11 @@ export class Match {
     }
     const trained = this.spawn(building.faction, next.kind, spawnPoint)
     building.queueRevision = (building.queueRevision ?? 0) + 1
-    this.templates[building.faction].some(group => this.addToTemplate(group, trained))
-    if (building.rally) {
-      trained.assigned = building.rally
-      trained.order = { kind: 'move', to: building.rally }
+    const group = this.templates[building.faction].find(group => this.addToTemplate(group, trained))
+    const rally = (!isShipKind(trained.kind) && group?.rally) || building.rally
+    if (rally) {
+      trained.assigned = rally
+      trained.order = { kind: 'move', to: rally }
     }
     this.stats[building.faction].unitsTrained++
     if (next.kind !== 'worker') this.stats[building.faction].troopsTrained++
@@ -1451,7 +1473,7 @@ export class Match {
       }
       const territory = this.territory[faction]
       const reserves = value(bank)
-      const score = Math.min(reserves, 2000) + Math.floor(Math.max(0, reserves - 2000) / 2) + military + research + territory
+      const score = this.settings.objective === 'control' ? territory : Math.min(reserves, 2000) + Math.floor(Math.max(0, reserves - 2000) / 2) + military + research + territory
       sides[faction] = { ...this.stats[faction], gathered: { ...this.stats[faction].gathered }, bank, army, military, research, territory, score }
     }
     return { elapsedSeconds: Math.floor(this.tick / TICK_HZ), sides }
@@ -1626,9 +1648,13 @@ export class Match {
     if (this.tick % TICK_HZ === 0) this.scoreControl(true)
     const standing = [...this.units.values()].filter(unit => unit.kind === 'headquarters')
     if (standing.length < 2) this.result = { winner: standing[0]?.faction ?? null, reason: 'headquarters' }
-    else if (this.settings.minutes !== null && this.tick >= this.settings.minutes * 60 * TICK_HZ) {
+    else if (this.settings.objective === 'control' && Math.max(this.territory.human, this.territory.orc) >= CONTROL_VICTORY_SCORE && this.territory.human !== this.territory.orc) {
+      this.result = { winner: this.territory.human > this.territory.orc ? 'human' : 'orc', reason: 'control' }
+    } else if (this.settings.minutes !== null && this.tick >= this.settings.minutes * 60 * TICK_HZ) {
       const { sides: { human, orc } } = this.report()
-      this.result = { winner: human.score === orc.score ? null : human.score > orc.score ? 'human' : 'orc', reason: 'time' }
+      const control = this.settings.objective === 'control'
+      const difference = control ? human.territory - orc.territory : human.score - orc.score
+      this.result = { winner: difference === 0 ? null : difference > 0 ? 'human' : 'orc', reason: 'time' }
     }
   }
 
@@ -1768,6 +1794,7 @@ export class Match {
     if (!this.routes.size) return
     let processed = 0
     const checked = new Set<Faction>()
+    const shared = new Map<string, Point[]>()
     for (const [unit, destination] of this.routes) {
       this.routes.delete(unit)
       if (this.units.get(unit.id) !== unit) continue
@@ -1779,7 +1806,12 @@ export class Match {
         if (cached?.key !== key) this.navigation[unit.faction] = cached = { key, grid: new NavigationGrid(this.map, blockers) }
         checked.add(unit.faction)
       }
-      const path = findPath(this.map, unit, destination, blockers, unitStats[this.races[unit.faction]][unit.kind].radius, cached?.grid)
+      const radius = unitStats[this.races[unit.faction]][unit.kind].radius
+      const key = unit.faction + ':' + radius + ':' + Math.floor(unit.x / TILE) + ':' + Math.floor(unit.y / TILE) + ':' + destination.x + ':' + destination.y
+      const previous = shared.get(key)
+      const path = previous?.length && clearSegment(this.map, unit, previous[0], blockers, radius) ? [...previous] :
+        findPath(this.map, unit, destination, blockers, radius, cached?.grid)
+      if (!previous && path.length > 1) shared.set(key, [...path])
       const order = unit.order
       if (path.length === 0 && (order?.kind === 'move' || order?.kind === 'advance') && order.formation &&
           unit.assigned && squaredDistance(unit.assigned, order.to) > 4) {
@@ -2104,6 +2136,7 @@ export class Match {
       ...(this.templates[faction].length ? { templates: this.templates[faction].map(group => ({
         ...group, members: group.members.map(member => ({ ...member }))
       })) } : {}),
+      ...(this.settings.objective === 'control' ? { controlScore: { ...this.territory } } : {}),
       ...(this.controlSites.length ? { controlSites: this.controlSites.map(({ x, y, owner }) =>
         ({ x, y, ...(owner && (owner === faction || visible({ x, y })) ? { owner } : {}) })) } : {}), ...(alerts.length ? { alerts } : {}), ...(knownDepletion ? { depleted: knownDepletion } : {}),
       income: this.income(faction), resources: world.resources[faction], population: world.population[faction], upgrades: world.upgrades[faction], deposits,

@@ -81,7 +81,6 @@ test('practice teaches selection, mine inspection, training and attack-move whil
     // The practice camera centers on the mine unless it reaches the left map edge.
     const mine = cellCenter(5, 18)
     await page.touchscreen.tap(box.x + Math.min(box.width / 2, mine.x * .88), box.y + box.height / 2)
-    await page.touchscreen.tap(box.x + Math.min(box.width / 2, mine.x * .88), box.y + box.height / 2)
     await expect(hint).toContainText('3/4')
     await page.getByRole('button', { name: 'Production', exact: true }).tap()
     await page.getByRole('button', { name: 'Train 1 Footman', exact: true }).tap()
