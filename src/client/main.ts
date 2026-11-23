@@ -3,8 +3,8 @@ import { buildingTier, hallUpgrades, researchSite, researchTier, selectedAttackR
 import { isTemplateKind, MAX_ARMY_GROUPS, MAX_ARMY_GROUP_SIZE, templateKinds } from '../shared/protocol.ts'
 import type { ArmyTemplate, TemplateKind } from '../shared/protocol.ts'
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
-import type { AttackAlert, ArmyOrder, Formation, GroupCommand, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, practiceLessons, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import type { AttackAlert, ArmyOrder, Formation, GroupCommand, PracticeLesson, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, bulkStructureCost, canAfford, FARM_POPULATION, REPAIR, repairCost, repairPrice, repairPulse, researchCost, researchTicks, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings, mapIds, mapOptions } from '../shared/map.ts'
@@ -18,7 +18,7 @@ import { GlobalProduction } from './global-production.ts'
 import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
-import { initializeNativeApp, gameBackend, nativeIOS } from './native-app.ts'
+import { initializeNativeApp, gameBackend, nativeIOS, standaloneWeb } from './native-app.ts'
 import { inviteUrl } from './multiplayer-endpoint.ts'
 import { entityTexture } from './sprites.ts'
 import type { ArmyIndex } from './troop-groups.ts'
@@ -70,6 +70,7 @@ const banner = element('banner')
 const attackAlerts = element('attack-alerts')
 const minimapPings = element('minimap-pings')
 let shownAlerts: readonly AttackAlert[] = []
+let lastAlert: AttackAlert | undefined
 const menu = element('economy-menu')
 const workerActions = element('worker-actions')
 const economyAction = button('economy-action')
@@ -160,6 +161,14 @@ const settingsMenu = new MatchSettingsMenu()
 let matchSettings = settingsMenu.load()
 const clock = element('match-clock')
 const touch = matchMedia('(pointer: coarse)').matches
+let extraOrders = false
+function showExtraOrders(open: boolean) {
+  extraOrders = open
+  match.classList.toggle('extra-orders', open)
+  button('battle-more').setAttribute('aria-expanded', String(open))
+  button('battle-more').textContent = open ? 'Less' : 'More'
+}
+button('battle-more').onclick = () => showExtraOrders(!extraOrders)
 
 let faction: Faction = 'human'
 let chosenRace: Race = 'human'
@@ -207,7 +216,7 @@ let economyContext = ''
 let globalUpgradeOpen = false
 let gatherOpen = false
 const lessonChoice = element<HTMLSelectElement>('practice-lesson')
-let lesson = 'intro'
+let lesson: PracticeLesson = 'intro'
 let practiceFoundations = 0
 let practiceStep = 0
 let practiceMoving = false
@@ -217,7 +226,7 @@ let pendingInvite = invite && /^[A-Z2-9]{5}$/i.test(invite) ? invite.toUpperCase
 if (pendingInvite) joinCode.value = pendingInvite
 
 const solo = new SoloClient(receive, refreshSoloButton, nativeIOS)
-const client = new ConnectionClient(receive, status, gameBackend)
+const client = new ConnectionClient(receive, status, gameBackend, standaloneWeb && !pendingInvite)
 refreshSoloButton()
 if (!invite && !client.hasSeat && solo.restoreOnReload) solo.start(faction, true)
 
@@ -233,19 +242,19 @@ function refreshSoloButton() {
   button('practice').disabled = client.hasSeat
 }
 
-function status(state: 'waiting' | 'open' | 'closed') {
+function status(state: 'idle' | 'waiting' | 'open' | 'closed') {
   const open = state === 'open'
   connection.dataset.state = state
-  connection.textContent = open ? 'Online' : state === 'waiting' ? 'Connecting' : 'Reconnecting'
+  connection.textContent = open ? 'Online' : state === 'idle' ? 'Solo ready' : state === 'waiting' ? 'Connecting' : 'Reconnecting'
   if (open && pendingInvite) queueMicrotask(() => {
-    if (!pendingInvite || client.hasSeat || !client.connected) return
+    if (!pendingInvite || client.hasSeat || !client.connected || (solo.active && !solo.practice)) return
     client.send({ type: 'join', code: pendingInvite, faction: 'human' })
     pendingInvite = null
   })
-  button('create').disabled = !open
-  button('join').disabled = !open
+  button('create').disabled = !open && !(standaloneWeb && state === 'idle')
+  button('join').disabled = !open && !(standaloneWeb && state === 'idle')
   button('ready').disabled = !open
-  button('find-match').disabled = !open
+  button('find-match').disabled = !open && !(standaloneWeb && state === 'idle')
   if (!open) drawQueue(false)
   button('reconnect-now').hidden = open || !room || solo.active
   if (room) updateBanner(open)
@@ -264,7 +273,8 @@ function note(message: string, error = false) {
 }
 
 function updateBanner(online: boolean) {
-  if (!online && !solo.active) banner.textContent = 'Reconnecting to match…'
+  if (!online && !solo.active) banner.textContent = room?.reconnectSeconds === undefined ? 'Reconnecting to match…' :
+    'Reconnect before ' + clockText(room.reconnectSeconds) + ' runs out'
   else if (room?.result) {
     const winner = room.result.winner
     const outcome = winner === null ? 'Draw' : winner === faction ? 'Victory' : 'Defeat'
@@ -302,6 +312,7 @@ function showLobby() {
   element('entry-actions').hidden = false
   for (const item of factionButtons) item.disabled = false
   history.replaceState(null, '', location.pathname)
+  pendingInvite = null
   refreshSoloButton()
   note('Choose a faction to start.')
 }
@@ -368,6 +379,11 @@ function receive(message: ServerMessage) {
         else if (farms > practiceFoundations) setPracticeStep(4)
       }
       if (solo.practice && practiceStep === 6 && templates.some(group => group.members.length)) setPracticeStep(4)
+      if (solo.practice && practiceStep === 7 && templates.some(group =>
+        group.members.length === targetTotal(group))) setPracticeStep(4)
+      if (solo.practice && practiceStep === 8 && ownEntities.some(entity => isHeroKind(entity.kind) && entity.abilityReadyAt)) setPracticeStep(4)
+      if (solo.practice && practiceStep === 9 && ownEntities.some(entity => entity.kind === 'transport' && entity.passengers?.length)) setPracticeStep(10)
+      if (solo.practice && practiceStep === 10 && ownEntities.some(entity => entity.kind === 'transport' && entity.passengers?.length === 0)) setPracticeStep(4)
       researched = message.upgrades ?? []
       recentIncome = message.income ?? { gold: 0, wood: 0, stone: 0 }
       if (requestedCancel && ownEntities.find(unit => unit.id === requestedCancel?.id)?.training?.revision !== requestedCancel.revision) requestedCancel = undefined
@@ -447,7 +463,7 @@ function showBattle() {
   element('practice-guide').hidden = !solo.practice
   if (solo.practice) {
     practiceFoundations = 0
-    setPracticeStep(lesson === 'attack' ? 3 : lesson === 'group' ? 6 : lesson === 'build' ? 5 : 0)
+    setPracticeStep({ intro: 0, attack: 3, build: 5, group: 6, replenish: 7, hero: 8, naval: 9 }[lesson])
   }
   const minutes = room?.settings?.minutes
   clock.hidden = !minutes
@@ -509,6 +525,7 @@ function showBattle() {
   placementTip.hidden = true
   placing = false
   closeEconomyMenu()
+  lastAlert = undefined
   drawAttackAlerts([])
   drawTroopGroups(new Map(), null)
   drawSelection([])
@@ -544,6 +561,7 @@ function drawAttackAlerts(alerts: readonly AttackAlert[]) {
   if (alerts.length === shownAlerts.length && alerts.every((alert, i) => alert.id === shownAlerts[i].id)) return
   if (alerts.some(alert => !shownAlerts.some(previous => previous.id === alert.id))) audio.play('alert')
   shownAlerts = alerts
+  lastAlert = alerts[0] ?? lastAlert
   attackAlerts.hidden = !alerts.length
   const labels = { base: 'Base under attack', building: 'Building under attack',
     workers: 'Workers under attack', army: 'Army under attack' }
@@ -681,7 +699,11 @@ function setPracticeStep(step: number) {
     '4/4 · Select All troops, tap Attack move and choose a spot on the battlefield.',
     'Practice complete. Keep experimenting or return to the lobby.',
     'Select a worker, tap Build, choose Farm and place it on clear ground.',
-    'Select All troops, open Groups and create a group from your selection.'
+    'Select All troops, open Groups and create a group from your selection.',
+    'Select Practice army and use Replenish to fill its vacant slot.',
+    'Select Hero and use War Cry to boost nearby allies.',
+    'Select Workers and tap Board to send them to the transport.',
+    'Select the Transport Ship, tap Unload and choose the nearby coastline.'
   ][step])
   button('finish-practice').hidden = step !== 4
 }
@@ -710,6 +732,14 @@ function drawSelection(entities: Entity[], interactive = false) {
   const groupAction = button('group-menu-open')
   groupAction.hidden = Boolean(room?.result) || (!group && !entities.some(eligibleGroupUnit))
   groupAction.textContent = group ? 'Group details' : 'Groups'
+  const context = !entities.length ? '' : entities.some(unit => unit.kind === 'worker') ? 'economy' :
+    entities.every(unit => isUnitKind(unit.kind) && !isShipKind(unit.kind)) ? 'army' : ''
+  if (match.dataset.commandContext !== context) {
+    match.dataset.commandContext = context
+    showExtraOrders(false)
+  }
+  button('battle-more').hidden = !touch || !context || solo.practice || Boolean(room?.result)
+  match.classList.toggle('compact-commands', !button('battle-more').hidden)
   if (solo.practice && practiceStep === 0 && entities.some(entity => entity.kind === 'worker')) setPracticeStep(1)
   const workers = entities.some(entity => entity.kind === 'worker')
   const trainer = entities.length === 1 && selected && selected.construction === undefined &&
@@ -1057,7 +1087,7 @@ buildQueueAction.hidden = true
 button('gather-open').after(buildQueueAction)
 
 function buildChoices() {
-  return buildingKinds.map(kind => {
+  return [...buildingKinds].sort((a, b) => buildingTier(a) - buildingTier(b)).map(kind => {
     const choice = economyChoice(kind, buildings[kind].cost, 0, () => {
       scene?.place(kind)
       closeEconomyMenu()
@@ -1342,7 +1372,8 @@ function drawResult(outcome: NonNullable<RoomState['result']>) {
   let detail: string
   if (outcome.reason === 'time') {
     setText('match-clock', '0:00')
-    detail = outcome.winner ? 'Time expired. ' + factionNames[playerRaces[outcome.winner]] + ' finished with the higher score.' : 'Time expired with equal scores.'
+    const points = room?.settings?.objective === 'control' ? 'more control points' : 'the higher score'
+    detail = outcome.winner ? 'Time expired. ' + factionNames[playerRaces[outcome.winner]] + ' finished with ' + points + '.' : 'Time expired with equal scores.'
   } else if (outcome.reason === 'control') {
     detail = outcome.winner ? factionNames[playerRaces[outcome.winner]] + ' won by holding control points.' : 'Control points tied.'
   } else if (outcome.reason === 'headquarters') {
@@ -1470,8 +1501,7 @@ function drawTemplates() {
   const picked = groupSelection()
   const pickedIds = new Set(picked.map(unit => unit.id))
   const canCreate = templates.length < MAX_ARMY_GROUPS
-  const blueprint = loadBlueprint()
-  button('load-blueprint').hidden = !blueprint
+  drawBlueprintChoices()
   button('load-blueprint').disabled = !canCreate
   button('new-template').disabled = !canCreate
   button('create-from-selection').hidden = !picked.length
@@ -1541,8 +1571,10 @@ function drawTemplates() {
       }))
       controls.append(actionButton('Save template for future matches', () => {
         try {
-          localStorage.setItem('ash-iron-blueprint-' + chosenRace, JSON.stringify({ name: group.name, targets: group.targets }))
-          button('load-blueprint').hidden = false
+          const saved = loadBlueprints().filter(entry => entry.name !== group.name)
+          saved.unshift({ name: group.name, targets: group.targets })
+          localStorage.setItem('ash-iron-blueprint-' + chosenRace, JSON.stringify(saved.slice(0, MAX_ARMY_GROUPS)))
+          drawBlueprintChoices()
           setText('template-feedback', 'Template saved on this device.')
         } catch { setText('template-feedback', 'Could not save the template on this device.') }
       }))
@@ -1588,13 +1620,28 @@ function templateView(form?: HTMLFormElement) {
   setText('template-feedback', '')
 }
 
-function loadBlueprint(): Pick<ArmyTemplate, 'name' | 'targets'> | null {
+type SavedBlueprint = Pick<ArmyTemplate, 'name' | 'targets'>
+
+function loadBlueprints(): SavedBlueprint[] {
   try {
-    const data = JSON.parse(localStorage.getItem('ash-iron-blueprint-' + chosenRace) ?? 'null')
-    if (!data || typeof data.name !== 'string' || !Array.isArray(data.targets) || !data.targets.every((row: ArmyTemplate['targets'][number]) =>
-      row && isTemplateKind(row.kind) && Number.isInteger(row.count) && row.count > 0 && row.count <= MAX_ARMY_GROUP_SIZE)) return null
-    return data
-  } catch { return null }
+    const data: unknown = JSON.parse(localStorage.getItem('ash-iron-blueprint-' + chosenRace) ?? 'null')
+    const entries = Array.isArray(data) ? data : [data]
+    return entries.filter((entry): entry is SavedBlueprint =>
+      entry && typeof entry.name === 'string' && Array.isArray(entry.targets) &&
+      entry.targets.every((row: ArmyTemplate['targets'][number]) =>
+        row && isTemplateKind(row.kind) && Number.isInteger(row.count) && row.count > 0 && row.count <= MAX_ARMY_GROUP_SIZE))
+      .slice(0, MAX_ARMY_GROUPS)
+  } catch { return [] }
+}
+
+function drawBlueprintChoices() {
+  const saved = loadBlueprints()
+  const picker = element<HTMLSelectElement>('blueprint-choice')
+  const choices = saved.map(entry => entry.name)
+  if (choices.length !== picker.options.length || choices.some((name, index) => picker.options[index]?.text !== name)) {
+    picker.replaceChildren(...choices.map((name, index) => new Option(name, String(index))))
+  }
+  element('blueprint-label').hidden = button('load-blueprint').hidden = !saved.length
 }
 
 function editTemplate(mode: typeof templateEditorMode, group?: Pick<ArmyTemplate, 'name' | 'targets'> & { id?: number }) {
@@ -1797,15 +1844,15 @@ templateSheet.addEventListener('click', event => {
 })
 button('close-templates').onclick = () => templateSheet.close()
 button('load-blueprint').onclick = () => {
-  const blueprint = loadBlueprint()
+  const blueprint = loadBlueprints()[Number(element<HTMLSelectElement>('blueprint-choice').value)]
   if (blueprint) editTemplate('empty', blueprint)
 }
 button('new-template').onclick = () => editTemplate('empty')
 button('cancel-template').onclick = () => templateView()
 
 button('practice').onclick = () => {
-  lesson = lessonChoice.value
-  if (!client.hasSeat) solo.start('human', false, 'easy', undefined, 'human', 'orc', true)
+  lesson = practiceLessons.find(value => value === lessonChoice.value) ?? 'intro'
+  if (!client.hasSeat) solo.start('human', false, 'easy', undefined, 'human', 'orc', true, lesson)
 }
 button('finish-practice').onclick = leave
 button('play-again').onclick = () => {
@@ -1824,6 +1871,7 @@ button('play-again').onclick = () => {
   solo.start(side, false, previous.difficulty, previous.settings, race, opponent, practice)
 }
 function playSolo(resume: boolean) {
+  client.cancelPendingLobby()
   const opponent = opponentChoice.value
   if (waitingForMatch) client.send({ type: 'cancel-queue' })
   if (!client.hasSeat) solo.start(chosenRace === 'orc' ? 'orc' : 'human', resume,
@@ -1837,14 +1885,14 @@ button('reconnect-now').onclick = () => client.reconnect()
 button('share-invite').hidden = typeof navigator.share !== 'function'
 button('share-invite').onclick = async () => {
   if (!room) return
-  try { await navigator.share({ title: 'Ash & Iron', url: inviteUrl(location.href, room.code, gameBackend).href }) }
+  try { await navigator.share({ title: 'Ash & Iron', url: inviteUrl(location.href, room.code, standaloneWeb ? undefined : gameBackend).href }) }
   catch { /* The share sheet can be closed without sending. */ }
 }
 button('find-match').onclick = () => {
   if (waitingForMatch) client.send({ type: 'cancel-queue' })
-  else client.send({ type: 'queue', race: chosenRace })
+  else client.sendLobby({ type: 'queue', race: chosenRace })
 }
-button('create').onclick = () => client.send({ type: 'create', race: chosenRace, settings: matchSettings })
+button('create').onclick = () => client.sendLobby({ type: 'create', race: chosenRace, settings: matchSettings })
 button('match-settings').onclick = () => {
   if (room) {
     settingsMenu.show(room.settings ?? matchSettings, room.host === faction ? settings => {
@@ -1859,12 +1907,12 @@ button('match-settings').onclick = () => {
 }
 element<HTMLFormElement>('join-form').onsubmit = event => {
   event.preventDefault()
-  client.send({ type: 'join', code: joinCode.value.trim().toUpperCase(), ...(explicitRace ? { race: chosenRace } : { faction: 'human' }) })
+  client.sendLobby({ type: 'join', code: joinCode.value.trim().toUpperCase(), ...(explicitRace ? { race: chosenRace } : { faction: 'human' }) })
 }
 button('ready').onclick = () => client.send({ type: 'ready', ready: !room?.players.find(seat => seat.faction === faction)?.ready })
 button('copy').onclick = async () => {
   if (!room) return
-  const url = inviteUrl(location.href, room.code, gameBackend)
+  const url = inviteUrl(location.href, room.code, standaloneWeb ? undefined : gameBackend)
   try {
     await navigator.clipboard.writeText(url.href)
     note('Invite copied.')
@@ -2034,7 +2082,7 @@ function drawTacticalMap() {
 button('map-expand').onclick = () => {
   if (!scene || tacticalMap.open) return
   drawTacticalMap()
-  button('tactical-alert').hidden = !shownAlerts.length
+  button('tactical-alert').hidden = !lastAlert
   tacticalMap.showModal()
 }
 tacticalCanvas.onclick = event => {
@@ -2044,7 +2092,7 @@ tacticalCanvas.onclick = event => {
 }
 button('tactical-base').onclick = () => { scene?.home(); tacticalMap.close() }
 button('tactical-alert').onclick = () => {
-  const alert = shownAlerts[0]
+  const alert = lastAlert
   if (alert) { scene?.focusAlert(alert.at); button('camera-back').hidden = false }
   tacticalMap.close()
 }

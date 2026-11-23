@@ -1,15 +1,15 @@
 import { defaultMatchSettings } from '../shared/match-settings.ts'
 import type { MatchSettings } from '../shared/match-settings.ts'
-import { ComputerOpponent } from '../server/computer.ts'
+import { ComputerOpponent, computerStrategyFor } from '../server/computer.ts'
 import type { ComputerCheckpoint } from '../server/computer.ts'
 import { Match, TICK_HZ } from '../server/match.ts'
 import type { MatchCheckpoint } from '../server/match.ts'
 import { opposite } from '../shared/protocol.ts'
-import type { Difficulty, Faction, Race, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, Race, GlobalTrainCommand, GroupCommand, Order, PracticeLesson, ServerMessage } from '../shared/protocol.ts'
 
 export type SoloSave = { faction: Faction, match: MatchCheckpoint, computer: ComputerCheckpoint }
 export type SoloInput =
-  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice?: boolean, paused: boolean }
+  | { type: 'start', faction: Faction, save: SoloSave | null, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice?: boolean, lesson?: PracticeLesson, paused: boolean }
   | { type: 'pause', paused: boolean }
   | GroupCommand
   | GlobalTrainCommand
@@ -45,9 +45,9 @@ export function createSoloRuntime(send: (message: SoloOutput) => void) {
           human: faction === 'human' ? message.race ?? faction : message.opponentRace ?? 'human',
           orc: faction === 'orc' ? message.race ?? faction : message.opponentRace ?? 'orc'
         }
-        const match = message.save ? Match.restore(message.save.match) : practice ? Match.practice(faction, races) :
+        const match = message.save ? Match.restore(message.save.match) : practice ? Match.practice(faction, races, message.lesson) :
           Match.start(message.settings ?? defaultMatchSettings(), races)
-        const computer = new ComputerOpponent(opposite(faction), match.map, message.save?.computer.difficulty ?? message.difficulty, message.save?.computer.strategy)
+        const computer = new ComputerOpponent(opposite(faction), match.map, message.save?.computer.difficulty ?? message.difficulty, message.save?.computer.strategy ?? computerStrategyFor(match.map.seed))
         if (message.save) computer.restore(message.save.computer)
         game = { faction, match, computer }
         paused = message.paused

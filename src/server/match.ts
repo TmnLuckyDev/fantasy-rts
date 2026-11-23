@@ -177,8 +177,8 @@ export class Match {
     return Match.configured({ ...settings, progression: settings.progression ?? true }, seed, races)
   }
 
-  static practice(faction: Faction, races: PlayerRaces) {
-    const settings = { ...defaultMatchSettings('ashford-original'), randomStarts: false, populationCap: 30 }
+  static practice(faction: Faction, races: PlayerRaces, lesson = 'intro') {
+    const settings = { ...defaultMatchSettings(lesson === 'naval' ? 'shattered-isles' : 'ashford-original'), randomStarts: false, populationCap: 30 }
     const match = Match.configured(settings, undefined, races)
     const base = match.map.bases[faction]
     const clear = (kind: BuildingKind) => {
@@ -192,6 +192,17 @@ export class Match {
     }
     match.spawn(faction, 'barracks', clear('barracks'))
     match.spawn(faction, 'farm', clear('farm'))
+    if (lesson === 'hero') match.spawn(faction, 'vanguard', cellCenter(Math.floor(base.x / TILE) + 2, Math.floor(base.y / TILE)))
+    if (lesson === 'replenish') {
+      const group = [...match.units.values()].filter(unit => unit.faction === faction && unit.kind === 'blade')
+      match.templates[faction].push({ id: ++match.sequence, name: 'Practice army',
+        members: group.map(unit => ({ id: unit.id, kind: 'blade' })), targets: [{ kind: 'blade', count: group.length + 1 }] })
+    }
+    if (lesson === 'naval' && faction === 'human') {
+      const workers = [...match.units.values()].filter(unit => unit.faction === faction && unit.kind === 'worker')
+      for (const [i, worker] of workers.entries()) Object.assign(worker, cellCenter(51 - i, 55))
+      match.spawn(faction, 'transport', cellCenter(54, 55))
+    }
     match.visibility.update(match.units.values())
     return match
   }

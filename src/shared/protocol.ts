@@ -218,6 +218,9 @@ export type ClientMessage =
   | GlobalTrainCommand
   | { type: 'command', ids: number[], order: Order }
 
+export const practiceLessons = ['intro', 'build', 'attack', 'group', 'replenish', 'hero', 'naval'] as const
+export type PracticeLesson = typeof practiceLessons[number]
+
 export type AttackAlert = { id: number, kind: 'base' | 'building' | 'workers' | 'army', at: Point, until: number }
 
 export type ControlSite = Point & { owner?: Faction }

@@ -143,7 +143,18 @@ export class Rooms {
       if (votes.size === 2) {
         const map = room.rematchOptions?.map
         const swap = room.rematchOptions?.swap
-        if (map && map !== room.settings.map) room.settings = { ...room.settings, map, sources: defaultMatchSettings(map).sources }
+        if (map && map !== room.settings.map) {
+          const previous = defaultMatchSettings(room.settings.map)
+          const next = defaultMatchSettings(map)
+          const sources = { ...room.settings.sources }
+          for (const resource of ['gold', 'wood', 'stone'] as const) {
+            const source = sources[resource]
+            const count = source.count === previous.sources[resource].count ? next.sources[resource].count :
+              resource === 'wood' ? Math.min(source.count, next.sources.wood.count) : source.count
+            sources[resource] = { ...source, count }
+          }
+          room.settings = { ...room.settings, map, sources }
+        }
         if (swap) for (const member of room.seats) member.faction = opposite(member.faction)
         const races = { ...defaultRaces }
         for (const member of room.seats) races[member.faction] = member.race
@@ -300,7 +311,7 @@ export class Rooms {
     for (const room of this.rooms.values()) {
       if (!room.match) {
         const seatsBefore = room.seats.length
-        room.seats = room.seats.filter(seat => seat.peer || now - seat.disconnectedAt < reconnectWindow)
+        room.seats = room.seats.filter(seat => seat.peer || now - seat.disconnectedAt < (room.settings.extendedReconnect ? 90_000 : reconnectWindow))
         if (!room.seats.length || now - room.updatedAt > lobbyLifetime) {
           this.close(room)
         } else if (room.seats.length !== seatsBefore) this.broadcastRoom(room)
@@ -330,7 +341,8 @@ export class Rooms {
   private secondsToReconnect(room: Room, now: number) {
     if (!this.paused(room)) return
     const missing = room.seats.filter(seat => !seat.peer)
-    const deadline = Math.min(...missing.map(seat => seat.disconnectedAt + reconnectWindow))
+    const window = room.settings.extendedReconnect ? 90_000 : reconnectWindow
+    const deadline = Math.min(...missing.map(seat => seat.disconnectedAt + window))
     return Math.max(0, Math.ceil((deadline - now) / 1000))
   }
 

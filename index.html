@@ -52,6 +52,9 @@
               <option value="build">Build a farm</option>
               <option value="attack">Attack move</option>
               <option value="group">Army groups</option>
+              <option value="replenish">Replenish a group</option>
+              <option value="hero">Hero abilities</option>
+              <option value="naval">Naval transport</option>
             </select></label>
             <button id="create" type="button" disabled aria-label="Create room">Play with a friend</button>
             <form id="join-form">
@@ -139,6 +142,7 @@
           </div>
           <p id="map-playstyle" class="settings-note"></p>
           <label class="start-option"><input name="random-starts" type="checkbox" checked> Random starting positions</label>
+          <label class="start-option"><input name="extended-reconnect" type="checkbox"> Allow 90 seconds to reconnect in private matches</label>
           <p class="settings-note">Both sides start with the same resources. Blank stock, worker limit or time fields mean unlimited.</p>
           <div id="resource-settings"></div>
           <p id="score-rule" class="settings-note"></p>
@@ -205,7 +209,7 @@
           <button id="workers" type="button">Workers</button>
           <button id="production-open" type="button" aria-haspopup="dialog" aria-label="Production">Production <span id="production-count">0</span></button>
         </div>
-        <div class="orders" aria-label="Battle commands">
+        <div class="orders" id="order-buttons" aria-label="Battle commands">
           <button id="gather-open" type="button" aria-expanded="false" aria-controls="worker-actions" hidden>Gather</button>
           <button id="gather-deposit" type="button" hidden>Gather here</button>
           <button id="economy-action" type="button" aria-expanded="false" aria-controls="economy-menu" hidden>Build</button>
@@ -213,6 +217,7 @@
           <button id="hero-skill" type="button" hidden>Hero skill</button>
           <button id="group-replenish-shortcut" type="button" hidden>Replenish</button>
           <button id="group-retreat" type="button" hidden>Retreat</button>
+          <button id="battle-more" type="button" aria-expanded="false" aria-controls="order-buttons" hidden>More</button>
           <button id="group-menu-open" type="button" aria-haspopup="dialog" hidden>Groups</button>
           <button id="board" type="button" title="Meet and board a friendly transport" hidden>Board</button>
           <button id="transfer" type="button" hidden>Transfer</button>
@@ -275,7 +280,8 @@
           <button id="create-from-selection" type="button" hidden>Create Group</button>
           <button id="add-to-group" type="button" hidden>Add to Group</button>
           <button id="remove-from-group" type="button" hidden>Remove from Group</button>
-          <button id="load-blueprint" type="button" hidden>Load saved template</button>
+          <label id="blueprint-label" hidden>Saved template <select id="blueprint-choice"></select></label>
+          <button id="load-blueprint" type="button" hidden>Load template</button>
           <button id="new-template" type="button">Create Empty Army Template</button>
         </div>
         <div id="template-list"></div>

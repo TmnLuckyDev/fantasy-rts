@@ -163,7 +163,7 @@ export class BattleScene extends Phaser.Scene {
       order: point => {
         if (!this.actions.dismissBuildMenu()) this.orderAt(point)
       },
-      singleFingerPan: () => this.singleFingerPan && !this.placing && !this.advanceMode,
+      singleFingerPan: () => this.singleFingerPan && !this.placing && !this.advanceMode && !this.targetingRally && !this.targetingUnload && !this.targetingTransfer,
       touchDragThreshold: () => this.placing && this.placing !== 'wall' ? 24 : 8,
       camera: (from, to, ratio) => this.transformCamera(from, to, ratio)
     })
@@ -751,8 +751,8 @@ export class BattleScene extends Phaser.Scene {
       const dy = sprite.y - point.y
       const unit = isUnitKind(entity.kind)
       const hero = isHeroKind(entity.kind)
-      const width = unit ? isShipKind(entity.kind) ? 30 : hero ? 26 : touch ? 21 : 14 :
-        unitStats[raceOf(entity)][entity.kind].radius + 10
+      const width = unit ? isShipKind(entity.kind) ? 30 : hero ? 26 : touch ? 24 : 14 :
+        unitStats[raceOf(entity)][entity.kind].radius + (touch ? 15 : 10)
       const height = unit ? hero ? 64 : 35 : entity.kind === 'headquarters' ? 76 : entity.kind === 'tower' ? 61 : 35
       if (dx >= width || dy < -12 || dy >= height) continue
       const score = dx ** 2 + (dy - (hero ? 27 : 14)) ** 2 + (unit ? 0 : 10000)

@@ -95,6 +95,7 @@ export class MatchSettingsMenu {
       const settings = defaultMatchSettings(this.map)
       const number = (key: string) => this.input(key).value === '' ? null : this.input(key).valueAsNumber
       settings.objective = objective.value === 'control' ? 'control' : 'classic'
+      if (this.input('extended-reconnect').checked) settings.extendedReconnect = true
       settings.randomStarts = this.input('random-starts').checked
       settings.minutes = number('minutes')
       settings.populationCap = this.input('population-cap').valueAsNumber
@@ -152,6 +153,7 @@ export class MatchSettingsMenu {
     this.describeMap()
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
     mapInput.value = settings.map
+    this.input('extended-reconnect').checked = settings.extendedReconnect ?? false
     this.input('random-starts').checked = settings.randomStarts !== false
     this.input('minutes').value = String(settings.minutes ?? '')
     this.input('population-cap').value = String(settings.populationCap ?? defaultMatchSettings().populationCap)

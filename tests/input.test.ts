@@ -95,3 +95,36 @@ test('panning and pinch consume both fingers through release, then short constru
   pointer('pointerup', 1, 50)
   assert.equal(drags, 1)
 })
+
+test('one-finger camera mode pans without sending an order and retains ordinary taps', () => {
+  const view = new EventTarget()
+  const document = Object.assign(new EventTarget(), { defaultView: view, hidden: false })
+  const field = Object.assign(new EventTarget(), {
+    ownerDocument: document,
+    getBoundingClientRect: () => ({ left: 0, top: 0 }),
+    setPointerCapture() {}
+  })
+  const pans: number[] = []
+  let taps = 0
+  const input = new BattlefieldInput(field as unknown as HTMLElement, {
+    select: () => taps++,
+    selectBox: () => assert.fail('unexpected selection'),
+    order: () => assert.fail('unexpected order'),
+    singleFingerPan: () => true,
+    camera: (from, to) => pans.push(to.x - from.x)
+  })
+  const pointer = (type: string, x: number) => (type === 'pointerup' ? view : field).dispatchEvent(Object.assign(new Event(type), {
+    pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0, clientX: x, clientY: 20,
+    composedPath: () => [field, view]
+  }))
+  pointer('pointerdown', 10)
+  pointer('pointermove', 22)
+  pointer('pointermove', 44)
+  pointer('pointerup', 44)
+  assert.deepEqual(pans, [12, 22])
+  assert.equal(taps, 0)
+  pointer('pointerdown', 50)
+  pointer('pointerup', 50)
+  assert.equal(taps, 1)
+  input.destroy()
+})

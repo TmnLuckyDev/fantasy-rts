@@ -676,6 +676,7 @@ test('a worker pans and pinches during construction and places ten sites without
     await expect(selected).toHaveText('Peasant')
 
     await page.locator('#cancel-placement').tap()
+    await page.getByRole('button', { name: 'More', exact: true }).tap()
     const kill = page.getByRole('button', { name: 'Kill', exact: true })
     expect(await kill.evaluate(item => item.parentElement?.lastElementChild === item)).toBe(true)
     await expect(kill).toHaveCSS('background-image', /rgb\(135, 53, 46\)/)

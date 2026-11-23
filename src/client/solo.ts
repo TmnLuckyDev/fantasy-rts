@@ -1,6 +1,6 @@
 import type { MatchSettings } from '../shared/match-settings.ts'
 import { isFaction } from '../shared/protocol.ts'
-import type { Difficulty, Faction, Race, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, Race, PracticeLesson, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
 import type { SoloInput, SoloOutput, SoloSave } from './solo-runtime.ts'
 
 const key = 'ash-and-iron-solo'
@@ -66,7 +66,7 @@ export class SoloClient {
     try { return this.saved && sessionStorage.getItem(activeKey) === '1' } catch { return false }
   }
 
-  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice = false) {
+  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice = false, lesson?: PracticeLesson) {
     if (this.transport) return
     this.manualPause = false
     this.practicing = practice
@@ -76,7 +76,7 @@ export class SoloClient {
     if (!practice) {
       try { sessionStorage.setItem(activeKey, '1') } catch { /* Storage may be restricted. */ }
     }
-    this.startSimulation({ type: 'start', faction, save, difficulty, settings, race, opponentRace, practice, paused: this.simulationPaused })
+    this.startSimulation({ type: 'start', faction, save, difficulty, settings, race, opponentRace, practice, lesson, paused: this.simulationPaused })
     if (!practice && !this.storageAvailable) this.storageError()
   }
 
