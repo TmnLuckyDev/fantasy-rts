@@ -4,7 +4,7 @@ import type { ClientMessage, Faction, ServerMessage, Snapshot } from '../shared/
 
 import { socketUrl } from './multiplayer-endpoint.ts'
 
-type Connection = 'waiting' | 'open' | 'closed'
+type Connection = 'idle' | 'waiting' | 'open' | 'closed'
 type SavedSeat = { code: string, token: string, faction: Faction }
 
 export class ConnectionClient {
@@ -13,11 +13,14 @@ export class ConnectionClient {
   private delay = 500
   private retry: number | undefined
   private seat: SavedSeat | null = null
+  private started = false
+  private pending: ClientMessage | undefined
 
   constructor(
     private receive: (message: ServerMessage) => void,
     private status: (connection: Connection) => void,
-    private backend?: string
+    private backend?: string,
+    defer = false
   ) {
     try {
       const saved = JSON.parse(sessionStorage.getItem('ash-and-iron-seat') ?? 'null') as SavedSeat | null
@@ -29,8 +32,19 @@ export class ConnectionClient {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this.socket?.readyState !== WebSocket.OPEN) this.connect()
     })
+    this.started = !defer || Boolean(this.seat)
+    if (this.started) this.connect()
+    else this.status('idle')
+  }
+
+  sendLobby(message: ClientMessage) {
+    if (this.connected) { this.send(message); return }
+    this.started = true
+    this.pending = message
     this.connect()
   }
+
+  cancelPendingLobby() { this.pending = undefined }
 
   get hasSeat() { return Boolean(this.seat) }
 
@@ -59,8 +73,16 @@ export class ConnectionClient {
     }
   }
 
+  reconnect() {
+    if (this.connected) return
+    const socket = this.socket
+    this.socket = null
+    socket?.close()
+    this.connect()
+  }
+
   private connect() {
-    if (!this.active) return
+    if (!this.active || !this.started) return
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
     window.clearTimeout(this.retry)
     this.status('waiting')
@@ -73,6 +95,9 @@ export class ConnectionClient {
       this.delay = 500
       if (this.seat) this.send({ type: 'resume', code: this.seat.code, token: this.seat.token })
       this.status('open')
+      const pending = this.pending
+      this.pending = undefined
+      if (pending && !this.seat) this.send(pending)
     })
     socket.addEventListener('message', event => {
       if (this.socket !== socket) return

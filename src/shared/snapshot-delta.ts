@@ -10,7 +10,7 @@ export type SnapshotDelta = {
   pose?: Pose[]
   upsert?: Entity[]
   removed?: number[]
-} & Partial<Pick<Snapshot, 'income' | 'fog' | 'templates' | 'hallLevel' | 'controlSites' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
+} & Partial<Pick<Snapshot, 'income' | 'controlScore' | 'fog' | 'templates' | 'hallLevel' | 'controlSites' | 'corpses' | 'effects' | 'resources' | 'population' | 'upgrades' | 'depleted' | 'deposits' | 'alerts'>>
 
 function sameTraining(a: Entity['training'], b: Entity['training']) {
   return a === b || Boolean(a && b && a.kind === b.kind && a.progress === b.progress &&
@@ -49,6 +49,7 @@ export function makeDelta(previous: Snapshot, next: Snapshot): SnapshotDelta {
   if (next.templates !== previous.templates && JSON.stringify(next.templates) !== JSON.stringify(previous.templates)) delta.templates = next.templates ?? []
   if (next.hallLevel !== previous.hallLevel) delta.hallLevel = next.hallLevel
   if (next.fog !== previous.fog) delta.fog = next.fog
+  if (next.controlScore && (!previous.controlScore || next.controlScore.human !== previous.controlScore.human || next.controlScore.orc !== previous.controlScore.orc)) delta.controlScore = next.controlScore
   if (next.controlSites?.length !== previous.controlSites?.length || next.controlSites?.some((site, i) => {
     const oldSite = previous.controlSites?.[i]
     return !oldSite || oldSite.owner !== site.owner || oldSite.x !== site.x || oldSite.y !== site.y
@@ -95,6 +96,7 @@ export function applyDelta(previous: Snapshot | undefined, delta: SnapshotDelta)
     ...(delta.income || previous.income ? { income: delta.income ?? previous.income } : {}),
     fog: delta.fog ?? previous.fog, resources: delta.resources ?? previous.resources,
     population: delta.population ?? previous.population, upgrades: delta.upgrades ?? previous.upgrades,
+    ...(delta.controlScore || previous.controlScore ? { controlScore: delta.controlScore ?? previous.controlScore } : {}),
     ...(delta.controlSites || previous.controlSites ? { controlSites: delta.controlSites ?? previous.controlSites } : {}),
     ...(delta.corpses || previous.corpses ? { corpses: delta.corpses ?? previous.corpses } : {}),
     ...(delta.alerts || previous.alerts ? { alerts: delta.alerts ?? previous.alerts } : {}),

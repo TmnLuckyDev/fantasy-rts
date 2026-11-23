@@ -199,3 +199,17 @@ test('coastal defenders can hit an exposed warship before it is close enough to 
     assert.ok(enemy.hp > 0, race)
   }
 })
+
+test('a single Transfer order boards and disembarks selected land units on the far island', () => {
+  const map = ashfordMap('shattered-isles')
+  const game = new Match(map, defaultMatchSettings('shattered-isles'))
+  const worker = game['spawn']('human', 'worker', cellCenter(38, 55))
+  const ship = game['spawn']('human', 'transport', cellCenter(85, 45))
+  assert.equal(game.command('human', [worker.id], { kind: 'transfer', at: { x: -1, y: -1 } }), false)
+  assert.equal(game.command('human', [worker.id], { kind: 'transfer', at: cellCenter(139, 55) }), true)
+  const restored = Match.restore(structuredClone(game.checkpoint()), map)
+  for (let i = 0; i < 3000 && restored.units.get(worker.id)!.x < 125 * 32; i++) restored.step()
+  assert.equal(restored.units.get(worker.id)?.embarkedOn, undefined)
+  assert.ok(restored.units.get(worker.id)!.x > 125 * 32)
+  assert.equal(restored.units.get(ship.id)?.passengers?.length, 0)
+})

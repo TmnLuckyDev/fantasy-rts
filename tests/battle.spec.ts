@@ -113,8 +113,7 @@ test('desktop and portrait touch players can finish an authoritative match', asy
     const code = await human.locator('#room-code').innerText()
 
     await orc.goto(baseURL + '/?room=' + code)
-    await expect(orc.getByLabel('Room code')).toHaveValue(code)
-    await orc.getByRole('button', { name: 'Join', exact: true }).tap()
+    await expect(orc.locator('#room-code')).toHaveText(code)
     await expect(orc.locator('#seats')).toContainText('Bloodfang Horde · You')
     await human.getByRole('button', { name: 'Ready', exact: true }).click()
     await orc.getByRole('button', { name: 'Ready', exact: true }).tap()
@@ -403,9 +402,11 @@ test('a phone can resume a saved solo match and use worker commands without a se
     const openGround = { x: fieldBox.x + fieldBox.width * .65, y: fieldBox.y + 22 }
     await page.touchscreen.tap(openGround.x, openGround.y)
     await expect(farm).toBeHidden()
+    await expect(page.locator('#placement-tip')).toBeHidden()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
     await expect(idle()).toHaveText(/3/)
-    await page.getByRole('button', { name: 'Gather', exact: true }).tap()
+    const gatherButton = page.getByRole('button', { name: 'Gather', exact: true })
+    if (await gatherButton.getAttribute('aria-expanded') === 'false') await gatherButton.tap()
     await expect(gather).toBeVisible()
     // After loading the game assets the browser can play solo without any connection.
     await context.setOffline(true)
@@ -677,6 +678,7 @@ test('a worker pans and pinches during construction and places ten sites without
     await expect(selected).toHaveText('Peasant')
 
     await page.locator('#cancel-placement').tap()
+    await page.getByRole('button', { name: 'More', exact: true }).tap()
     const kill = page.getByRole('button', { name: 'Kill', exact: true })
     expect(await kill.evaluate(item => item.parentElement?.lastElementChild === item)).toBe(true)
     await expect(kill).toHaveCSS('background-image', /rgb\(135, 53, 46\)/)

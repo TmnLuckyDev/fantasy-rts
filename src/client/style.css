@@ -408,7 +408,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 @media (pointer: coarse) and (orientation: portrait) {
   .hud {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: .35rem .5rem;
     min-height: 0;
   }
@@ -602,4 +602,26 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
   border-color: #c7786a;
   background: linear-gradient(#87352e, #572421);
   color: #fff0e8;
+}
+
+#entry-actions #solo { grid-row: 1; }
+#solo-summary { grid-column: 1 / -1; color: var(--muted); }
+.solo-options { grid-column: 1 / -1; }
+.solo-options summary { cursor: pointer; padding: .55rem; }
+.practice-lessons { display: grid; gap: .25rem; font-size: .8rem; }
+.practice-lessons select, #rematch-map { min-height: 44px; max-width: 100%; }
+#map-expand { padding: .35rem; min-width: 44px; }
+#tactical-map { width: min(40rem, 96vw); border: 1px solid var(--edge); border-radius: 6px; background: #1b2629; color: var(--pale); }
+#tactical-map::backdrop { background: #0c110dbb; }
+#tactical-map-canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; cursor: crosshair; margin-block: .45rem; }
+#control-score { white-space: nowrap; color: var(--gold); font-variant-numeric: tabular-nums; }
+#rematch-map-label, #rematch-swap-label { display: block; margin: .45rem 0; }
+
+@media (pointer: coarse) and (orientation: portrait) {
+  .compact-commands:not(.extra-orders)[data-command-context="economy"] :is(#board,#transfer,#kill-units) { display: none; }
+  .compact-commands:not(.extra-orders)[data-command-context="army"] :is(#economy-action,#explore) { display: none; }
+  #economy-menu { max-height: min(24dvh, 11rem); }
+  #battle-more { order: 9; }
+  #kill-units { order: 10; }
+  #troop-groups button { min-width: 44px; }
 }

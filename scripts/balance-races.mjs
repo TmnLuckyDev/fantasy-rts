@@ -70,7 +70,7 @@ function fleetFor(race) {
     .map(resource => Math.floor(budget[resource] * 10 / cost[resource])))
   return Array(count).fill('warship')
 }
-const strategies = ['balanced', 'rush', 'defensive', 'counter']
+const strategies = ['balanced', 'rush', 'defensive', 'counter', 'expansion']
 
 function battlefront(map) {
   const water = map.id === 'shattered-isles'

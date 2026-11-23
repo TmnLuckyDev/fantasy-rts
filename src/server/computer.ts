@@ -14,7 +14,9 @@ const plans = {
   normal: { cadence: 1, workers: 4, first: 75, interval: 28, guard: 3, wave: 7 },
   hard: { cadence: 1, workers: 5, first: 58, interval: 24, guard: 4, wave: 10 }
 } as const
-type Strategy = 'rush' | 'balanced' | 'defensive' | 'counter'
+export const computerStrategies = ['balanced', 'rush', 'defensive', 'counter', 'expansion'] as const
+type Strategy = typeof computerStrategies[number]
+export const computerStrategyFor = (seed?: number) => computerStrategies[(seed ?? 0) % computerStrategies.length]
 
 const sites: Partial<Record<BuildingKind, Point>> = {
   barracks: { x: 6, y: 2 },
@@ -50,7 +52,7 @@ export class ComputerOpponent {
   constructor(faction: Faction, map: BattleMap, difficulty: Difficulty = 'normal', strategy: Strategy = 'balanced') {
     this.difficulty = difficulty
     this.strategy = strategy
-    const modifier = strategy === 'rush' ? -15 : strategy === 'defensive' ? 20 : 0
+    const modifier = strategy === 'rush' ? -15 : strategy === 'defensive' || strategy === 'expansion' ? 20 : 0
     this.nextAssault = (plans[difficulty].first + modifier) * TICK_HZ
     this.faction = faction
     this.home = map.bases[faction]
@@ -127,7 +129,8 @@ export class ComputerOpponent {
     const builder = workers.length >= 4 ? workers.at(-1) : undefined
     const tier = match.hallLevel(this.faction)
     const advancedEconomy = this.difficulty !== 'easy' && tier === 3 && match.tick >= 200 * TICK_HZ
-    const workerTarget = plan.workers + Number(race === 'undead' || advancedEconomy)
+    const workerTarget = plan.workers + Number(race === 'undead' || advancedEconomy) +
+      (this.strategy === 'expansion' && this.difficulty !== 'easy' ? 2 : 0)
     if (workers.length < workerTarget && !hall.training) {
       match.command(this.faction, [hall.id], { kind: 'train', unit: 'worker' })
     }
@@ -349,9 +352,9 @@ export class ComputerOpponent {
       view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'worker') : undefined
     const hall = view.entities.find(unit => unit.faction !== this.faction && unit.kind === 'headquarters')
     const objectives = (view.controlSites ?? []).filter(site => site.owner !== this.faction)
-    const objective = match.tick >= 120 * TICK_HZ && this.strategy !== 'rush' && objectives.length ?
+    const objective = (match.settings.objective === 'control' || match.tick >= 120 * TICK_HZ && this.strategy !== 'rush') && objectives.length ?
       objectives.reduce((nearest, site) => distance(this.home, site) < distance(this.home, nearest) ? site : nearest) : undefined
-    if (match.command(this.faction, wave.map(unit => unit.id), { kind: 'advance', to: worker ?? hall ?? objective ?? this.enemyBase })) {
+    if (match.command(this.faction, wave.map(unit => unit.id), { kind: 'advance', to: match.settings.objective === 'control' ? objective ?? hall ?? this.enemyBase : worker ?? hall ?? objective ?? this.enemyBase })) {
       for (const unit of wave) this.attacking.add(unit.id)
       this.nextAssault = match.tick + plan.interval * TICK_HZ
     }

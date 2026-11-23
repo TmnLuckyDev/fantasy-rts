@@ -281,6 +281,20 @@ export function mapForSettings(settings: MatchSettings, seed?: number): BattleMa
       if (--missing === 0) break
     }
   }
+  if (settings.objective === 'control' && settings.map !== 'shattered-isles' && settings.sources.gold.count >= 2) {
+    const original = tiles.slice(0, half).flatMap((tile, i) => tile === 'mine' && !reserved.has(i) ? [i] : [])
+      .sort((a, b) => toBase(b) - toBase(a))[0]
+    const center = cellCenter(Math.floor(width / 2), Math.floor(height / 2))
+    const safe = tiles.slice(0, half).flatMap((tile, i) => {
+      if (tile !== 'grass' || i % width < 2 || i % width >= width - 2 || i < width) return []
+      if (![i - 1, i + 1, i - width, i + width].every(index => isWalkable(tiles[index]))) return []
+      return distance(coordinates(i), center) < 10 * TILE && toBase(i) > 9 * TILE ? [i] : []
+    }).sort((a, b) => distance(coordinates(a), center) - distance(coordinates(b), center))[0]
+    if (original !== undefined && safe !== undefined) {
+      mirror(original, 'grass')
+      mirror(safe, 'mine')
+    }
+  }
   return { ...base, ...(seed === undefined ? {} : { seed }), bases, tiles }
 }
 

@@ -12,9 +12,10 @@ test('desktop and portrait touch can choose the same race and play', async ({ br
     const code = page.locator('#room-code')
     await expect(code).toHaveText(/^[A-Z2-9]{5}$/)
     const guest = await mobile.newPage()
-    await guest.goto(baseURL + '/?room=' + await code.innerText())
+    const invite = await code.innerText()
+    await guest.goto(baseURL + '/?room=' + invite)
+    await expect(guest.locator('#room-code')).toHaveText(invite)
     await guest.locator('[data-faction="dwarf"]').tap()
-    await guest.getByRole('button', { name: 'Join', exact: true }).tap()
     await expect(page.locator('#seats')).toContainText('Ironbound Clans')
     await guest.locator('[data-faction="elf"]').tap()
     for (const client of [page, guest]) {

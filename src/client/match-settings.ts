@@ -5,6 +5,14 @@ import type { MatchReport, MatchSettings } from '../shared/match-settings.ts'
 import type { PlayerRaces } from '../shared/protocol.ts'
 import { defaultRaces, factionNames, factions, resourceKinds } from '../shared/protocol.ts'
 
+const mapPlaystyle: Record<MatchSettings['map'], string> = {
+  'ashford-original': 'Compact · two bridges',
+  'ashford-expanded': 'Large · four bridges',
+  'pinewatch-vale': 'Open lanes · forest ambush',
+  'ironbreak-pass': 'Narrow passes · siege',
+  'twinmere-basin': 'Lakes · flanking routes',
+  'shattered-isles': 'Naval · transports required'
+}
 const resourceName = { gold: 'Gold', wood: 'Wood', stone: 'Stone' }
 const sourceName = { gold: 'Gold mines', stone: 'Stone quarries', wood: 'Trees' }
 const format = new Intl.NumberFormat()
@@ -56,6 +64,8 @@ export class MatchSettingsMenu {
     document.querySelector('#score-rule')!.textContent =
       'At the time limit, reserves above 2,000 count half towards score. Score also includes surviving army value, completed research and control of marked objectives. Temporary summons do not score. Losing your headquarters ends the match.'
     document.querySelector<HTMLButtonElement>('#close-settings')!.onclick = () => this.close()
+    const objective = this.form.elements.namedItem('objective') as HTMLSelectElement
+    objective.onchange = () => this.describeObjective(objective.value === 'control')
     this.reset.onclick = () => this.fill(defaultMatchSettings(this.map))
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
     for (const map of mapOptions) {
@@ -77,12 +87,15 @@ export class MatchSettingsMenu {
       wood.max = String(treeLimit(map))
       if (wood.valueAsNumber > treeLimit(map)) wood.value = wood.max
       this.map = map
+      this.describeMap()
     }
     this.form.onsubmit = event => {
       event.preventDefault()
       if (!this.accept) return
       const settings = defaultMatchSettings(this.map)
       const number = (key: string) => this.input(key).value === '' ? null : this.input(key).valueAsNumber
+      settings.objective = objective.value === 'control' ? 'control' : 'classic'
+      if (this.input('extended-reconnect').checked) settings.extendedReconnect = true
       settings.randomStarts = this.input('random-starts').checked
       settings.minutes = number('minutes')
       settings.populationCap = this.input('population-cap').valueAsNumber
@@ -122,10 +135,25 @@ export class MatchSettingsMenu {
 
   private input(name: string) { return this.form.elements.namedItem(name) as HTMLInputElement }
 
+  private describeMap() {
+    document.querySelector('#map-playstyle')!.textContent = mapPlaystyle[this.map]
+  }
+
+  private describeObjective(control: boolean) {
+    document.querySelector('#score-rule')!.textContent = control ?
+      'Hold objectives with combat units or destroy the enemy headquarters. First to 180 points wins. At the time limit only objective points are counted.' :
+      'At the time limit, score includes reserves, surviving military, research and marked objectives. Losing your headquarters ends the match.'
+  }
+
   private fill(settings: MatchSettings) {
+    const objective = this.form.elements.namedItem('objective') as HTMLSelectElement
+    objective.value = settings.objective ?? 'classic'
+    this.describeObjective(objective.value === 'control')
     this.map = settings.map
+    this.describeMap()
     const mapInput = this.form.elements.namedItem('map') as HTMLSelectElement
     mapInput.value = settings.map
+    this.input('extended-reconnect').checked = settings.extendedReconnect ?? false
     this.input('random-starts').checked = settings.randomStarts !== false
     this.input('minutes').value = String(settings.minutes ?? '')
     this.input('population-cap').value = String(settings.populationCap ?? defaultMatchSettings().populationCap)

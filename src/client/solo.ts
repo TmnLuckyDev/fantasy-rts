@@ -1,11 +1,11 @@
 import type { MatchSettings } from '../shared/match-settings.ts'
 import { isFaction } from '../shared/protocol.ts'
-import type { Difficulty, Faction, Race, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
+import type { Difficulty, Faction, Race, PracticeLesson, GlobalTrainCommand, GroupCommand, Order, ServerMessage } from '../shared/protocol.ts'
 import type { SoloInput, SoloOutput, SoloSave } from './solo-runtime.ts'
 
 const key = 'ash-and-iron-solo'
 const activeKey = 'ash-and-iron-solo-active'
-type Slot = { version: 1, owner: string, save: SoloSave | null }
+type Slot = { version: 1, owner: string, savedAt?: number, save: SoloSave | null }
 
 function readSlot(): Slot | null {
   try {
@@ -57,11 +57,17 @@ export class SoloClient {
   get active() { return Boolean(this.transport) }
   get practice() { return this.practicing }
   get saved() { return Boolean(readSlot()?.save) }
+  get savedMatch() {
+    const slot = readSlot()
+    const save = slot?.save
+    if (!save?.match) return
+    return { savedAt: slot?.savedAt, map: save.match.settings?.map, tick: save.match.tick, race: save.match.races?.[save.faction] ?? save.faction }
+  }
   get restoreOnReload() {
     try { return this.saved && sessionStorage.getItem(activeKey) === '1' } catch { return false }
   }
 
-  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice = false) {
+  start(faction: Faction, resume: boolean, difficulty?: Difficulty, settings?: MatchSettings, race?: Race, opponentRace?: Race, practice = false, lesson?: PracticeLesson) {
     if (this.transport) return
     this.manualPause = false
     this.practicing = practice
@@ -71,7 +77,7 @@ export class SoloClient {
     if (!practice) {
       try { sessionStorage.setItem(activeKey, '1') } catch { /* Storage may be restricted. */ }
     }
-    this.startSimulation({ type: 'start', faction, save, difficulty, settings, race, opponentRace, practice, paused: this.simulationPaused })
+    this.startSimulation({ type: 'start', faction, save, difficulty, settings, race, opponentRace, practice, lesson, paused: this.simulationPaused })
     if (!practice && !this.storageAvailable) this.storageError()
   }
 
@@ -151,7 +157,7 @@ export class SoloClient {
 
   private write(save: SoloSave | null) {
     try {
-      localStorage.setItem(key, JSON.stringify({ version: 1, owner: this.owner, save } satisfies Slot))
+      localStorage.setItem(key, JSON.stringify({ version: 1, owner: this.owner, savedAt: Date.now(), save } satisfies Slot))
       return true
     } catch { return false }
   }

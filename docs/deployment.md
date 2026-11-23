@@ -37,3 +37,11 @@ Use an iPhone on Safari in portrait and a desktop browser. Repeat with Android C
 - Reload the phone page during the match. Verify it returns to the same seat with the same explored terrain.
 - Verify the opposite base starts hidden on the map and minimap. Scout it, then retreat and check that terrain remains dimmed and enemy units disappear.
 - Attack enemy troops, then destroy the opposing headquarters. Verify that the two screens show complementary results.
+
+## Load the web client independently of multiplayer
+
+Build the static frontend with `VITE_WEB_SERVER_URL=https://ash-and-iron.onrender.com npm run build:web` and publish `dist/client` to a static host. Configure the backend's `WEB_CLIENT_ORIGIN` with the exact HTTPS origin of that static site. Open the static site to use Practice and local solo while the backend is starting. Invite links from the static frontend open the same static address and reconnect to the shared multiplayer backend.
+
+The existing combined service continues to work with the default build. Its browser page still waits for the service to wake. Native builds bundle the client files independently.
+
+For active rooms to survive instance replacement in production, set `MATCH_SAVE_FILE` to a path on persistent storage. The WebSocket integration suite exercises reconnection with the original seats across a server restart using that path.

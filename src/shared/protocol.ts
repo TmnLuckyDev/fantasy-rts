@@ -131,7 +131,7 @@ export type Effect = {
 }
 
 export type Player = { faction: Faction, race?: Race, connected: boolean, ready: boolean }
-export type Result = { winner: Faction | null, reason: 'headquarters' | 'disconnect' | 'time' }
+export type Result = { winner: Faction | null, reason: 'headquarters' | 'disconnect' | 'time' | 'control' }
 export type RoomState = {
   code: string
   map?: MapId
@@ -146,6 +146,7 @@ export type RoomState = {
   paused?: boolean
   reconnectSeconds?: number
   rematchReady?: Faction[]
+  rematchOptions?: { map?: MapId, swap?: boolean }
   difficulty?: Difficulty
 }
 
@@ -158,10 +159,11 @@ export const isTemplateKind = (kind: unknown): kind is TemplateKind => templateK
 export const MAX_ARMY_GROUP_SIZE = 500
 export const MAX_ARMY_GROUPS = 8
 export type TemplateTarget = { kind: TemplateKind, count: number }
-export type ArmyTemplate = { id: number, name: string, targets: TemplateTarget[], members: Array<{ id: number, kind: TemplateKind }> }
+export type ArmyTemplate = { id: number, name: string, rally?: Point, targets: TemplateTarget[], members: Array<{ id: number, kind: TemplateKind }> }
 export type Order =
   | { kind: 'template-save', template: number, name: string, targets: TemplateTarget[] }
   | { kind: 'template-create', template: 0, name: string, members: number[] }
+  | { kind: 'template-rally', template: number, at: Point }
   | { kind: 'template-rename', template: number, name: string }
   | { kind: 'template-remove', template: number }
   | { kind: 'template-replenish', template: number, expected?: TemplateTarget[] }
@@ -176,6 +178,7 @@ export type Order =
   | { kind: 'explore' }
   | { kind: 'hero-ability' | 'unit-ability' }
   | { kind: 'board', transport?: number }
+  | { kind: 'transfer', at: Point }
   | { kind: 'unload', at?: Point }
   | { kind: 'gather', at: Point }
   | { kind: 'build', building: BuildingKind, at: Point }
@@ -204,7 +207,9 @@ export type ClientMessage =
   | { type: 'create' | 'solo', faction?: Faction, race?: Race, opponentRace?: Race, settings?: MatchSettings }
   | { type: 'join', code: string, faction?: Faction, race?: Race }
   | { type: 'resume', code: string, token: string }
-  | { type: 'leave' | 'rematch' }
+  | { type: 'leave' | 'cancel-queue' }
+  | { type: 'queue', race: Race }
+  | { type: 'rematch', map?: MapId, swap?: boolean }
   | { type: 'faction', faction: Faction }
   | { type: 'race', race: Race }
   | { type: 'settings', settings: MatchSettings }
@@ -213,14 +218,18 @@ export type ClientMessage =
   | GlobalTrainCommand
   | { type: 'command', ids: number[], order: Order }
 
+export const practiceLessons = ['intro', 'build', 'attack', 'group', 'replenish', 'hero', 'naval'] as const
+export type PracticeLesson = typeof practiceLessons[number]
+
 export type AttackAlert = { id: number, kind: 'base' | 'building' | 'workers' | 'army', at: Point, until: number }
 
 export type ControlSite = Point & { owner?: Faction }
 export type DepositInfo = { index: number, remaining: number | null }
 export type Corpse = Point & { id: number, expiresAt: number }
 
-export type Snapshot = { income?: Resources, templates?: ArmyTemplate[], hallLevel?: number, controlSites?: ControlSite[], corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
+export type Snapshot = { controlScore?: Record<Faction, number>, income?: Resources, templates?: ArmyTemplate[], hallLevel?: number, controlSites?: ControlSite[], corpses?: Corpse[], type: 'snapshot', deposits?: DepositInfo[], tick: number, entities: Entity[], effects: Effect[], resources: Resources, population: Population, fog: string, upgrades?: UpgradeKind[], depleted?: number[], alerts?: AttackAlert[] }
 export type ServerMessage =
+  | { type: 'queue-status', waiting: boolean }
   | { type: 'session', code: string, token: string, faction: Faction }
   | { type: 'room', room: RoomState, faction: Faction }
   | { type: 'error', message: string, resetSession?: boolean }

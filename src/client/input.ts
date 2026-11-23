@@ -6,6 +6,7 @@ type Actions = {
   select: (point: Point, append: boolean, touch: boolean) => void
   selectBox: (rect: SelectionRect, append: boolean) => void
   order: (point: Point) => void
+  singleFingerPan?: () => boolean
   touchDragThreshold?: () => number
   camera: (from: Point, to: Point, zoomRatio: number) => void
 }
@@ -21,6 +22,8 @@ export class BattlefieldInput {
   private down: Point | null = null
   private gesture: CameraGesture | null = null
   private frame = 0
+  private oneFingerPan = false
+  private panning = false
   private listeners = new AbortController()
 
   private readonly element: HTMLElement
@@ -85,6 +88,8 @@ export class BattlefieldInput {
     this.pointers.set(event.pointerId, point)
     if (this.pointers.size === 1) {
       this.down = point
+      this.oneFingerPan = event.pointerType === 'touch' && this.actions.singleFingerPan?.() === true
+      this.panning = false
     } else {
       this.down = null
       this.selection = null
@@ -95,7 +100,13 @@ export class BattlefieldInput {
   private move = (event: PointerEvent) => {
     if (!this.pointers.has(event.pointerId)) return
     const point = this.point(event)
+    const previous = this.pointers.get(event.pointerId)!
     this.pointers.set(event.pointerId, point)
+    if (this.down && this.oneFingerPan && (this.panning || distance(this.down, point) >= dragThreshold)) {
+      this.actions.camera(this.panning ? previous : this.down, point, 1)
+      this.panning = true
+      return
+    }
     if (this.gesture) {
       if (!this.frame) this.frame = requestAnimationFrame(this.updateGesture)
     } else if (this.down && (this.selection || distance(this.down, point) >= this.dragThreshold(event))) {
@@ -146,7 +157,7 @@ export class BattlefieldInput {
 
   private cancel = (event: PointerEvent) => {
     if (!this.pointers.delete(event.pointerId)) return
-    const from = this.down
+    const from = this.panning ? null : this.down
     const dragged = Boolean(this.selection)
     this.down = null
     this.selection = null

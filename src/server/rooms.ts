@@ -32,6 +32,7 @@ type Room = {
   computer: ComputerOpponent | null
   reconnectSeconds?: number
   rematchReady?: Set<Faction>
+  rematchOptions?: Pick<Extract<ClientMessage, { type: 'rematch' }>, 'map' | 'swap'>
   updatedAt: number
   finishedAt: number
 }
@@ -50,6 +51,7 @@ const send = (peer: WebSocket | null, message: ServerMessage) => {
 
 export class Rooms {
   private rooms = new Map<string, Room>()
+  private queue = new Map<WebSocket, Race>()
   private sessions = new Map<WebSocket, Session>()
   private revealed = new WeakSet<WebSocket>()
   private snapshots = new WeakMap<WebSocket, Snapshot>()
@@ -80,6 +82,16 @@ export class Rooms {
 
   handle(peer: WebSocket, message: ClientMessage, now = Date.now()) {
     const session = this.sessions.get(peer)
+    if (message.type === 'cancel-queue') {
+      this.queue.delete(peer)
+      send(peer, { type: 'queue-status', waiting: false })
+      return
+    }
+    if (message.type === 'queue') {
+      if (!session) this.enqueue(peer, message.race, now)
+      return
+    }
+    if (message.type === 'resume' || message.type === 'create' || message.type === 'solo' || message.type === 'join') this.queue.delete(peer)
     if (message.type === 'resume') {
       if (session) return
       const room = this.rooms.get(message.code)
@@ -126,14 +138,36 @@ export class Rooms {
     if (message.type === 'rematch') {
       if (!room.match?.result || room.computer || room.seats.length !== 2 || !room.seats.every(member => member.peer)) return
       const votes = room.rematchReady ??= new Set()
+      if (!votes.size) room.rematchOptions = { map: message.map, swap: message.swap }
       votes.add(seat.faction)
       if (votes.size === 2) {
-        room.match = Match.start(room.settings, room.match.races)
+        const map = room.rematchOptions?.map
+        const swap = room.rematchOptions?.swap
+        if (map && map !== room.settings.map) {
+          const previous = defaultMatchSettings(room.settings.map)
+          const next = defaultMatchSettings(map)
+          const sources = { ...room.settings.sources }
+          for (const resource of ['gold', 'wood', 'stone'] as const) {
+            const source = sources[resource]
+            const count = source.count === previous.sources[resource].count ? next.sources[resource].count :
+              resource === 'wood' ? Math.min(source.count, next.sources.wood.count) : source.count
+            sources[resource] = { ...source, count }
+          }
+          room.settings = { ...room.settings, map, sources }
+        }
+        if (swap) for (const member of room.seats) member.faction = opposite(member.faction)
+        const races = { ...defaultRaces }
+        for (const member of room.seats) races[member.faction] = member.race
+        room.match = Match.start(room.settings, races)
+        room.rematchOptions = undefined
         room.finishedAt = 0
         room.rematchReady = undefined
         for (const member of room.seats) {
           this.revealed.delete(member.peer!)
           this.snapshots.delete(member.peer!)
+        }
+        if (swap) for (const member of room.seats) {
+          send(member.peer, { type: 'session', code: room.code, token: member.token, faction: member.faction })
         }
         this.broadcastRoom(room, now)
         this.broadcastSnapshot(room)
@@ -191,6 +225,32 @@ export class Rooms {
     if (room.match) this.broadcastSnapshot(room)
   }
 
+  private enqueue(peer: WebSocket, race: Race, now: number) {
+    this.queue.delete(peer)
+    const candidate = [...this.queue].find(([other]) => other.readyState === WebSocket.OPEN && !this.sessions.has(other))
+    if (!candidate) {
+      this.queue.set(peer, race)
+      send(peer, { type: 'queue-status', waiting: true })
+      return
+    }
+    const [other, opponent] = candidate
+    const settings = { ...defaultMatchSettings('ashford-original'), minutes: 12, populationCap: 120 }
+    const room = this.createRoom('human', opponent, false, now, settings)
+    if (!room) {
+      send(peer, { type: 'error', message: 'Server is full. Try again shortly.' })
+      return
+    }
+    this.queue.delete(other)
+    send(other, { type: 'queue-status', waiting: false })
+    send(peer, { type: 'queue-status', waiting: false })
+    this.join(other, room, 'human', opponent)
+    this.join(peer, room, 'orc', race)
+    for (const seat of room.seats) seat.ready = true
+    room.match = Match.start(settings, { human: opponent, orc: race })
+    this.broadcastRoom(room, now)
+    this.broadcastSnapshot(room)
+  }
+
   private createRoom(faction: Faction, race: Race, solo: boolean, now: number, settings = defaultMatchSettings(), opponent?: Race) {
     if (this.rooms.size >= roomLimit) return
     let code: string
@@ -223,6 +283,7 @@ export class Rooms {
   }
 
   disconnect(peer: WebSocket, explicit = false, now = Date.now()) {
+    this.queue.delete(peer)
     const session = this.sessions.get(peer)
     if (!session) return
     this.sessions.delete(peer)
@@ -250,7 +311,7 @@ export class Rooms {
     for (const room of this.rooms.values()) {
       if (!room.match) {
         const seatsBefore = room.seats.length
-        room.seats = room.seats.filter(seat => seat.peer || now - seat.disconnectedAt < reconnectWindow)
+        room.seats = room.seats.filter(seat => seat.peer || now - seat.disconnectedAt < (room.settings.extendedReconnect ? 90_000 : reconnectWindow))
         if (!room.seats.length || now - room.updatedAt > lobbyLifetime) {
           this.close(room)
         } else if (room.seats.length !== seatsBefore) this.broadcastRoom(room)
@@ -280,7 +341,8 @@ export class Rooms {
   private secondsToReconnect(room: Room, now: number) {
     if (!this.paused(room)) return
     const missing = room.seats.filter(seat => !seat.peer)
-    const deadline = Math.min(...missing.map(seat => seat.disconnectedAt + reconnectWindow))
+    const window = room.settings.extendedReconnect ? 90_000 : reconnectWindow
+    const deadline = Math.min(...missing.map(seat => seat.disconnectedAt + window))
     return Math.max(0, Math.ceil((deadline - now) / 1000))
   }
 
@@ -352,6 +414,7 @@ export class Rooms {
       paused: this.paused(room),
       reconnectSeconds: room.reconnectSeconds,
       rematchReady: room.rematchReady ? [...room.rematchReady] : undefined,
+      rematchOptions: room.rematchReady?.size ? room.rematchOptions : undefined,
       players
     }
     for (const seat of room.seats) send(seat.peer, { type: 'room', room: state, faction: seat.faction })
