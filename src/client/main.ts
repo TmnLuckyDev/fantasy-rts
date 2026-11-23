@@ -949,8 +949,10 @@ function setGatherOpen(open: boolean) {
   syncWorkerActions()
 }
 button('gather-open').onclick = () => {
+  const open = workerActions.hidden
+  if (placing) scene?.place(null)
   closeEconomyMenu()
-  setGatherOpen(workerActions.hidden)
+  setGatherOpen(open)
 }
 button('gather-deposit').onclick = () => scene?.gatherInspectedDeposit()
 
