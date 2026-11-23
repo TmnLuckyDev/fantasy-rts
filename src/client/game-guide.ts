@@ -22,6 +22,14 @@ const roles: Record<UnitKind, string> = {
   warship: 'Armed ship for naval battles and coastal attacks.'
 }
 
+const counterplay: Record<Race, string> = {
+  human: 'Break balanced formations by reaching isolated ranged troops.',
+  orc: 'Scout early attacks and keep reinforcements close.',
+  dwarf: 'Use siege against entrenched defenses or take a different route.',
+  elf: 'Approach archers from several sides. Scouts reveal forest ambushes.',
+  undead: 'Move the fight away from corpses and target support units.'
+}
+
 function unitEntry(race: Race, kind: UnitKind, producers: string[]) {
   const stats = unitStats[race][kind]
   const rule = trainingRule(kind, race)
@@ -71,7 +79,7 @@ export function configureGameGuide() {
   function drawWiki() {
     const race = raceChoice.value
     if (!isRace(race)) return
-    description.textContent = raceRules[race].description
+    description.textContent = raceRules[race].description + ' Counterplay · ' + counterplay[race]
     const entries = unitKinds.flatMap(kind => {
       const producers = (['headquarters', ...buildingKinds] as const)
         .filter(building => trainedAt(building, race).includes(kind))

@@ -50,6 +50,7 @@ export class BattleScene extends Phaser.Scene {
   quality: 'low' | 'medium' | 'high' | 'auto' = 'high'
   singleFingerPan = false
   private frameTime = 16.7
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
   private previousCamera?: { center: Point, zoom: number }
   private formationPreview?: { slots: Point[], point: Point, heading: Point, born: number }
   private effects: AnimatedEffect[] = []
@@ -980,7 +981,7 @@ export class BattleScene extends Phaser.Scene {
     const quality = this.quality === 'auto' ? this.frameTime > 33 ? 'low' : this.frameTime > 22 ? 'medium' : 'high' : this.quality
     const crowded = this.visuals.size >= largeBattleCount
     this.water.clear()
-    const glints = crowded || quality === 'low' ? 0 : Math.min(quality === 'medium' ? 18 : 48, this.waterTiles.length)
+    const glints = crowded || quality === 'low' || this.reducedMotion.matches ? 0 : Math.min(quality === 'medium' ? 18 : 48, this.waterTiles.length)
     for (let i = 0; i < glints; i++) {
       const tile = this.waterTiles[Math.floor(i * this.waterTiles.length / glints)]
       const x = tile % this.map.width * TILE + 3 + (i * 13) % 12
@@ -1001,7 +1002,7 @@ export class BattleScene extends Phaser.Scene {
       if (!crowded) this.graphics.fillStyle(0xa087af, 0.5).fillEllipse(corpse.x, corpse.y + 2, 13, 4)
     }
     this.updateTerrain(center, halfWidth, halfHeight)
-    const walkFrame = quality === 'low' ? 0 : Math.floor(time / (crowded || quality === 'medium' ? 200 : 125)) % 2
+    const walkFrame = quality === 'low' || this.reducedMotion.matches ? 0 : Math.floor(time / (crowded || quality === 'medium' ? 200 : 125)) % 2
     let healthBars = 0
     const groupMarkers = new Set<number>()
     const rangeMarkers: Visual[] = []
@@ -1120,7 +1121,7 @@ export class BattleScene extends Phaser.Scene {
         this.graphics.fillStyle(0x382611, 1).fillRect(sprite.x - 8, y, 16, 5)
         this.graphics.fillStyle(0xffd575, 1).fillRect(sprite.x - 7, y + 1, level * 2.8, 3)
       }
-      if (quality !== 'low' && building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
+      if (quality !== 'low' && !this.reducedMotion.matches && building && entity.construction === undefined && entity.hp < entity.maxHp * 0.5) this.paintFire(sprite.x + 19, sprite.y - 18, time)
       if (!crowded && entity.hp < lastHp) this.graphics.fillStyle(0xffdc99, 0.85).fillRect(sprite.x - 1, sprite.y - 19, 3, 3)
     }
     this.paintEffects(time, center, halfWidth, halfHeight, crowded || quality !== 'high')

@@ -5,7 +5,7 @@ import type { SoloInput, SoloOutput, SoloSave } from './solo-runtime.ts'
 
 const key = 'ash-and-iron-solo'
 const activeKey = 'ash-and-iron-solo-active'
-type Slot = { version: 1, owner: string, save: SoloSave | null }
+type Slot = { version: 1, owner: string, savedAt?: number, save: SoloSave | null }
 
 function readSlot(): Slot | null {
   try {
@@ -58,9 +58,10 @@ export class SoloClient {
   get practice() { return this.practicing }
   get saved() { return Boolean(readSlot()?.save) }
   get savedMatch() {
-    const save = readSlot()?.save
+    const slot = readSlot()
+    const save = slot?.save
     if (!save?.match) return
-    return { map: save.match.settings?.map, tick: save.match.tick, race: save.match.races?.[save.faction] ?? save.faction }
+    return { savedAt: slot?.savedAt, map: save.match.settings?.map, tick: save.match.tick, race: save.match.races?.[save.faction] ?? save.faction }
   }
   get restoreOnReload() {
     try { return this.saved && sessionStorage.getItem(activeKey) === '1' } catch { return false }
@@ -156,7 +157,7 @@ export class SoloClient {
 
   private write(save: SoloSave | null) {
     try {
-      localStorage.setItem(key, JSON.stringify({ version: 1, owner: this.owner, save } satisfies Slot))
+      localStorage.setItem(key, JSON.stringify({ version: 1, owner: this.owner, savedAt: Date.now(), save } satisfies Slot))
       return true
     } catch { return false }
   }

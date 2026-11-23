@@ -1805,7 +1805,6 @@ export class Match {
     if (!this.routes.size) return
     let processed = 0
     const checked = new Set<Faction>()
-    const shared = new Map<string, Point[]>()
     for (const [unit, destination] of this.routes) {
       this.routes.delete(unit)
       if (this.units.get(unit.id) !== unit) continue
@@ -1818,11 +1817,7 @@ export class Match {
         checked.add(unit.faction)
       }
       const radius = unitStats[this.races[unit.faction]][unit.kind].radius
-      const key = unit.faction + ':' + radius + ':' + Math.floor(unit.x / TILE) + ':' + Math.floor(unit.y / TILE) + ':' + destination.x + ':' + destination.y
-      const previous = shared.get(key)
-      const path = previous?.length && clearSegment(this.map, unit, previous[0], blockers, radius) ? [...previous] :
-        findPath(this.map, unit, destination, blockers, radius, cached?.grid)
-      if (!previous && path.length > 1) shared.set(key, [...path])
+      const path = findPath(this.map, unit, destination, blockers, radius, cached?.grid)
       const order = unit.order
       if (path.length === 0 && (order?.kind === 'move' || order?.kind === 'advance') && order.formation &&
           unit.assigned && squaredDistance(unit.assigned, order.to) > 4) {

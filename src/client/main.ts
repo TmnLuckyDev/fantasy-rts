@@ -184,6 +184,15 @@ let currentTick = 0
 let population: Population = { used: 0, reserved: 0, limit: 0 }
 const matchOptions = element<HTMLDialogElement>('match-options-sheet')
 const qualityChoice = element<HTMLSelectElement>('graphics-quality')
+const favoriteChoice = element<HTMLSelectElement>('favorite-building')
+function favoriteBuilding() {
+  try { return buildingKinds.find(kind => kind === localStorage.getItem('ash-iron-favorite-' + chosenRace)) }
+  catch { return undefined }
+}
+favoriteChoice.onchange = () => {
+  try { localStorage.setItem('ash-iron-favorite-' + chosenRace, favoriteChoice.value) }
+  catch { /* Storage is optional. */ }
+}
 const filterChoice = element<HTMLSelectElement>('selection-filter')
 let quality: 'low' | 'medium' | 'high' | 'auto' = touch ? 'auto' : 'high'
 try {
@@ -238,7 +247,11 @@ function refreshSoloButton() {
   button('play-new').hidden = !saved
   button('play-new').disabled = client.hasSeat
   element('solo-summary').hidden = !saved
-  if (saved) setText('solo-summary', factionNames[saved.race] + ' · ' + ashfordMap(saved.map).name + ' · ' + clockText(Math.floor(saved.tick / TICKS_PER_SECOND)))
+  if (saved) {
+    const time = saved.savedAt && Number.isFinite(saved.savedAt) ? ' · Saved ' + new Date(saved.savedAt).toLocaleString() : ''
+    setText('solo-summary', factionNames[saved.race] + ' · ' + ashfordMap(saved.map).name + ' · ' +
+      clockText(Math.floor(saved.tick / TICKS_PER_SECOND)) + time)
+  }
   button('practice').disabled = client.hasSeat
 }
 
@@ -1087,11 +1100,24 @@ buildQueueAction.hidden = true
 button('gather-open').after(buildQueueAction)
 
 function buildChoices() {
-  return [...buildingKinds].sort((a, b) => buildingTier(a) - buildingTier(b)).map(kind => {
+  const favorite = favoriteBuilding()
+  const queued = new Map<string, number>()
+  for (const entity of ownEntities) if (entity.construction !== undefined) {
+    queued.set(entity.kind, (queued.get(entity.kind) ?? 0) + 1)
+  }
+  return [...buildingKinds].sort((a, b) =>
+    Number(b === favorite) - Number(a === favorite) || Number(queued.has(b)) - Number(queued.has(a)) ||
+    buildingTier(a) - buildingTier(b)).map(kind => {
     const choice = economyChoice(kind, buildings[kind].cost, 0, () => {
       scene?.place(kind)
       closeEconomyMenu()
     })
+    const labels = [kind === favorite ? 'Favorite' : '', queued.has(kind) ? queued.get(kind) + ' under construction' : ''].filter(Boolean)
+    if (labels.length) {
+      const status = document.createElement('small')
+      status.textContent = labels.join(' · ')
+      choice.querySelector('span')?.append(status)
+    }
     choiceRules.get(choice)!.tier = buildingTier(kind)
     return choice
   })
@@ -2002,6 +2028,8 @@ button('match-options').onclick = () => {
   setGatherOpen(false)
   toggleFormation(false)
   drawEconomyBreakdown()
+  favoriteChoice.replaceChildren(new Option('None', ''), ...buildingKinds.map(kind => new Option(entityNames[chosenRace][kind], kind)))
+  favoriteChoice.value = favoriteBuilding() ?? ''
   matchOptions.showModal()
 }
 button('close-match-options').onclick = () => matchOptions.close()

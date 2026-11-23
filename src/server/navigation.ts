@@ -78,19 +78,24 @@ export function findPath(map: BattleMap, start: Point, target: Point, obstacles:
   const source = cellId(start)
   const desiredX = Math.floor(target.x / TILE)
   const desiredY = Math.floor(target.y / TILE)
-  const candidates: Point[] = []
+  const candidates: Array<{ point: Point, targetGap: number, startGap: number }> = []
   for (let dy = -3; dy <= 3; dy++) {
     for (let dx = -3; dx <= 3; dx++) {
+      if (!openCell(desiredX + dx, desiredY + dy)) continue
       const point = cellCenter(desiredX + dx, desiredY + dy)
-      if (openCell(desiredX + dx, desiredY + dy)) candidates.push(point)
+      candidates.push({
+        point,
+        targetGap: (point.x - target.x) ** 2 + (point.y - target.y) ** 2,
+        startGap: (point.x - start.x) ** 2 + (point.y - start.y) ** 2
+      })
     }
   }
-  candidates.sort((a, b) => distance(a, target) - distance(b, target) || distance(a, start) - distance(b, start))
+  candidates.sort((a, b) => a.targetGap - b.targetGap || a.startGap - b.startGap)
   if (!candidates.length) return []
   const approach = canStand(map, target, obstacles, radius)
-    ? candidates.find(point => clearSegment(map, point, target, obstacles, radius))
+    ? candidates.find(({ point }) => clearSegment(map, point, target, obstacles, radius))?.point
     : undefined
-  const waypoint = approach ?? candidates[0]
+  const waypoint = approach ?? candidates[0].point
   const destination = approach ? target : waypoint
   const goal = cellId(waypoint)
   if (source === goal) {
@@ -146,8 +151,8 @@ export function findPath(map: BattleMap, start: Point, target: Point, obstacles:
     if (visited[current] || entry.priority > cost[current] + heuristic(current) + 0.00001) continue
     if (current === goal) {
       const path: Point[] = distance(waypoint, destination) > 0.1 ? [destination] : []
-      for (let id = current; id !== source; id = previous[id]) path.unshift(center(id))
-      return path
+      for (let id = current; id !== source; id = previous[id]) path.push(center(id))
+      return path.reverse()
     }
     visited[current] = 1
     const x = current % map.width
