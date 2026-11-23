@@ -618,7 +618,7 @@ h1 span, .wordmark span { color: var(--gold); font-size: 0.75em; }
 
 @media (pointer: coarse) and (orientation: portrait) {
   .compact-commands:not(.extra-orders)[data-command-context="economy"] :is(#board,#transfer,#kill-units) { display: none; }
-  .compact-commands:not(.extra-orders)[data-command-context="army"] :is(#economy-action,#formation,#explore) { display: none; }
+  .compact-commands:not(.extra-orders)[data-command-context="army"] :is(#economy-action,#explore) { display: none; }
   #battle-more { order: 9; }
   #kill-units { order: 10; }
   #troop-groups button { min-width: 44px; }

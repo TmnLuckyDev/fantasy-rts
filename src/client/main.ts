@@ -1803,7 +1803,7 @@ function customButton(target: EventTarget | null) {
   return target instanceof Element ? target.closest<HTMLButtonElement>('button[data-army-group]') : null
 }
 
-let groupPress: { id: number, x: number, y: number, timeout: number, suppressTap: boolean } | undefined
+let groupPress: { id: number, x: number, y: number, scrollLeft: number, timeout: number, suppressTap: boolean } | undefined
 
 function cancelGroupPress(suppressTap: boolean) {
   if (!groupPress) return
@@ -1821,7 +1821,7 @@ groupBar.addEventListener('pointerdown', event => {
     cancelGroupPress(true)
     openArmyGroups(group)
   }, 500)
-  groupPress = { id: event.pointerId, x: event.clientX, y: event.clientY, timeout, suppressTap: false }
+  groupPress = { id: event.pointerId, x: event.clientX, y: event.clientY, scrollLeft: groupBar.scrollLeft, timeout, suppressTap: false }
 })
 window.addEventListener('pointermove', event => {
   if (groupPress?.id === event.pointerId &&
@@ -1834,7 +1834,9 @@ window.addEventListener('pointercancel', event => {
   if (groupPress?.id === event.pointerId) cancelGroupPress(true)
 })
 window.addEventListener('blur', () => cancelGroupPress(true))
-groupBar.addEventListener('scroll', () => cancelGroupPress(true), { passive: true })
+groupBar.addEventListener('scroll', () => {
+  if (groupPress && Math.abs(groupBar.scrollLeft - groupPress.scrollLeft) > 1) cancelGroupPress(true)
+}, { passive: true })
 groupBar.addEventListener('click', event => {
   if (!customButton(event.target) || !groupPress?.suppressTap || event.detail === 0) return
   event.preventDefault()

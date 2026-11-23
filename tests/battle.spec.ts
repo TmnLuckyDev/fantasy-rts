@@ -404,7 +404,8 @@ test('a phone can resume a saved solo match and use worker commands without a se
     await expect(farm).toBeHidden()
     await expect(page.locator('#selection-name')).toHaveText('Peon')
     await expect(idle()).toHaveText(/3/)
-    await page.getByRole('button', { name: 'Gather', exact: true }).tap()
+    const gatherButton = page.getByRole('button', { name: 'Gather', exact: true })
+    if (await gatherButton.getAttribute('aria-expanded') === 'false') await gatherButton.tap()
     await expect(gather).toBeVisible()
     // After loading the game assets the browser can play solo without any connection.
     await context.setOffline(true)
