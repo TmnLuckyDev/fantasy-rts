@@ -15,13 +15,14 @@ import { BASE_POPULATION, FARM_POPULATION, GATHERING,
 import { canStand, clearSegment, findPath, NavigationGrid } from './navigation.ts'
 import type { Obstacle } from './navigation.ts'
 import { CONTROL_RADIUS, CONTROL_VICTORY_SCORE, TICKS_PER_SECOND, defaultMatchSettings, emptyMatchStats } from '../shared/match-settings.ts'
-import type { FinalStats, MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
+import type { MatchReport, MatchSettings, MatchStats } from '../shared/match-settings.ts'
 import { formationSlots } from './formations.ts'
 import { AttackAlerts } from './attack-alerts.ts'
 import { SpatialIndex } from './spatial.ts'
 import { Coast } from './coast.ts'
 import type { Landing } from './coast.ts'
 import { Visibility } from './visibility.ts'
+import { matchReport, scoreSites } from './match-scoring.ts'
 
 export const TICK_HZ = TICKS_PER_SECOND
 const transportCapacity = 30
@@ -143,7 +144,7 @@ export class Match {
     this.races = { ...races }
     this.usesCorpses = Object.values(races).includes('undead')
     this.settings = settings
-    this.controlSites = settings.minutes || settings.objective === 'control' ? this.scoreSites() : []
+    this.controlSites = settings.minutes || settings.objective === 'control' ? scoreSites(this.map) : []
     this.deposits = map.tiles.flatMap((tile, index) => {
       const resource = tile === 'forest' ? 'wood' : tile === 'mine' ? 'gold' : tile === 'quarry' ? 'stone' : null
       return resource ? [{ index, resource, at: cellCenter(index % map.width, Math.floor(index / map.width)) }] : []
@@ -1432,27 +1433,6 @@ export class Match {
     }
   }
 
-  private scoreSites(): ControlSite[] {
-    const sites: ControlSite[] = []
-    const mid = Math.floor(this.map.width / 2)
-    for (const fraction of [0.25, 0.5, 0.75]) {
-      const row = Math.floor(this.map.height * fraction)
-      let best = Infinity
-      let site: Point | undefined
-      for (let y = Math.max(1, row - 7); y < Math.min(this.map.height - 1, row + 8); y++) {
-        for (let x = mid - 8; x <= mid + 8; x++) {
-          const tile = tileAt(this.map, x, y)
-          const gap = (x - mid) ** 2 + (y - row) ** 2
-          if (!(this.map.id === 'shattered-isles' ? isWater(tile) : isWalkable(tile)) || gap >= best) continue
-          best = gap
-          site = cellCenter(x, y)
-        }
-      }
-      if (site) sites.push(site)
-    }
-    return sites
-  }
-
   private scoreControl(increase: boolean) {
     for (const site of this.controlSites) {
       const present = factions.filter(faction => [...this.nearby[faction].near(site, CONTROL_RADIUS)].some(unit =>
@@ -1464,30 +1444,8 @@ export class Match {
   }
 
   report(): MatchReport {
-    const sides = {} as Record<Faction, FinalStats>
-    const value = (cost: Partial<Resources>) => (cost.gold ?? 0) + (cost.wood ?? 0) + (cost.stone ?? 0)
-    for (const faction of factions) {
-      const bank = { ...this.resources[faction] }
-      let army = 0
-      let military = 0
-      for (const unit of this.units.values()) {
-        if (unit.faction !== faction || !isUnitKind(unit.kind) || unit.kind === 'worker' || unit.summonedUntil) continue
-        army++
-        military += value(trainingCost(unit.kind, this.races[faction]))
-      }
-      const levels = new Map<UpgradeKind, number>()
-      let research = 0
-      for (const kind of this.upgrades[faction]) {
-        const level = (levels.get(kind) ?? 0) + 1
-        levels.set(kind, level)
-        research += value(researchCost(kind, level))
-      }
-      const territory = this.territory[faction]
-      const reserves = value(bank)
-      const score = this.settings.objective === 'control' ? territory : Math.min(reserves, 2000) + Math.floor(Math.max(0, reserves - 2000) / 2) + military + research + territory
-      sides[faction] = { ...this.stats[faction], gathered: { ...this.stats[faction].gathered }, bank, army, military, research, territory, score }
-    }
-    return { elapsedSeconds: Math.floor(this.tick / TICK_HZ), sides }
+    return matchReport({ tick: this.tick, objective: this.settings.objective, races: this.races,
+      resources: this.resources, units: this.units, upgrades: this.upgrades, territory: this.territory, stats: this.stats })
   }
 
   step() {
@@ -2037,7 +1995,6 @@ export class Match {
   private awardHeroExperience(faction: Faction, defeated: Unit) {
     const hero = this.activeHeroes[faction]
     if (!hero || !isHeroKind(hero.kind) || squaredDistance(hero, defeated) > 224 ** 2) return
-    const previous = hero.experience ?? 0
     const reward = defeated.kind === 'worker' ? 10 : isUnitKind(defeated.kind) ? 24 : 36
     this.gainHeroExperience(hero, reward)
   }

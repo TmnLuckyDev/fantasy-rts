@@ -33,7 +33,7 @@ test('only the owner receives an alert at the defender location and deltas clear
   const before = match.view('human')
   const hall = match.units.get(1)!
   const orc = match.units.get(9)!
-  for (const [id, unit] of match.units) if (id !== 1 && id !== 8 && id !== 9) match.units.delete(id)
+  for (const id of match.units.keys()) if (id !== 1 && id !== 8 && id !== 9) match.units.delete(id)
   Object.assign(orc, { x: hall.x + 40, y: hall.y })
   match.step()
   match.step()

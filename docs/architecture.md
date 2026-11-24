@@ -19,4 +19,14 @@ Ash & Iron uses Phaser 3.90, TypeScript, Vite, Node 22 and the `ws` WebSocket li
 - `src/client/` handles input, connection state, sprite rendering and the interface. Sprite positions blend toward the latest snapshot. The client issues orders and displays server results.
 - `tests/` covers the rules, real WebSocket exchange and browser match flow. CI runs checks on GitHub-hosted runners.
 
+### UI and scoring modules
+
+- `src/client/main.ts` connects the lobby, match state, dialogs and the battle scene.
+- `src/client/race-picker.ts` renders the lobby's race choices from the shared race list. `portraits.ts` draws the same unit and building portraits for the lobby and HUD.
+- `src/client/troop-bar.ts` owns the troop buttons, including custom groups and their order. `troop-groups.ts` indexes the live army, while `army-group-details.ts` calculates group composition, queue availability and reads or writes saved blueprints.
+- `src/client/hud-format.ts` formats costs and construction or recruitment progress. Shared economy rules remain in `src/shared/economy.ts`.
+- `src/server/match-scoring.ts` calculates match reports and control site locations. `Match` still owns live simulation state and control point updates.
+
+The TypeScript check also rejects unused local declarations and parameters. Browser event handlers, Phaser lifecycle hooks, shared wire/save types and historical benchmark files should be retained when their consumers require them.
+
 The server tracks unexplored, explored and currently visible tiles for each faction. Snapshots include its sight mask, its own stockpile and population, and entities and effects it can see. The client uses the same mask on the battlefield and minimap. Static terrain is defined in the shared map, and the server validates attack targets, construction sites and gathering orders against faction sight. Rooms require one live process. A future multi-process deployment will need room routing and a single owner for each simulation.
