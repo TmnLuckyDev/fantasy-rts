@@ -6,6 +6,7 @@ final class PackagedGameTests: XCTestCase {
         app.launch()
         let start = app.buttons["Play vs Computer"]
         XCTAssertTrue(start.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Create room"].isEnabled)
         start.tap()
 
         let pause = app.buttons["Pause"]

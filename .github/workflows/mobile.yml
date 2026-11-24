@@ -47,8 +47,6 @@ jobs:
 
   ios:
     runs-on: macos-26
-    env:
-      VITE_MOBILE_SERVER_URL: https://backend.invalid
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
@@ -59,6 +57,17 @@ jobs:
       - run: xcodebuild -version
       - run: npm ci
       - run: npm run build:ios
+      - name: Package iOS simulator app
+        run: ditto -c -k --sequesterRsrc --keepParent ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app Ash-and-Iron-iOS-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ash-and-Iron-iOS-simulator
+          path: Ash-and-Iron-iOS-simulator.zip
+          if-no-files-found: error
+      - name: Sync offline-only test bundle
+        run: npm run ios:sync
+        env:
+          VITE_MOBILE_SERVER_URL: https://backend.invalid
       - name: Test offline solo with native iPhone taps
         run: |
           set -euo pipefail

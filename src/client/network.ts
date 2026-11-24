@@ -15,13 +15,19 @@ export class ConnectionClient {
   private seat: SavedSeat | null = null
   private started = false
   private pending: ClientMessage | undefined
+  private readonly receive: (message: ServerMessage) => void
+  private readonly status: (connection: Connection) => void
+  private readonly backend?: string
 
   constructor(
-    private receive: (message: ServerMessage) => void,
-    private status: (connection: Connection) => void,
-    private backend?: string,
+    receive: (message: ServerMessage) => void,
+    status: (connection: Connection) => void,
+    backend?: string,
     defer = false
   ) {
+    this.receive = receive
+    this.status = status
+    this.backend = backend
     try {
       const saved = JSON.parse(sessionStorage.getItem('ash-and-iron-seat') ?? 'null') as SavedSeat | null
       if (saved && new URLSearchParams(location.search).get('room') !== saved.code &&
@@ -62,6 +68,7 @@ export class ConnectionClient {
   setAppActive(active: boolean) {
     if (active === this.active) return
     this.active = active
+    if (!this.started) return
     if (active) {
       this.connect()
     } else {
