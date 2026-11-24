@@ -12,8 +12,6 @@ export type Race = typeof races[number]
 export type PlayerRaces = Record<PlayerId, Race>
 export const defaultRaces: PlayerRaces = { human: 'human', orc: 'orc' }
 export const isRace = (value: unknown): value is Race => races.some(race => race === value)
-export const soloRaces = (race: Race, opponent?: Race): PlayerRaces => race === 'orc'
-  ? { human: opponent ?? 'human', orc: race } : { human: race, orc: opponent ?? 'orc' }
 export const raceOf = (entity: { race?: Race, faction: PlayerId }): Race => entity.race ?? entity.faction
 export type Point = { x: number, y: number }
 export const combatKinds = ['blade', 'polearm', 'ranged', 'marksman', 'heavy'] as const

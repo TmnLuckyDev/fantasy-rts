@@ -1,15 +1,15 @@
 import { groupComposition, replenishPlan } from '../shared/army-templates.ts'
 import { buildingTier, hallUpgrades, researchSite, researchTier, selectedAttackRange, unitTier } from '../shared/economy.ts'
-import { isTemplateKind, MAX_ARMY_GROUPS, MAX_ARMY_GROUP_SIZE, templateKinds } from '../shared/protocol.ts'
-import type { ArmyTemplate, TemplateKind } from '../shared/protocol.ts'
+import { MAX_ARMY_GROUPS, MAX_ARMY_GROUP_SIZE, templateKinds } from '../shared/protocol.ts'
+import type { ArmyTemplate } from '../shared/protocol.ts'
 import Phaser from 'phaser'
-import { buildingKinds, entityNames, factionNames, formations, isRace, races, raceOf, practiceLessons, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, troopGroups, upgradeKinds } from '../shared/protocol.ts'
+import { buildingKinds, entityNames, factionNames, formations, isRace, raceOf, practiceLessons, isHeroKind, isShipKind, isUnitKind, opposite, resourceKinds, upgradeKinds } from '../shared/protocol.ts'
 import type { AttackAlert, ArmyOrder, Formation, GroupCommand, PracticeLesson, TroopGroup, GlobalTrainCommand, Difficulty, Entity, EntityKind, Faction, Race, PlayerRaces, Order, Population, ResourceKind, Resources, RoomState, ServerMessage, UpgradeKind } from '../shared/protocol.ts'
 import type { Cost } from '../shared/economy.ts'
 import { buildings, bulkStructureCost, canAfford, FARM_POPULATION, REPAIR, repairCost, repairPrice, repairPulse, researchCost, researchTicks, trainedAt, trainingRule, trainingCost, MAX_UPGRADE_LEVEL, structureUpgrade, upgradeLevelLimit, upgrades } from '../shared/economy.ts'
 import { ashfordMap, distance, mapForSettings, mapIds, mapOptions } from '../shared/map.ts'
-import { raceRules, raceSkills } from '../shared/race-rules.ts'
-import { hasHero, heroAbilities, heroDamagePerLevel, heroLevel, heroRoles, heroThresholds } from '../shared/heroes.ts'
+import { raceSkills } from '../shared/race-rules.ts'
+import { hasHero, heroAbilities, heroLevel, heroRoles } from '../shared/heroes.ts'
 import { TICKS_PER_SECOND } from '../shared/match-settings.ts'
 import { MatchSettingsMenu, clockText, drawMatchStats } from './match-settings.ts'
 import { unitStats } from '../shared/units.ts'
@@ -20,7 +20,11 @@ import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
 import { initializeNativeApp, gameBackend, nativeIOS, standaloneWeb } from './native-app.ts'
 import { inviteUrl } from './multiplayer-endpoint.ts'
-import { entityTexture } from './sprites.ts'
+import { paintPortrait } from './portraits.ts'
+import { costLabel, percentage, constructionSummary, trainingSummary } from './hud-format.ts'
+import { eligibleGroupUnit, groupBreakdown, groupProduction, loadBlueprints, saveBlueprint, targetTotal } from './army-group-details.ts'
+import { TroopBar } from './troop-bar.ts'
+import { populateRacePicker } from './race-picker.ts'
 import type { ArmyIndex } from './troop-groups.ts'
 import { configureGameGuide } from './game-guide.ts'
 import './style.css'
@@ -33,26 +37,7 @@ const lobby = element('lobby')
 const match = element('match')
 const battlefield = element('battlefield')
 const groupBar = element('troop-groups')
-const customGroupButtons = new Map<number, { button: HTMLButtonElement, icon: HTMLCanvasElement, label: HTMLElement, count: HTMLElement }>()
-const groupButtons = new Map<TroopGroup, { button: HTMLButtonElement, icon: HTMLCanvasElement, label: HTMLElement, count: HTMLElement }>()
-for (const group of troopGroups) {
-  const item = document.createElement('button')
-  item.type = 'button'
-  item.title = 'Tap again to center the camera'
-  item.onclick = () => scene?.selectGroup(group)
-  const icon = document.createElement('canvas')
-  icon.width = icon.height = 28
-  icon.setAttribute('aria-hidden', 'true')
-  const label = document.createElement('span')
-  const count = document.createElement('span')
-  count.className = 'troop-count'
-  count.setAttribute('aria-hidden', 'true')
-  item.append(icon, label, count)
-  groupBar.append(item)
-  if (group === 'all') label.textContent = 'All troops'
-  if (group === 'heroes') label.textContent = 'Hero'
-  groupButtons.set(group, { button: item, icon, label, count })
-}
+const troopBar = new TroopBar(groupBar, group => scene?.selectGroup(group), id => scene?.selectTemplate(id))
 const portrait = element<HTMLCanvasElement>('selection-portrait')
 const minimap = element<HTMLCanvasElement>('minimap')
 const joinCode = element<HTMLInputElement>('join-code')
@@ -116,46 +101,8 @@ function toggleFormation(open: boolean) {
     closeEconomyMenu()
   }
 }
-for (const race of ['human', 'orc'] as const) {
-  const icon = document.querySelector<HTMLCanvasElement>('.faction.' + race + ' .race-icon')!
-  paintPortrait(icon, race, 'headquarters')
-}
-for (const race of ['dwarf', 'elf', 'undead'] as const) {
-  const choice = document.createElement('button')
-  choice.className = 'faction ' + race
-  choice.type = 'button'
-  choice.dataset.faction = race
-  const copy = document.createElement('span')
-  const title = document.createElement('strong')
-  title.textContent = factionNames[race]
-  const icon = document.createElement('canvas')
-  icon.className = 'race-icon'
-  icon.setAttribute('aria-hidden', 'true')
-  icon.width = 48
-  icon.height = 48
-  paintPortrait(icon, race, 'headquarters')
-  copy.append(title)
-  choice.append(icon, copy)
-  document.querySelector('.factions')!.append(choice)
-}
 const opponentChoice = element<HTMLSelectElement>('solo-race')
-for (const race of races) opponentChoice.add(new Option(factionNames[race], race))
-const factionButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-faction]')]
-const raceCards: Record<Race, string> = {
-  human: 'Flexible infantry · Moderate mobility',
-  orc: 'Fast attacks · Shorter ranged reach',
-  dwarf: 'Strong siege · Slow armies',
-  elf: 'Fast archers · Fragile troops',
-  undead: 'Cheap skeletons · Slow economy'
-}
-for (const item of factionButtons) {
-  const race = item.dataset.faction
-  if (!isRace(race)) continue
-  item.setAttribute('aria-label', factionNames[race])
-  const description = document.createElement('small')
-  description.textContent = raceCards[race]
-  item.querySelector('span')?.append(description)
-}
+const factionButtons = populateRacePicker(document.querySelector<HTMLElement>('.factions')!, opponentChoice)
 const audio = new BattleAudio()
 const settingsMenu = new MatchSettingsMenu()
 let matchSettings = settingsMenu.load()
@@ -556,20 +503,6 @@ function showBattle() {
   })
 }
 
-function paintPortrait(target: HTMLCanvasElement, side: Race, kind: EntityKind) {
-  const key = side + kind
-  if (target.dataset.sprite === key) return
-  target.dataset.sprite = key
-  const sprite = entityTexture(side, kind)
-  const ctx = target.getContext('2d')!
-  const scale = Math.min(target.width / sprite.width, target.height / sprite.height)
-  const width = Math.floor(sprite.width * scale)
-  const height = Math.floor(sprite.height * scale)
-  ctx.clearRect(0, 0, target.width, target.height)
-  ctx.imageSmoothingEnabled = false
-  ctx.drawImage(sprite, Math.floor((target.width - width) / 2), Math.floor((target.height - height) / 2), width, height)
-}
-
 function drawAttackAlerts(alerts: readonly AttackAlert[]) {
   if (alerts.length === shownAlerts.length && alerts.every((alert, i) => alert.id === shownAlerts[i].id)) return
   if (alerts.some(alert => !shownAlerts.some(previous => previous.id === alert.id))) audio.play('alert')
@@ -607,74 +540,7 @@ function drawAttackAlerts(alerts: readonly AttackAlert[]) {
 }
 
 function drawTroopGroups(army: ArmyIndex, selected: TroopGroup | null) {
-  groupBar.hidden = !army.size && !templates.length
-  drawCustomGroupButtons()
-  for (const [group, ui] of groupButtons) {
-    const members = army.get(group)
-    const fixedShortcut = group === 'all' || group === 'heroes'
-    ui.button.hidden = !members?.length && !fixedShortcut
-    ui.button.disabled = !members?.length
-    if (!members?.length) {
-      if (fixedShortcut) {
-        if (ui.count.textContent !== '0') ui.count.textContent = '0'
-        const description = group === 'heroes' ? 'No living hero' : 'No living troops'
-        if (ui.button.getAttribute('aria-description') !== description) ui.button.setAttribute('aria-description', description)
-        if (ui.button.hasAttribute('aria-pressed')) ui.button.removeAttribute('aria-pressed')
-        paintPortrait(ui.icon, chosenRace, group === 'heroes' ? 'vanguard' : 'blade')
-      }
-      continue
-    }
-    const kind = group === 'all' ? 'blade' : members[0].kind
-    const label = group === 'all' ? 'All troops' : group === 'heroes' ? 'Hero' : entityNames[chosenRace][kind]
-    if (ui.label.textContent !== label) ui.label.textContent = label
-    const count = String(members.length)
-    if (ui.count.textContent !== count) {
-      ui.count.textContent = count
-      ui.button.setAttribute('aria-description', count + ' living · Tap again to center camera')
-    }
-    const pressed = String(group === selected || (group === 'heroes' && selection.length === 1 && selection[0].id === members[0].id))
-    if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
-    paintPortrait(ui.icon, chosenRace, kind)
-  }
-}
-
-function drawCustomGroupButtons() {
-  const present = new Set(templates.map(group => group.id))
-  for (const [id, ui] of customGroupButtons) {
-    if (!present.has(id)) {
-      ui.button.remove()
-      customGroupButtons.delete(id)
-    }
-  }
-  const firstUnitType = groupButtons.get('blade')!.button
-  let previous = groupButtons.get('heroes')!.button
-  for (const group of templates) {
-    let ui = customGroupButtons.get(group.id)
-    if (!ui) {
-      const item = document.createElement('button')
-      item.type = 'button'
-      item.dataset.armyGroup = String(group.id)
-      item.title = 'Tap again to center. Hold or right-click to manage.'
-      item.onclick = () => scene?.selectTemplate(group.id)
-      const icon = document.createElement('canvas')
-      icon.width = icon.height = 28
-      icon.setAttribute('aria-hidden', 'true')
-      const label = document.createElement('span')
-      const count = document.createElement('span')
-      count.className = 'troop-count'
-      ui = { button: item, icon, label, count }
-      item.append(icon, label, count)
-      customGroupButtons.set(group.id, ui)
-    }
-    if (previous.nextElementSibling !== ui.button) groupBar.insertBefore(ui.button, previous.nextElementSibling ?? firstUnitType)
-    previous = ui.button
-    const count = group.members.length + '/' + targetTotal(group)
-    if (ui.count.textContent !== count) ui.count.textContent = count
-    if (ui.label.textContent !== group.name) ui.label.textContent = group.name
-    const pressed = String(scene?.activeTemplate === group.id)
-    if (ui.button.getAttribute('aria-pressed') !== pressed) ui.button.setAttribute('aria-pressed', pressed)
-    paintPortrait(ui.icon, chosenRace, group.targets[0]?.kind ?? 'blade')
-  }
+  troopBar.draw(army, selected, templates, scene?.activeTemplate, selection, chosenRace)
 }
 
 function issueGroupOrder(group: TroopGroup, order: ArmyOrder) {
@@ -840,7 +706,7 @@ function drawSelection(entities: Entity[], interactive = false) {
     else if (selected.repairing) detail.textContent = selected.kind === 'worker' ? 'Repairing a building' : `Repairing · ${hp}/${totalHp} HP`
     else if (selected.research) detail.textContent = upgrades[selected.research.kind].name + ' · ' + percentage(selected.research.progress)
     else if (selected.training) {
-      detail.textContent = trainingSummary(selected.training)
+      detail.textContent = trainingSummary(selected.training, chosenRace)
     } else if (selected.kind === 'worker') {
       detail.textContent = selected.carrying ? `Carrying ${selected.carrying}` : selected.idle ? 'Idle · ' + gatherHint() : gatherHint()
     } else if (selected.kind === 'transport') detail.textContent = `${hp}/${totalHp} HP · ${selected.passengerPop ?? 0}/30 population aboard`
@@ -877,10 +743,6 @@ function drawSelection(entities: Entity[], interactive = false) {
   }
   if (total) detail.textContent += ` · ${total - remaining}/${total} ashore` + (waiting ? ' · Waiting for space' : remaining ? ' · Landing' : '')
   if (group) drawSelectedTemplate(group)
-}
-
-function costLabel(cost: Cost) {
-  return resourceKinds.flatMap(kind => cost[kind] ? [cost[kind] + ' ' + kind] : []).join(' · ') || 'No cost'
 }
 
 function buildRequirement(kind: typeof buildingKinds[number]) {
@@ -1266,26 +1128,6 @@ button('idle-worker').onclick = () => scene?.selectIdleWorker()
 button('workers').onclick = () => scene?.selectWorkers()
 button('cancel-placement').onclick = () => scene?.cancelTargeting()
 
-function percentage(progress: number) { return Math.floor(progress * 100) + '%' }
-
-function constructionSummary(entity: Entity) {
-  if (entity.constructionStatus === 'queued') return 'Queued · ' + percentage(entity.construction ?? 0)
-  if (entity.constructionStatus === 'paused') return 'Paused · ' + percentage(entity.construction ?? 0)
-  return 'Building · ' + percentage(entity.construction ?? 0) + (entity.constructionSeconds === undefined ? '' : ' · est. ' + entity.constructionSeconds + 's')
-}
-
-function trainingSummary(training: NonNullable<Entity['training']>) {
-  const names = entityNames[chosenRace]
-  const runs = training.queue ?? []
-  const waiting = runs.map((run, index) => ({ ...run, count: run.count - Number(index === 0) }))
-    .filter(run => run.count > 0)
-  const labels = waiting.slice(0, 5).map(run => names[run.kind] + ' × ' + run.count)
-  if (waiting.length > 5) labels.push('+' + (waiting.length - 5) + ' batches')
-  const active = names[training.kind] + ' · ' + percentage(training.progress) +
-    (training.seconds === undefined ? '' : ' · ' + training.seconds + 's')
-  return labels.length ? active + ' → ' + labels.join(', ') : active
-}
-
 function openProductionTab(tab: 'recruit' | 'upgrades' | 'queues') {
   if (room?.result) return
   if (!productionSheet.open) {
@@ -1469,36 +1311,11 @@ for (const item of factionButtons) {
     else selectRace(choice)
   }
 }
-function targetTotal(group: ArmyTemplate) {
-  return group.targets.reduce((total, row) => total + row.count, 0)
-}
-
-const eligibleGroupUnit = (unit: Entity): unit is Entity & { kind: TemplateKind } => isTemplateKind(unit.kind) && !unit.summonedUntil
-
 function groupSelection() {
   return selection.filter(eligibleGroupUnit)
 }
 
-function groupBreakdown(group: ArmyTemplate) {
-  const current = groupComposition(group.members)
-  const kinds = new Set([...group.targets.map(row => row.kind), ...current.map(row => row.kind)])
-  return [...kinds].map(kind => ({
-    kind, live: current.find(row => row.kind === kind)?.count ?? 0,
-    target: group.targets.find(row => row.kind === kind)?.count ?? 0
-  }))
-}
-
-function groupProduction() {
-  const queued = new Map<typeof templateKinds[number], number>()
-  const production = ownEntities.filter(entity => !isUnitKind(entity.kind) && entity.construction === undefined)
-  for (const entity of production) for (const run of entity.training?.queue ?? []) {
-    if (isTemplateKind(run.kind)) queued.set(run.kind, (queued.get(run.kind) ?? 0) + run.count)
-  }
-  const ready = new Set(production.flatMap(entity => trainedAt(entity.kind, chosenRace)))
-  return { queued, ready }
-}
-
-function groupPlan(group: ArmyTemplate, { queued, ready } = groupProduction()) {
+function groupPlan(group: ArmyTemplate, { queued, ready } = groupProduction(ownEntities, chosenRace)) {
   return replenishPlan(templates, group, queued, chosenRace, resources, population,
     kind => ready.has(kind) && unitTier(kind) <= hallLevel && (!isHeroKind(kind) || !hasHero(ownEntities)))
 }
@@ -1541,7 +1358,7 @@ function drawTemplates() {
   if (managedTemplate !== null && !templates.some(group => group.id === managedTemplate)) managedTemplate = null
   button('all-army-groups').hidden = managedTemplate === null
   setText('template-title', templates.find(group => group.id === managedTemplate)?.name ?? 'Army Groups')
-  const production = groupProduction()
+  const production = groupProduction(ownEntities, chosenRace)
   const signature = JSON.stringify([templates, chosenRace, [...production.queued], [...production.ready], managedTemplate,
     picked.map(unit => unit.id), replenishGroup, replenishGroup === null ? null : [resources, population, hallLevel]])
   if (signature === templatesSignature) return
@@ -1599,9 +1416,7 @@ function drawTemplates() {
       }))
       controls.append(actionButton('Save template for future matches', () => {
         try {
-          const saved = loadBlueprints().filter(entry => entry.name !== group.name)
-          saved.unshift({ name: group.name, targets: group.targets })
-          localStorage.setItem('ash-iron-blueprint-' + chosenRace, JSON.stringify(saved.slice(0, MAX_ARMY_GROUPS)))
+          saveBlueprint(chosenRace, group)
           drawBlueprintChoices()
           setText('template-feedback', 'Template saved on this device.')
         } catch { setText('template-feedback', 'Could not save the template on this device.') }
@@ -1648,22 +1463,8 @@ function templateView(form?: HTMLFormElement) {
   setText('template-feedback', '')
 }
 
-type SavedBlueprint = Pick<ArmyTemplate, 'name' | 'targets'>
-
-function loadBlueprints(): SavedBlueprint[] {
-  try {
-    const data: unknown = JSON.parse(localStorage.getItem('ash-iron-blueprint-' + chosenRace) ?? 'null')
-    const entries = Array.isArray(data) ? data : [data]
-    return entries.filter((entry): entry is SavedBlueprint =>
-      entry && typeof entry.name === 'string' && Array.isArray(entry.targets) &&
-      entry.targets.every((row: ArmyTemplate['targets'][number]) =>
-        row && isTemplateKind(row.kind) && Number.isInteger(row.count) && row.count > 0 && row.count <= MAX_ARMY_GROUP_SIZE))
-      .slice(0, MAX_ARMY_GROUPS)
-  } catch { return [] }
-}
-
 function drawBlueprintChoices() {
-  const saved = loadBlueprints()
+  const saved = loadBlueprints(chosenRace)
   const picker = element<HTMLSelectElement>('blueprint-choice')
   const choices = saved.map(entry => entry.name)
   if (choices.length !== picker.options.length || choices.some((name, index) => picker.options[index]?.text !== name)) {
@@ -1874,7 +1675,7 @@ templateSheet.addEventListener('click', event => {
 })
 button('close-templates').onclick = () => templateSheet.close()
 button('load-blueprint').onclick = () => {
-  const blueprint = loadBlueprints()[Number(element<HTMLSelectElement>('blueprint-choice').value)]
+  const blueprint = loadBlueprints(chosenRace)[Number(element<HTMLSelectElement>('blueprint-choice').value)]
   if (blueprint) editTemplate('empty', blueprint)
 }
 button('new-template').onclick = () => editTemplate('empty')
