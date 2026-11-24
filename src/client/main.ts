@@ -18,7 +18,7 @@ import { GlobalProduction } from './global-production.ts'
 import { BattleScene } from './battle.ts'
 import { ConnectionClient } from './network.ts'
 import { SoloClient } from './solo.ts'
-import { initializeNativeApp, gameBackend, nativeIOS, standaloneWeb } from './native-app.ts'
+import { initializeNativeApp, gameBackend, nativeApp, nativeIOS, standaloneWeb } from './native-app.ts'
 import { inviteUrl } from './multiplayer-endpoint.ts'
 import { paintPortrait } from './portraits.ts'
 import { costLabel, percentage, constructionSummary, trainingSummary } from './hud-format.ts'
@@ -182,7 +182,8 @@ let pendingInvite = invite && /^[A-Z2-9]{5}$/i.test(invite) ? invite.toUpperCase
 if (pendingInvite) joinCode.value = pendingInvite
 
 const solo = new SoloClient(receive, refreshSoloButton, nativeIOS)
-const client = new ConnectionClient(receive, status, gameBackend, standaloneWeb && !pendingInvite)
+const connectOnDemand = nativeApp || standaloneWeb
+const client = new ConnectionClient(receive, status, gameBackend, connectOnDemand && !pendingInvite)
 refreshSoloButton()
 if (!invite && !client.hasSeat && solo.restoreOnReload) solo.start(faction, true)
 
@@ -204,6 +205,7 @@ function refreshSoloButton() {
 
 function status(state: 'idle' | 'waiting' | 'open' | 'closed') {
   const open = state === 'open'
+  const canOpenLobby = open || (connectOnDemand && state === 'idle')
   connection.dataset.state = state
   connection.textContent = open ? 'Online' : state === 'idle' ? 'Solo ready' : state === 'waiting' ? 'Connecting' : 'Reconnecting'
   if (open && pendingInvite) queueMicrotask(() => {
@@ -211,10 +213,10 @@ function status(state: 'idle' | 'waiting' | 'open' | 'closed') {
     client.send({ type: 'join', code: pendingInvite, faction: 'human' })
     pendingInvite = null
   })
-  button('create').disabled = !open && !(standaloneWeb && state === 'idle')
-  button('join').disabled = !open && !(standaloneWeb && state === 'idle')
+  button('create').disabled = !canOpenLobby
+  button('join').disabled = !canOpenLobby
   button('ready').disabled = !open
-  button('find-match').disabled = !open && !(standaloneWeb && state === 'idle')
+  button('find-match').disabled = !canOpenLobby
   if (!open) drawQueue(false)
   button('reconnect-now').hidden = open || !room || solo.active
   if (room) updateBanner(open)
@@ -1979,7 +1981,7 @@ initializeNativeApp(active => {
   else if (!menu.hidden) closeEconomyMenu()
   else if (gatherOpen) setGatherOpen(false)
   else if (!formationOptions.hidden) toggleFormation(false)
-  else if (scene && (placing || scene.advanceMode || scene.targetingRally || scene.targetingUnload)) {
+  else if (scene && (placing || scene.advanceMode || scene.targetingRally || scene.targetingUnload || scene.targetingTransfer)) {
     scene.cancelTargeting()
     updateCommandTarget()
   } else if (scene) button('exit').click()
